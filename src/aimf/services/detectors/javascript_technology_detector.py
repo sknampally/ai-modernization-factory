@@ -16,13 +16,11 @@ class JavaScriptTechnologyDetector:
         technologies: list[Technology] = []
 
         has_javascript_files = any(
-            file_path.endswith((".js", ".jsx", ".mjs", ".cjs"))
-            for file_path in repository.files
+            file_path.endswith((".js", ".jsx", ".mjs", ".cjs")) for file_path in repository.files
         )
 
         has_typescript_files = any(
-            file_path.endswith((".ts", ".tsx"))
-            for file_path in repository.files
+            file_path.endswith((".ts", ".tsx")) for file_path in repository.files
         )
 
         if has_javascript_files or "package.json" in file_set:
@@ -172,11 +170,6 @@ class JavaScriptTechnologyDetector:
             section = package_data.get(section_name, {})
 
             if isinstance(section, dict):
-                dependencies.update(
-                    {
-                        str(name): str(version)
-                        for name, version in section.items()
-                    }
-                )
+                dependencies.update({str(name): str(version) for name, version in section.items()})
 
         return dependencies

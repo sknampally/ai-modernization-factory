@@ -12,10 +12,7 @@ class JavaTechnologyDetector:
         file_set = set(repository.files)
         technologies: list[Technology] = []
 
-        has_java_files = any(
-            file_path.endswith(".java")
-            for file_path in repository.files
-        )
+        has_java_files = any(file_path.endswith(".java") for file_path in repository.files)
 
         if has_java_files:
             technologies.append(
@@ -79,11 +76,7 @@ class JavaTechnologyDetector:
         }
 
         detected_gradle_file = next(
-            (
-                file_name
-                for file_name in gradle_files
-                if file_name in file_set
-            ),
+            (file_name for file_name in gradle_files if file_name in file_set),
             None,
         )
 

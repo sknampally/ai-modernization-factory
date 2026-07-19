@@ -30,9 +30,7 @@ def test_github_scanner_clones_and_scans_repository(
         local_scanner=local_scanner,
     )
 
-    repository_url = (
-        "https://github.com/example/sample-app.git"
-    )
+    repository_url = "https://github.com/example/sample-app.git"
 
     with patch("subprocess.run") as run_mock:
         repository = scanner.scan(repository_url)
@@ -54,9 +52,7 @@ def test_github_scanner_clones_and_scans_repository(
         text=True,
     )
 
-    local_scanner.scan.assert_called_once_with(
-        tmp_path / "workspace" / "sample-app"
-    )
+    local_scanner.scan.assert_called_once_with(tmp_path / "workspace" / "sample-app")
 
     assert repository.name == "sample-app"
     assert repository.source_url == repository_url
@@ -76,9 +72,7 @@ def test_github_scanner_rejects_non_github_url(
         ValueError,
         match="Only public GitHub repositories",
     ):
-        scanner.scan(
-            "https://gitlab.com/example/sample-app.git"
-        )
+        scanner.scan("https://gitlab.com/example/sample-app.git")
 
 
 def test_github_scanner_rejects_invalid_github_path(
@@ -122,6 +116,4 @@ def test_github_scanner_reports_clone_failure(
             match="Repository not found",
         ),
     ):
-        scanner.scan(
-            "https://github.com/example/missing-app.git"
-        )
+        scanner.scan("https://github.com/example/missing-app.git")

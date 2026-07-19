@@ -16,9 +16,7 @@ def create_repository(tmp_path: Path) -> Repository:
     """Create a repository model from files under tmp_path."""
 
     files = sorted(
-        path.relative_to(tmp_path).as_posix()
-        for path in tmp_path.rglob("*")
-        if path.is_file()
+        path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*") if path.is_file()
     )
 
     return Repository(

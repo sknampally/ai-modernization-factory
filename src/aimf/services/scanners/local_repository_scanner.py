@@ -33,10 +33,7 @@ class LocalRepositoryScanner:
     ) -> None:
         additional_exclusions = set(excluded_directories or [])
 
-        self._excluded_directories = (
-            set(self.DEFAULT_EXCLUDED_DIRECTORIES)
-            | additional_exclusions
-        )
+        self._excluded_directories = set(self.DEFAULT_EXCLUDED_DIRECTORIES) | additional_exclusions
 
     def scan(self, repository_path: Path) -> Repository:
         """Scan a local repository and return repository metadata."""
@@ -58,14 +55,10 @@ class LocalRepositoryScanner:
         """Validate that the repository path exists and is a directory."""
 
         if not repository_path.exists():
-            raise FileNotFoundError(
-                f"Repository path does not exist: {repository_path}"
-            )
+            raise FileNotFoundError(f"Repository path does not exist: {repository_path}")
 
         if not repository_path.is_dir():
-            raise NotADirectoryError(
-                f"Repository path is not a directory: {repository_path}"
-            )
+            raise NotADirectoryError(f"Repository path is not a directory: {repository_path}")
 
     def _collect_files(self, repository_path: Path) -> list[str]:
         """Collect repository files while ignoring excluded directories."""
@@ -91,7 +84,4 @@ class LocalRepositoryScanner:
 
         relative_path = path.relative_to(repository_path)
 
-        return any(
-            part in self._excluded_directories
-            for part in relative_path.parts
-        )
+        return any(part in self._excluded_directories for part in relative_path.parts)

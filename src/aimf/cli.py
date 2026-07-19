@@ -7,7 +7,12 @@ import typer
 
 from aimf import __version__
 from aimf.config import load_settings
+from aimf.logging_config import configure_logging
 from aimf.services.analysis_service import AnalysisService
+from aimf.services.analyzers import (
+    CompositeAnalyzer,
+    RepositoryMetricsAnalyzer,
+)
 from aimf.services.detectors.composite_technology_detector import (
     CompositeTechnologyDetector,
 )
@@ -23,6 +28,8 @@ from aimf.services.detectors.php_technology_detector import (
 from aimf.services.scanners.github_repository_scanner import (
     GitHubRepositoryScanner,
 )
+
+configure_logging()
 
 app = typer.Typer(
     name="aimf",
@@ -71,6 +78,11 @@ def scan(
 
     analysis_service = AnalysisService(
         technology_detector=technology_detector,
+        analyzer=CompositeAnalyzer(
+            analyzers=[
+                RepositoryMetricsAnalyzer(),
+            ]
+        ),
         analyzer_version=__version__,
     )
 

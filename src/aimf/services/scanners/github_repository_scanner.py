@@ -43,10 +43,7 @@ class GitHubRepositoryScanner:
             if self._clean_before_clone:
                 shutil.rmtree(clone_directory)
             else:
-                raise FileExistsError(
-                    "Repository workspace already exists: "
-                    f"{clone_directory}"
-                )
+                raise FileExistsError(f"Repository workspace already exists: {clone_directory}")
 
         clone_command = [
             "git",
@@ -79,19 +76,13 @@ class GitHubRepositoryScanner:
                 text=True,
             )
         except FileNotFoundError as error:
-            raise RuntimeError(
-                "Git is not installed or is not available on PATH."
-            ) from error
+            raise RuntimeError("Git is not installed or is not available on PATH.") from error
         except subprocess.CalledProcessError as error:
             error_message = error.stderr.strip() or error.stdout.strip()
 
             raise RuntimeError(
                 "Unable to clone GitHub repository"
-                + (
-                    f": {error_message}"
-                    if error_message
-                    else "."
-                )
+                + (f": {error_message}" if error_message else ".")
             ) from error
 
         repository = self._local_scanner.scan(clone_directory)
@@ -112,28 +103,18 @@ class GitHubRepositoryScanner:
         parsed_url = urlparse(repository_url)
 
         if parsed_url.scheme not in {"http", "https"}:
-            raise ValueError(
-                "Repository URL must use HTTP or HTTPS."
-            )
+            raise ValueError("Repository URL must use HTTP or HTTPS.")
 
         if parsed_url.hostname not in {
             "github.com",
             "www.github.com",
         }:
-            raise ValueError(
-                "Only public GitHub repositories are supported."
-            )
+            raise ValueError("Only public GitHub repositories are supported.")
 
-        path_parts = [
-            part
-            for part in parsed_url.path.split("/")
-            if part
-        ]
+        path_parts = [part for part in parsed_url.path.split("/") if part]
 
         if len(path_parts) < 2:
-            raise ValueError(
-                "GitHub URL must contain an owner and repository name."
-            )
+            raise ValueError("GitHub URL must contain an owner and repository name.")
 
     def _extract_repository_name(
         self,
@@ -148,8 +129,6 @@ class GitHubRepositoryScanner:
             repository_name = repository_name[:-4]
 
         if not repository_name:
-            raise ValueError(
-                "Unable to determine repository name from URL."
-            )
+            raise ValueError("Unable to determine repository name from URL.")
 
         return repository_name

@@ -1,8 +1,17 @@
 """Tests for the repository analysis application service."""
 
+from collections.abc import Sequence
 from pathlib import Path
 
-from aimf.models import Repository, Technology, TechnologyCategory
+from aimf.models import (
+    Finding,
+    FindingCategory,
+    FindingSource,
+    Repository,
+    Severity,
+    Technology,
+    TechnologyCategory,
+)
 from aimf.services.analysis_service import AnalysisService
 
 
@@ -22,6 +31,29 @@ class StubTechnologyDetector:
         ]
 
 
+class StubAnalyzer:
+    """Repository analyzer used for service testing."""
+
+    def analyze(
+        self,
+        repository: Repository,
+        technologies: Sequence[Technology],
+    ) -> list[Finding]:
+        """Return a predictable finding."""
+
+        return [
+            Finding(
+                rule_id="test.repository.file_count",
+                title="Repository file count",
+                description=f"Repository contains {len(repository.files)} file.",
+                category=FindingCategory.MAINTAINABILITY,
+                severity=Severity.INFO,
+                source=FindingSource.DETERMINISTIC,
+                affected_technologies=[technology.name for technology in technologies],
+            )
+        ]
+
+
 def test_analysis_service_creates_analysis_result() -> None:
     repository = Repository(
         name="sample",
@@ -32,16 +64,23 @@ def test_analysis_service_creates_analysis_result() -> None:
 
     service = AnalysisService(
         technology_detector=StubTechnologyDetector(),
-        analyzer_version="0.1.0",
+        analyzer=StubAnalyzer(),
+        analyzer_version="0.2.0",
     )
 
     result = service.analyze(repository)
 
     assert result.repository is repository
+
     assert len(result.technologies) == 1
     assert result.technologies[0].name == "Java"
-    assert result.findings == []
+
+    assert len(result.findings) == 1
+    assert result.findings[0].rule_id == "test.repository.file_count"
+    assert result.findings[0].source == FindingSource.DETERMINISTIC
+    assert result.findings[0].affected_technologies == ["Java"]
+
     assert result.recommendations == []
     assert result.completed_at is not None
     assert result.completed_at >= result.started_at
-    assert result.analyzer_version == "0.1.0"
+    assert result.analyzer_version == "0.2.0"

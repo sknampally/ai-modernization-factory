@@ -29,9 +29,7 @@ def test_load_settings_reads_repository_configuration(
 
     settings = load_settings(config_file)
 
-    assert str(settings.repository.url) == (
-        "https://github.com/example/sample-java-app.git"
-    )
+    assert str(settings.repository.url) == ("https://github.com/example/sample-java-app.git")
     assert settings.repository.branch == "main"
     assert settings.workspace.directory == Path(".aimf-workspace")
     assert settings.workspace.clean_before_clone is True

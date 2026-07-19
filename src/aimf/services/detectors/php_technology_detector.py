@@ -15,10 +15,7 @@ class PhpTechnologyDetector:
         file_set = set(repository.files)
         technologies: list[Technology] = []
 
-        has_php_files = any(
-            file_path.endswith(".php")
-            for file_path in repository.files
-        )
+        has_php_files = any(file_path.endswith(".php") for file_path in repository.files)
 
         if has_php_files or "composer.json" in file_set:
             technologies.append(
@@ -81,12 +78,8 @@ class PhpTechnologyDetector:
                 )
             )
 
-        if (
-            "wp-config.php" in file_set
-            or any(
-                file_path.startswith("wp-content/")
-                for file_path in repository.files
-            )
+        if "wp-config.php" in file_set or any(
+            file_path.startswith("wp-content/") for file_path in repository.files
         ):
             technologies.append(
                 Technology(
@@ -133,11 +126,6 @@ class PhpTechnologyDetector:
             section = composer_data.get(section_name, {})
 
             if isinstance(section, dict):
-                dependencies.update(
-                    {
-                        str(name): str(version)
-                        for name, version in section.items()
-                    }
-                )
+                dependencies.update({str(name): str(version) for name, version in section.items()})
 
         return dependencies
