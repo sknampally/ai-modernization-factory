@@ -1,0 +1,120 @@
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "ai-modernization-factory"
+version = "0.1.0"
+description = "Production-grade AI platform for analyzing, understanding, and modernizing legacy enterprise applications."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Satish Nampally" }
+]
+keywords = [
+    "artificial-intelligence",
+    "application-modernization",
+    "legacy-code",
+    "static-analysis",
+    "software-architecture",
+    "developer-tools",
+]
+
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+dependencies = [
+    "pydantic>=2.10,<3.0",
+    "rich>=13.9,<15.0",
+    "typer>=0.15,<1.0",
+]
+
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.14,<2.0",
+    "pytest>=8.3,<9.0",
+    "pytest-cov>=6.0,<7.0",
+    "ruff>=0.9,<1.0",
+]
+
+
+[project.scripts]
+ai-factory = "amf.cli:app"
+
+
+[project.urls]
+Homepage = "https://github.com/sknampally/ai-modernization-factory"
+Repository = "https://github.com/sknampally/ai-modernization-factory"
+Issues = "https://github.com/sknampally/ai-modernization-factory/issues"
+
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+]
+
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "B",
+    "UP",
+]
+ignore = []
+
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src"]
+pretty = true
+show_error_codes = true
+warn_unused_configs = true
+
+
+[tool.coverage.run]
+source = ["amf"]
+branch = true
+
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 80
