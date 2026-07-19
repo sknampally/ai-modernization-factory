@@ -8,7 +8,6 @@ Rather than relying on AI to inspect source code directly, AIMF first performs d
 
 This approach produces repeatable, explainable, and production-ready results suitable for enterprise software modernization.
 
----
 
 # Engineering Philosophy
 
@@ -35,8 +34,6 @@ This architecture provides:
 - Easier testing
 - Enterprise-ready governance
 
----
-
 # Design Principles
 
 ## Separation of Responsibilities
@@ -49,7 +46,6 @@ Each component has a single responsibility.
 - Recommendation engines transform evidence into recommendations.
 - AI interprets structured results rather than raw source code.
 
----
 
 ## Composable Architecture
 
@@ -57,7 +53,6 @@ The platform is composed of independent components.
 
 New scanners, analyzers, detectors, or recommendation engines can be added without changing existing implementations.
 
----
 
 ## Evidence-Based Recommendations
 
@@ -78,7 +73,6 @@ Recommendation
 
 Recommendations should always be explainable.
 
----
 
 ## AI as an Interpreter
 
@@ -86,7 +80,6 @@ AI should interpret facts, not discover them.
 
 Whenever deterministic analysis is possible, AIMF performs it before invoking an LLM.
 
----
 
 # Current Architecture
 
@@ -123,7 +116,6 @@ The current implementation provides the foundation for the analysis pipeline.
                 +----------------+
 ```
 
----
 
 # Component Responsibilities
 
@@ -137,7 +129,6 @@ The command-line interface is responsible for:
 
 Business logic should never reside in the CLI.
 
----
 
 ## Repository Scanners
 
@@ -156,7 +147,6 @@ Future implementations may include:
 - ZIP archives
 - Local workspace management
 
----
 
 ## Repository
 
@@ -170,7 +160,6 @@ It contains:
 
 The Repository acts as the immutable input to the analysis pipeline.
 
----
 
 ## Analysis Service
 
@@ -184,8 +173,6 @@ Responsibilities include:
 - Producing the final AnalysisResult
 
 The service coordinates the workflow but does not perform analysis itself.
-
----
 
 ## Technology Detection
 
@@ -201,8 +188,6 @@ Examples include:
 
 Technology detection is deterministic and repeatable.
 
----
-
 ## Analysis Result
 
 AnalysisResult represents the complete output of the analysis pipeline.
@@ -216,8 +201,6 @@ It contains:
 - Analysis metadata
 
 This model becomes the primary input to downstream reporting and AI reasoning.
-
----
 
 # Target Architecture
 
@@ -257,8 +240,6 @@ Dependency Analyzer     Security Analyzer      Cloud Analyzer
                   Modernization Report
 ```
 
----
-
 # Analysis Pipeline
 
 Every repository follows the same analysis lifecycle.
@@ -271,8 +252,6 @@ Every repository follows the same analysis lifecycle.
 6. Recommendation generation
 7. AI interpretation
 8. Modernization report generation
-
----
 
 # Planned Analyzer Categories
 
@@ -293,8 +272,6 @@ Examples include:
 
 Each analyzer focuses on one responsibility and contributes structured findings.
 
----
-
 # Long-Term Vision
 
 AI Modernization Factory aims to become a comprehensive enterprise modernization platform capable of:
@@ -313,8 +290,6 @@ AI Modernization Factory aims to become a comprehensive enterprise modernization
 - Automated modernization workflows
 
 The architecture is intentionally modular so that new capabilities can be added without impacting existing components.
-
----
 
 # Current Status
 
