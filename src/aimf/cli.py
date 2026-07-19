@@ -8,6 +8,8 @@ import typer
 from aimf import __version__
 from aimf.config import load_settings
 from aimf.logging_config import configure_logging
+from aimf.output_format import OutputFormat
+from aimf.result_renderer import render_json, render_text
 from aimf.services.analysis_service import AnalysisService
 from aimf.services.analyzers import (
     CompositeAnalyzer,
@@ -55,6 +57,15 @@ def scan(
             help="Path to the AIMF TOML configuration file.",
         ),
     ] = Path("aimf.toml"),
+    output: Annotated[
+        OutputFormat,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format.",
+            case_sensitive=False,
+        ),
+    ] = OutputFormat.TEXT,
 ) -> None:
     """Clone and analyze the configured public GitHub repository."""
 
@@ -88,7 +99,10 @@ def scan(
 
     result = analysis_service.analyze(repository)
 
-    typer.echo(result.model_dump_json(indent=2))
+    if output == OutputFormat.JSON:
+        render_json(result)
+    else:
+        render_text(result)
 
 
 if __name__ == "__main__":

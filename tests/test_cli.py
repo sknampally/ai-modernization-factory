@@ -22,3 +22,12 @@ def test_cli_help() -> None:
     assert result.exit_code == 0
     assert "Analyze and modernize legacy enterprise applications" in result.stdout
     assert "version" in result.stdout
+
+
+def test_scan_help_shows_output_option() -> None:
+    result = runner.invoke(app, ["scan", "--help"])
+
+    assert result.exit_code == 0
+    assert "--output" in result.stdout
+    assert "text" in result.stdout
+    assert "json" in result.stdout
