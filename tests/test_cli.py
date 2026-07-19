@@ -2,7 +2,7 @@
 
 from typer.testing import CliRunner
 
-from amf.cli import app
+from aimf.cli import app
 
 runner = CliRunner()
 
