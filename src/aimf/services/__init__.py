@@ -7,10 +7,12 @@ from aimf.services.contracts import (
     RepositoryScanner,
     TechnologyDetector,
 )
+from aimf.services.scanners import LocalRepositoryScanner
 
 __all__ = [
     "AnalysisService",
     "AnalyzerEngine",
+    "LocalRepositoryScanner",
     "RecommendationEngine",
     "RepositoryScanner",
     "TechnologyDetector",

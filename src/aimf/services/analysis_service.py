@@ -1,6 +1,6 @@
 """Application service that orchestrates repository analysis."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from aimf.models import AnalysisResult
@@ -32,7 +32,7 @@ class AnalysisService:
     def analyze(self, repository_path: Path) -> AnalysisResult:
         """Run the complete modernization analysis workflow."""
 
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
 
         repository = self._repository_scanner.scan(repository_path)
 
@@ -51,7 +51,7 @@ class AnalysisService:
             findings=findings,
         )
 
-        completed_at = datetime.now(timezone.utc)
+        completed_at = datetime.now(UTC)
 
         return AnalysisResult(
             repository=repository,
