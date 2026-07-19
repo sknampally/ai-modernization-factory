@@ -1,33 +1,9 @@
-"""Service-layer exports."""
+"""Application services for AI Modernization Factory."""
 
 from aimf.services.analysis_service import AnalysisService
-from aimf.services.contracts import (
-    AnalyzerEngine,
-    RecommendationEngine,
-    RepositoryScanner,
-    TechnologyDetector,
-)
-from aimf.services.detectors import (
-    CompositeTechnologyDetector,
-    JavaScriptTechnologyDetector,
-    JavaTechnologyDetector,
-    PhpTechnologyDetector,
-)
-from aimf.services.scanners import (
-    GitHubRepositoryScanner,
-    LocalRepositoryScanner,
-)
+from aimf.services.contracts import TechnologyDetector
 
 __all__ = [
     "AnalysisService",
-    "AnalyzerEngine",
-    "CompositeTechnologyDetector",
-    "GitHubRepositoryScanner",
-    "JavaScriptTechnologyDetector",
-    "JavaTechnologyDetector",
-    "LocalRepositoryScanner",
-    "PhpTechnologyDetector",
-    "RecommendationEngine",
-    "RepositoryScanner",
     "TechnologyDetector",
 ]

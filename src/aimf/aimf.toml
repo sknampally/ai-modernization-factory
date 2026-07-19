@@ -1,7 +1,0 @@
-[repository]
-url = "https://github.com/spring-projects/spring-petclinic.git"
-branch = "main"
-
-[workspace]
-directory = ".aimf-workspace"
-clean_before_clone = true

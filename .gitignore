@@ -138,3 +138,6 @@ models/
 # ==========================================
 
 repositories/
+
+# AIMF local workspace
+.aimf/

@@ -1,0 +1,7 @@
+[repository]
+url = "https://github.com/spring-projects/spring-petclinic"
+branch = "main"
+
+[workspace]
+directory = ".aimf/workspace"
+cleanup = true

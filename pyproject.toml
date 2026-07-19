@@ -50,7 +50,7 @@ dev = [
 
 
 [project.scripts]
-ai-factory = "amf.cli:app"
+aimf = "aimf.cli:app"
 
 
 [project.urls]

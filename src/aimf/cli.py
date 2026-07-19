@@ -7,7 +7,22 @@ import typer
 
 from aimf import __version__
 from aimf.config import load_settings
-from aimf.services import GitHubRepositoryScanner
+from aimf.services.analysis_service import AnalysisService
+from aimf.services.detectors.composite_technology_detector import (
+    CompositeTechnologyDetector,
+)
+from aimf.services.detectors.java_technology_detector import (
+    JavaTechnologyDetector,
+)
+from aimf.services.detectors.javascript_technology_detector import (
+    JavaScriptTechnologyDetector,
+)
+from aimf.services.detectors.php_technology_detector import (
+    PhpTechnologyDetector,
+)
+from aimf.services.scanners.github_repository_scanner import (
+    GitHubRepositoryScanner,
+)
 
 app = typer.Typer(
     name="aimf",
@@ -34,23 +49,34 @@ def scan(
         ),
     ] = Path("aimf.toml"),
 ) -> None:
-    """Clone and scan the configured public GitHub repository."""
+    """Clone and analyze the configured public GitHub repository."""
 
     settings = load_settings(config)
 
     scanner = GitHubRepositoryScanner(
         workspace_directory=settings.workspace.directory,
         branch=settings.repository.branch,
-        clean_before_clone=(
-            settings.workspace.clean_before_clone
-        ),
+        clean_before_clone=settings.workspace.clean_before_clone,
     )
 
-    repository = scanner.scan(
-        str(settings.repository.url)
+    repository = scanner.scan(str(settings.repository.url))
+
+    technology_detector = CompositeTechnologyDetector(
+        detectors=[
+            JavaTechnologyDetector(),
+            JavaScriptTechnologyDetector(),
+            PhpTechnologyDetector(),
+        ]
     )
 
-    typer.echo(repository.model_dump_json(indent=2))
+    analysis_service = AnalysisService(
+        technology_detector=technology_detector,
+        analyzer_version=__version__,
+    )
+
+    result = analysis_service.analyze(repository)
+
+    typer.echo(result.model_dump_json(indent=2))
 
 
 if __name__ == "__main__":
