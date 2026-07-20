@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from aimf.models import (
+    AnalyzerResult,
     Finding,
     FindingCategory,
     FindingSource,
@@ -41,17 +42,19 @@ class StubAnalyzer:
     ) -> list[Finding]:
         """Return a predictable finding."""
 
-        return [
-            Finding(
-                rule_id="test.repository.file_count",
-                title="Repository file count",
-                description=f"Repository contains {len(repository.files)} file.",
-                category=FindingCategory.MAINTAINABILITY,
-                severity=Severity.INFO,
-                source=FindingSource.DETERMINISTIC,
-                affected_technologies=[technology.name for technology in technologies],
-            )
-        ]
+        return AnalyzerResult(
+            findings=[
+                Finding(
+                    rule_id="test.repository.file_count",
+                    title="Repository file count",
+                    description=f"Repository contains {len(repository.files)} file.",
+                    category=FindingCategory.MAINTAINABILITY,
+                    severity=Severity.INFO,
+                    source=FindingSource.DETERMINISTIC,
+                    affected_technologies=[technology.name for technology in technologies],
+                )
+            ]
+        )
 
 
 def test_analysis_service_creates_analysis_result() -> None:

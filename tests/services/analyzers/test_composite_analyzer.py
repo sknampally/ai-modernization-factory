@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from aimf.models import (
+    AnalyzerResult,
     Finding,
     FindingCategory,
     FindingSource,
@@ -27,16 +28,18 @@ class StubAnalyzer:
     ) -> list[Finding]:
         """Return one finding."""
 
-        return [
-            Finding(
-                rule_id=self._rule_id,
-                title="Test finding",
-                description=f"Finding for {repository.name}.",
-                category=FindingCategory.OTHER,
-                severity=Severity.INFO,
-                source=FindingSource.DETERMINISTIC,
-            )
-        ]
+        return AnalyzerResult(
+            findings=[
+                Finding(
+                    rule_id=self._rule_id,
+                    title="Test finding",
+                    description=f"Finding for {repository.name}.",
+                    category=FindingCategory.OTHER,
+                    severity=Severity.INFO,
+                    source=FindingSource.DETERMINISTIC,
+                )
+            ]
+        )
 
 
 def test_composite_analyzer_combines_findings() -> None:
@@ -52,11 +55,11 @@ def test_composite_analyzer_combines_findings() -> None:
         ]
     )
 
-    findings = analyzer.analyze(
+    result = analyzer.analyze(
         repository=repository,
         technologies=[],
     )
-
+    findings = result.findings
     assert [finding.rule_id for finding in findings] == [
         "test.first",
         "test.second",
@@ -71,9 +74,10 @@ def test_composite_analyzer_returns_empty_list_when_no_analyzers_exist() -> None
 
     analyzer = CompositeAnalyzer(analyzers=[])
 
-    findings = analyzer.analyze(
+    result = analyzer.analyze(
         repository=repository,
         technologies=[],
     )
 
-    assert findings == []
+    assert result.findings == []
+    assert result.facts.build is None

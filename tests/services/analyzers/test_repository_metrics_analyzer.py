@@ -41,11 +41,12 @@ def test_repository_metrics_analyzer_collects_structural_metrics() -> None:
 
     analyzer = RepositoryMetricsAnalyzer()
 
-    findings = analyzer.analyze(
+    result = analyzer.analyze(
         repository=repository,
         technologies=technologies,
     )
 
+    findings = result.findings
     assert len(findings) == 1
 
     finding = findings[0]
@@ -87,11 +88,11 @@ def test_repository_metrics_analyzer_returns_zero_counts() -> None:
 
     analyzer = RepositoryMetricsAnalyzer()
 
-    findings = analyzer.analyze(
+    result = analyzer.analyze(
         repository=repository,
         technologies=[],
     )
-
+    findings = result.findings
     assert len(findings) == 1
     assert findings[0].metadata == {
         "total_files": 0,

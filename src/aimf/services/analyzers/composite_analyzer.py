@@ -2,12 +2,12 @@
 
 from collections.abc import Sequence
 
-from aimf.models import Finding, Repository, Technology
+from aimf.models import AnalyzerResult, Repository, RepositoryFacts, Technology
 from aimf.services.contracts import Analyzer
 
 
 class CompositeAnalyzer:
-    """Executes configured analyzers and combines their findings."""
+    """Executes configured analyzers and combines their results."""
 
     def __init__(self, analyzers: Sequence[Analyzer]) -> None:
         self._analyzers = tuple(analyzers)
@@ -16,17 +16,22 @@ class CompositeAnalyzer:
         self,
         repository: Repository,
         technologies: Sequence[Technology],
-    ) -> list[Finding]:
-        """Execute all analyzers and return their findings."""
+    ) -> AnalyzerResult:
+        """Execute all analyzers and combine their findings and facts."""
 
-        findings: list[Finding] = []
+        findings = []
+        facts = RepositoryFacts()
 
         for analyzer in self._analyzers:
-            findings.extend(
-                analyzer.analyze(
-                    repository=repository,
-                    technologies=technologies,
-                )
+            result = analyzer.analyze(
+                repository=repository,
+                technologies=technologies,
             )
 
-        return findings
+            findings.extend(result.findings)
+            facts = facts.merge(result.facts)
+
+        return AnalyzerResult(
+            findings=findings,
+            facts=facts,
+        )

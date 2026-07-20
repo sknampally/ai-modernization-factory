@@ -4,11 +4,13 @@ from collections.abc import Sequence
 from pathlib import PurePosixPath
 
 from aimf.models import (
+    AnalyzerResult,
     Evidence,
     Finding,
     FindingCategory,
     FindingSource,
     Repository,
+    RepositoryFacts,
     Severity,
     Technology,
 )
@@ -84,7 +86,7 @@ class RepositoryMetricsAnalyzer:
         self,
         repository: Repository,
         technologies: Sequence[Technology],
-    ) -> list[Finding]:
+    ) -> AnalyzerResult:
         """Collect repository metrics and return one consolidated finding."""
 
         files = [PurePosixPath(file_path) for file_path in repository.files]
@@ -152,7 +154,7 @@ class RepositoryMetricsAnalyzer:
             metadata=metrics,
         )
 
-        return [finding]
+        return AnalyzerResult(findings=[finding], facts=RepositoryFacts())
 
     @staticmethod
     def _is_test_file(file_path: PurePosixPath) -> bool:

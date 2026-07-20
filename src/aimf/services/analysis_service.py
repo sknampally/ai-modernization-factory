@@ -51,7 +51,7 @@ class AnalysisService:
                 },
             )
 
-            findings = self._analyzer.analyze(
+            analyzer_result = self._analyzer.analyze(
                 repository=repository,
                 technologies=technologies,
             )
@@ -65,7 +65,7 @@ class AnalysisService:
                     "repository_name": repository.name,
                     "stage": "analysis",
                     "technology_count": len(technologies),
-                    "finding_count": len(findings),
+                    "finding_count": len(analyzer_result.findings),
                     "duration_ms": duration_ms,
                 },
             )
@@ -73,7 +73,8 @@ class AnalysisService:
             return AnalysisResult(
                 repository=repository,
                 technologies=technologies,
-                findings=findings,
+                facts=analyzer_result.facts,
+                findings=analyzer_result.findings,
                 recommendations=[],
                 started_at=started_at,
                 completed_at=completed_at,

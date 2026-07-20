@@ -1,5 +1,6 @@
 """Repository analyzers."""
 
+from aimf.services.analyzers.build_system_analyzer import BuildSystemAnalyzer
 from aimf.services.analyzers.composite_analyzer import CompositeAnalyzer
 from aimf.services.analyzers.repository_metrics_analyzer import (
     RepositoryMetricsAnalyzer,
@@ -8,4 +9,5 @@ from aimf.services.analyzers.repository_metrics_analyzer import (
 __all__ = [
     "CompositeAnalyzer",
     "RepositoryMetricsAnalyzer",
+    "BuildSystemAnalyzer",
 ]

@@ -12,6 +12,7 @@ from aimf.output_format import OutputFormat
 from aimf.result_renderer import render_json, render_text
 from aimf.services.analysis_service import AnalysisService
 from aimf.services.analyzers import (
+    BuildSystemAnalyzer,
     CompositeAnalyzer,
     RepositoryMetricsAnalyzer,
 )
@@ -92,6 +93,7 @@ def scan(
         analyzer=CompositeAnalyzer(
             analyzers=[
                 RepositoryMetricsAnalyzer(),
+                BuildSystemAnalyzer(),
             ]
         ),
         analyzer_version=__version__,

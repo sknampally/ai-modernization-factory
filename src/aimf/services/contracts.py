@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Protocol
 
-from aimf.models import Finding, Repository, Technology
+from aimf.models import AnalyzerResult, Repository, Technology
 
 
 class TechnologyDetector(Protocol):
@@ -21,6 +21,6 @@ class Analyzer(Protocol):
         self,
         repository: Repository,
         technologies: Sequence[Technology],
-    ) -> list[Finding]:
+    ) -> AnalyzerResult:
         """Analyze the repository and return structured findings."""
         ...
