@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Protocol
 
-from aimf.models import AnalyzerResult, Repository, Technology
+from aimf.models import AnalyzerResult, Repository, RepositoryFacts, Technology
 
 
 class TechnologyDetector(Protocol):
@@ -15,12 +15,29 @@ class TechnologyDetector(Protocol):
 
 
 class Analyzer(Protocol):
-    """Performs deterministic analysis of a repository."""
+    """Performs deterministic analysis of a repository.
+
+    Each analyzer receives the facts produced so far, returns new findings
+    and newly produced facts, and relies on CompositeAnalyzer to merge those
+    facts before invoking the next analyzer.
+    """
 
     def analyze(
         self,
         repository: Repository,
         technologies: Sequence[Technology],
+        facts: RepositoryFacts | None = None,
     ) -> AnalyzerResult:
-        """Analyze the repository and return structured findings."""
+        """Analyze the repository using accumulated facts.
+
+        Args:
+            repository: Repository under analysis.
+            technologies: Technologies detected for the repository.
+            facts: Facts accumulated from earlier analyzers, if any.
+
+        Returns:
+            New findings and newly produced facts for this analyzer only.
+            Do not return previously accumulated facts; CompositeAnalyzer
+            merges the returned facts into the running total.
+        """
         ...

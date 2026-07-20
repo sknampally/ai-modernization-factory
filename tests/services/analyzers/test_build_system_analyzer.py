@@ -1,13 +1,12 @@
-"""Tests for the build system analyzer."""
+"""Tests for the build discovery analyzer."""
 
 from aimf.models import Repository
-from aimf.services.analyzers.build_system_analyzer import BuildSystemAnalyzer
+from aimf.services.analyzers import BuildDiscoveryAnalyzer
 
 
 def test_detects_maven_build_system() -> None:
     repository = Repository(
         name="sample-maven-project",
-        source="local",
         path="/tmp/sample-maven-project",
         files=[
             "pom.xml",
@@ -17,7 +16,7 @@ def test_detects_maven_build_system() -> None:
         ],
     )
 
-    analyzer = BuildSystemAnalyzer()
+    analyzer = BuildDiscoveryAnalyzer()
 
     result = analyzer.analyze(
         repository=repository,
@@ -26,12 +25,13 @@ def test_detects_maven_build_system() -> None:
     findings = result.findings
 
     assert len(findings) == 1
+    assert result.facts.build is not None
+    assert result.facts.build.build_systems == ["maven"]
 
 
 def test_detects_multiple_build_systems() -> None:
     repository = Repository(
         name="full-stack-project",
-        source="local",
         path="/tmp/sample-maven-project",
         files=[
             "backend/pom.xml",
@@ -41,7 +41,7 @@ def test_detects_multiple_build_systems() -> None:
         ],
     )
 
-    analyzer = BuildSystemAnalyzer()
+    analyzer = BuildDiscoveryAnalyzer()
 
     result = analyzer.analyze(
         repository=repository,
@@ -65,7 +65,6 @@ def test_detects_multiple_build_systems() -> None:
 def test_returns_empty_build_facts_when_no_build_system_is_detected() -> None:
     repository = Repository(
         name="documentation-project",
-        source="local",
         path="/tmp/sample-maven-project",
         files=[
             "README.md",
@@ -73,7 +72,7 @@ def test_returns_empty_build_facts_when_no_build_system_is_detected() -> None:
         ],
     )
 
-    analyzer = BuildSystemAnalyzer()
+    analyzer = BuildDiscoveryAnalyzer()
 
     result = analyzer.analyze(
         repository=repository,
@@ -82,12 +81,10 @@ def test_returns_empty_build_facts_when_no_build_system_is_detected() -> None:
     findings = result.findings
     finding = findings[0]
 
-    assert finding.metadata == {
-        "build_systems": [],
-        "build_files": [],
-        "wrapper_files": [],
-        "lock_files": [],
-        "multiple_build_systems": False,
-    }
+    assert finding.metadata["build_systems"] == []
+    assert finding.metadata["build_files"] == []
+    assert finding.metadata["wrapper_files"] == []
+    assert finding.metadata["lock_files"] == []
+    assert finding.metadata["multiple_build_systems"] is False
     assert finding.evidence == []
     assert "No supported build system" in finding.description

@@ -86,8 +86,11 @@ class RepositoryMetricsAnalyzer:
         self,
         repository: Repository,
         technologies: Sequence[Technology],
+        facts: RepositoryFacts | None = None,
     ) -> AnalyzerResult:
         """Collect repository metrics and return one consolidated finding."""
+
+        del facts
 
         files = [PurePosixPath(file_path) for file_path in repository.files]
 

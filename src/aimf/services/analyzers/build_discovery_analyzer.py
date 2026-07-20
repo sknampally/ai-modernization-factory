@@ -17,7 +17,7 @@ from aimf.models import (
 )
 
 
-class BuildSystemAnalyzer:
+class BuildDiscoveryAnalyzer:
     """Detects build systems using deterministic repository artifacts."""
 
     _BUILD_SYSTEM_FILES: dict[str, set[str]] = {
@@ -91,8 +91,11 @@ class BuildSystemAnalyzer:
         self,
         repository: Repository,
         technologies: Sequence[Technology],
+        facts: RepositoryFacts | None = None,
     ) -> AnalyzerResult:
         """Detect build systems and return one consolidated finding."""
+
+        del facts
 
         files = [PurePosixPath(file_path) for file_path in repository.files]
 
