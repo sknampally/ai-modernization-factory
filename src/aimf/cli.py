@@ -9,7 +9,13 @@ from aimf import __version__
 from aimf.config import load_settings
 from aimf.logging_config import configure_logging
 from aimf.output_format import OutputFormat
-from aimf.result_renderer import render_json, render_text
+from aimf.reporters import (
+    ConsoleReporter,
+    JsonFileReporter,
+    TextFileReporter,
+    create_report_paths,
+)
+from aimf.result_renderer import render_json
 from aimf.services.analysis_service import AnalysisService
 from aimf.services.analyzers import (
     BuildDiscoveryAnalyzer,
@@ -71,6 +77,21 @@ def scan(
             case_sensitive=False,
         ),
     ] = OutputFormat.TEXT,
+    report_directory: Annotated[
+        Path,
+        typer.Option(
+            "--report-directory",
+            help="Directory where analysis reports are written.",
+        ),
+    ] = Path(".aimf/reports"),
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Display the complete report in the terminal.",
+        ),
+    ] = False,
 ) -> None:
     """Clone and analyze the configured public GitHub repository."""
 
@@ -109,10 +130,36 @@ def scan(
 
     result = analysis_service.analyze(repository)
 
+    report_paths = create_report_paths(
+        result=result,
+        base_directory=report_directory,
+    )
+
+    TextFileReporter().write(
+        result=result,
+        output_path=report_paths.text_report,
+    )
+
+    JsonFileReporter().write(
+        result=result,
+        output_path=report_paths.json_report,
+    )
+
     if output == OutputFormat.JSON:
         render_json(result)
-    else:
-        render_text(result)
+        return
+
+    console_reporter = ConsoleReporter()
+
+    if verbose:
+        console_reporter.render_detailed(result)
+        return
+
+    console_reporter.render_summary(
+        result=result,
+        text_report_path=report_paths.text_report,
+        json_report_path=report_paths.json_report,
+    )
 
 
 if __name__ == "__main__":
