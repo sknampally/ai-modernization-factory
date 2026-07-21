@@ -6,7 +6,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from rich.console import Console
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -29,7 +29,7 @@ class ConsoleReporter:
         self.render_detailed(result)
 
     def render_detailed(self, result: AnalysisResult) -> None:
-        """Render the complete analysis report."""
+        """Render the complete detailed analysis report."""
 
         self._render_header()
         self._render_repository(result)
@@ -81,7 +81,7 @@ class ConsoleReporter:
             box=None,
         )
         table.add_column("Field", style="bold")
-        table.add_column("Value")
+        table.add_column("Value", overflow="fold")
 
         table.add_row("Name", repository.name)
         table.add_row("Path", str(repository.path))
@@ -102,7 +102,7 @@ class ConsoleReporter:
             box=None,
         )
         table.add_column("Field", style="bold")
-        table.add_column("Value")
+        table.add_column("Value", overflow="fold")
 
         table.add_row("Name", repository.name)
         table.add_row("Files scanned", str(len(repository.files)))
@@ -128,15 +128,21 @@ class ConsoleReporter:
 
     def _render_technologies(self, result: AnalysisResult) -> None:
         table = Table(title="Technologies")
-        table.add_column("Technology", style="bold")
-        table.add_column("Category")
+        table.add_column("Technology", style="bold", overflow="fold")
+        table.add_column("Category", overflow="fold")
         table.add_column("Confidence", justify="right")
 
         for technology in result.technologies:
+            confidence = (
+                f"{technology.confidence:.0%}"
+                if technology.confidence is not None
+                else "Unknown"
+            )
+
             table.add_row(
                 technology.name,
                 self._display_value(technology.category),
-                f"{technology.confidence:.0%}",
+                confidence,
             )
 
         if result.technologies:
@@ -190,7 +196,7 @@ class ConsoleReporter:
             box=None,
         )
         table.add_column("Field", style="bold")
-        table.add_column("Value")
+        table.add_column("Value", overflow="fold")
 
         table.add_row(
             "Build systems",
@@ -249,7 +255,7 @@ class ConsoleReporter:
             box=None,
         )
         table.add_column("Field", style="bold")
-        table.add_column("Value")
+        table.add_column("Value", overflow="fold")
 
         table.add_row(
             "Manifests",
@@ -319,11 +325,13 @@ class ConsoleReporter:
             self.console.print()
             return
 
-        table = Table(title="Findings")
-        table.add_column("Severity", style="bold")
-        table.add_column("Rule")
-        table.add_column("Finding")
-        table.add_column("Evidence")
+        self.console.print(
+            Text(
+                f"Findings ({len(result.findings)})",
+                style="bold",
+            )
+        )
+        self.console.print()
 
         sorted_findings = sorted(
             result.findings,
@@ -331,46 +339,132 @@ class ConsoleReporter:
         )
 
         for finding in sorted_findings:
-            severity = self._display_value(finding.severity)
+            self._render_finding(finding)
 
-            table.add_row(
-                self._severity_text(severity),
-                finding.rule_id or "",
-                finding.title,
-                self._format_evidence(finding),
+    def _render_finding(self, finding: Finding) -> None:
+        severity = self._display_value(finding.severity)
+
+        heading = Text()
+        heading.append_text(self._severity_text(severity))
+        heading.append("  ")
+        heading.append(
+            finding.rule_id or "No rule ID",
+            style="bold",
+        )
+        heading.append("  ")
+        heading.append(
+            finding.title,
+            style="bold",
+        )
+
+        details: list[Text] = []
+
+        if finding.description:
+            description = Text()
+            description.append("Description: ", style="bold")
+            description.append(finding.description)
+            details.append(description)
+
+        category = Text()
+        category.append("Category: ", style="bold")
+        category.append(self._display_value(finding.category))
+        details.append(category)
+
+        source = Text()
+        source.append("Source: ", style="bold")
+        source.append(self._display_value(finding.source))
+        details.append(source)
+
+        if finding.affected_technologies:
+            technologies = Text()
+            technologies.append(
+                "Affected technologies: ",
+                style="bold",
             )
+            technologies.append(
+                ", ".join(finding.affected_technologies)
+            )
+            details.append(technologies)
 
-        self.console.print(table)
-        self.console.print()
+        evidence_renderables = self._finding_evidence(finding)
 
-    def _format_evidence(
+        panel_content = Group(
+            *details,
+            Text(),
+            *evidence_renderables,
+        )
+
+        self.console.print(
+            Panel(
+                panel_content,
+                title=heading,
+                title_align="left",
+                border_style=self._severity_style(severity),
+                expand=True,
+            )
+        )
+
+    def _finding_evidence(
         self,
         finding: Finding,
-        maximum_items: int = 5,
-    ) -> str:
+    ) -> list[Text]:
         if not finding.evidence:
-            return finding.description
+            no_evidence = Text()
+            no_evidence.append("Evidence: ", style="bold")
+            no_evidence.append("No structured evidence provided.")
+            return [no_evidence]
 
-        rendered: list[str] = []
+        rendered: list[Text] = [
+            Text("Evidence:", style="bold"),
+        ]
 
-        for item in finding.evidence[:maximum_items]:
+        for index, item in enumerate(
+            finding.evidence,
+            start=1,
+        ):
+            evidence = Text()
+            evidence.append(f"  {index}. ", style="dim")
+            evidence.append(item.file_path, style="bold")
+
+            if item.line_number is not None:
+                evidence.append(f":{item.line_number}")
+
+                if (
+                    item.end_line_number is not None
+                    and item.end_line_number != item.line_number
+                ):
+                    evidence.append(f"-{item.end_line_number}")
+
+            rendered.append(evidence)
+
             if item.detected_value:
-                rendered.append(
-                    f"{item.file_path}: {item.detected_value}"
+                detected_value = Text()
+                detected_value.append(
+                    "     Detected value: ",
+                    style="bold",
                 )
-            elif item.description:
-                rendered.append(
-                    f"{item.file_path}: {item.description}"
+                detected_value.append(item.detected_value)
+                rendered.append(detected_value)
+
+            if item.description:
+                description = Text()
+                description.append(
+                    "     Description: ",
+                    style="bold",
                 )
-            else:
-                rendered.append(item.file_path)
+                description.append(item.description)
+                rendered.append(description)
 
-        remaining = len(finding.evidence) - maximum_items
+            if item.snippet:
+                snippet = Text()
+                snippet.append(
+                    "     Snippet: ",
+                    style="bold",
+                )
+                snippet.append(item.snippet)
+                rendered.append(snippet)
 
-        if remaining > 0:
-            rendered.append(f"... and {remaining} more")
-
-        return "\n".join(rendered)
+        return rendered
 
     def _render_summary(self, result: AnalysisResult) -> None:
         severity_counts = Counter(
@@ -414,7 +508,7 @@ class ConsoleReporter:
             box=None,
         )
         table.add_column("Format", style="bold")
-        table.add_column("Path")
+        table.add_column("Path", overflow="fold")
 
         if text_report_path is not None:
             table.add_row(
@@ -450,6 +544,12 @@ class ConsoleReporter:
         )
 
     def _severity_text(self, severity: str) -> Text:
+        return Text(
+            severity.upper(),
+            style=self._severity_style(severity),
+        )
+
+    def _severity_style(self, severity: str) -> str:
         styles = {
             "critical": "bold red",
             "high": "red",
@@ -458,10 +558,7 @@ class ConsoleReporter:
             "info": "blue",
         }
 
-        return Text(
-            severity.upper(),
-            style=styles.get(severity, "white"),
-        )
+        return styles.get(severity, "white")
 
     def _display_value(self, value: Any) -> str:
         raw_value = getattr(value, "value", value)
