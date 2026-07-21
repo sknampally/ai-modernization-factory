@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
-import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -16,10 +14,18 @@ from aimf.models import (
     RepositoryFacts,
     Technology,
 )
+from aimf.services.analyzers.maven_dependency_parser import (
+    MavenDependencyParser,
+)
 
 
 class DependencyMetadataAnalyzer:
     """Extract direct dependencies from repository manifests."""
+
+    def __init__(self) -> None:
+        self._maven_parser = MavenDependencyParser(
+            dependency_classifier=self._classify_dependency,
+        )
 
     def analyze(
         self,
@@ -39,7 +45,7 @@ class DependencyMetadataAnalyzer:
 
             if relative_path.endswith("pom.xml"):
                 dependencies.extend(
-                    self._parse_maven(
+                    self._maven_parser.parse(
                         manifest_path=manifest_path,
                         relative_path=relative_path,
                     )
@@ -64,98 +70,8 @@ class DependencyMetadataAnalyzer:
 
         return AnalyzerResult(
             findings=[],
-            facts=RepositoryFacts(
-                dependencies=self._build_dependency_facts(dependencies)
-            ),
+            facts=RepositoryFacts(dependencies=self._build_dependency_facts(dependencies)),
         )
-
-    def _parse_maven(
-        self,
-        manifest_path: Path,
-        relative_path: str,
-    ) -> list[Dependency]:
-        """Parse direct dependencies from a Maven POM."""
-
-        if not manifest_path.is_file():
-            return []
-
-        try:
-            root = ET.parse(manifest_path).getroot()
-        except (ET.ParseError, OSError):
-            return []
-
-        namespace = self._xml_namespace(root)
-        properties = self._maven_properties(root, namespace)
-
-        dependencies: list[Dependency] = []
-
-        dependencies_element = root.find(
-            self._xml_path(namespace, "dependencies")
-        )
-
-        if dependencies_element is None:
-            return []
-
-        for dependency_element in dependencies_element.findall(
-            self._xml_path(namespace, "dependency")
-        ):
-            group_id = self._xml_text(
-                dependency_element,
-                namespace,
-                "groupId",
-            )
-            artifact_id = self._xml_text(
-                dependency_element,
-                namespace,
-                "artifactId",
-            )
-
-            if not artifact_id:
-                continue
-
-            name = (
-                f"{group_id}:{artifact_id}"
-                if group_id
-                else artifact_id
-            )
-
-            raw_version = self._xml_text(
-                dependency_element,
-                namespace,
-                "version",
-            )
-            version = self._resolve_maven_property(
-                raw_version,
-                properties,
-            )
-
-            maven_scope = self._xml_text(
-                dependency_element,
-                namespace,
-                "scope",
-            )
-
-            scope = self._normalize_maven_scope(maven_scope)
-
-            dependencies.append(
-                Dependency(
-                    name=name,
-                    version=version,
-                    ecosystem="maven",
-                    scope=scope,
-                    manifest_path=relative_path,
-                    categories=self._classify_dependency(
-                        name=name,
-                        ecosystem="maven",
-                    ),
-                    dynamic_version=self._is_dynamic_maven_version(
-                        raw_version
-                    ),
-                    unmanaged_version=raw_version is None,
-                )
-            )
-
-        return dependencies
 
     def _parse_npm(
         self,
@@ -168,9 +84,7 @@ class DependencyMetadataAnalyzer:
             return []
 
         try:
-            package_data = json.loads(
-                manifest_path.read_text(encoding="utf-8")
-            )
+            package_data = json.loads(manifest_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError, UnicodeDecodeError):
             return []
 
@@ -196,11 +110,7 @@ class DependencyMetadataAnalyzer:
                 if not isinstance(name, str):
                     continue
 
-                version = (
-                    version_value
-                    if isinstance(version_value, str)
-                    else None
-                )
+                version = version_value if isinstance(version_value, str) else None
 
                 dependencies.append(
                     Dependency(
@@ -213,10 +123,10 @@ class DependencyMetadataAnalyzer:
                             name=name,
                             ecosystem="npm",
                         ),
-                        dynamic_version=self._is_dynamic_npm_version(
-                            version
-                        ),
+                        dynamic_version=self._is_dynamic_npm_version(version),
                         unmanaged_version=version is None,
+                        version_managed=False,
+                        version_source=("dependency" if version is not None else None),
                     )
                 )
 
@@ -232,12 +142,10 @@ class DependencyMetadataAnalyzer:
             dependencies=dependencies,
             direct_dependency_count=len(dependencies),
             development_dependency_count=sum(
-                dependency.scope == "development"
-                for dependency in dependencies
+                dependency.scope == "development" for dependency in dependencies
             ),
             test_dependency_count=sum(
-                dependency.scope == "test"
-                or "testing" in dependency.categories
+                dependency.scope == "test" or "testing" in dependency.categories
                 for dependency in dependencies
             ),
             framework_dependencies=self._dependencies_in_category(
@@ -265,14 +173,10 @@ class DependencyMetadataAnalyzer:
                 "security",
             ),
             dynamic_version_dependencies=[
-                dependency.name
-                for dependency in dependencies
-                if dependency.dynamic_version
+                dependency.name for dependency in dependencies if dependency.dynamic_version
             ],
             unmanaged_version_dependencies=[
-                dependency.name
-                for dependency in dependencies
-                if dependency.unmanaged_version
+                dependency.name for dependency in dependencies if dependency.unmanaged_version
             ],
         )
 
@@ -285,9 +189,7 @@ class DependencyMetadataAnalyzer:
 
         return list(
             dict.fromkeys(
-                dependency.name
-                for dependency in dependencies
-                if category in dependency.categories
+                dependency.name for dependency in dependencies if category in dependency.categories
             )
         )
 
@@ -355,10 +257,7 @@ class DependencyMetadataAnalyzer:
         }
 
         for category, patterns in category_patterns.items():
-            if any(
-                pattern in normalized_name
-                for pattern in patterns
-            ):
+            if any(pattern in normalized_name for pattern in patterns):
                 categories.append(category)
 
         if ecosystem == "npm" and normalized_name in {
@@ -370,92 +269,6 @@ class DependencyMetadataAnalyzer:
                 categories.append("framework")
 
         return categories
-
-    def _maven_properties(
-        self,
-        root: ET.Element,
-        namespace: str,
-    ) -> dict[str, str]:
-        """Extract Maven project properties."""
-
-        properties_element = root.find(
-            self._xml_path(namespace, "properties")
-        )
-
-        if properties_element is None:
-            return {}
-
-        properties: dict[str, str] = {}
-
-        for child in properties_element:
-            property_name = child.tag.split("}")[-1]
-
-            if child.text:
-                properties[property_name] = child.text.strip()
-
-        return properties
-
-    def _resolve_maven_property(
-        self,
-        version: str | None,
-        properties: dict[str, str],
-    ) -> str | None:
-        """Resolve a Maven property-based version when possible."""
-
-        if version is None:
-            return None
-
-        match = re.fullmatch(r"\$\{([^}]+)\}", version)
-
-        if match is None:
-            return version
-
-        property_name = match.group(1)
-
-        return properties.get(property_name, version)
-
-    def _normalize_maven_scope(
-        self,
-        scope: str | None,
-    ) -> str:
-        """Map Maven scopes to normalized AIMF scopes."""
-
-        if scope is None or scope == "compile":
-            return "runtime"
-
-        if scope == "test":
-            return "test"
-
-        if scope == "provided":
-            return "provided"
-
-        if scope == "runtime":
-            return "runtime"
-
-        if scope == "system":
-            return "system"
-
-        if scope == "import":
-            return "import"
-
-        return scope
-
-    def _is_dynamic_maven_version(
-        self,
-        version: str | None,
-    ) -> bool:
-        """Determine whether a Maven version is dynamic."""
-
-        if version is None:
-            return False
-
-        normalized_version = version.strip().upper()
-
-        return (
-            normalized_version in {"LATEST", "RELEASE"}
-            or normalized_version.startswith("[")
-            or normalized_version.startswith("(")
-        )
 
     def _is_dynamic_npm_version(
         self,
@@ -480,42 +293,3 @@ class DependencyMetadataAnalyzer:
             or normalized_version.startswith("http")
             or normalized_version.startswith("file:")
         )
-
-    def _xml_namespace(self, root: ET.Element) -> str:
-        """Extract an XML namespace from an element tag."""
-
-        if root.tag.startswith("{"):
-            return root.tag.split("}")[0][1:]
-
-        return ""
-
-    def _xml_path(
-        self,
-        namespace: str,
-        element_name: str,
-    ) -> str:
-        """Construct an ElementTree path with an optional namespace."""
-
-        if namespace:
-            return f"{{{namespace}}}{element_name}"
-
-        return element_name
-
-    def _xml_text(
-        self,
-        parent: ET.Element,
-        namespace: str,
-        element_name: str,
-    ) -> str | None:
-        """Read and normalize text from a child XML element."""
-
-        element = parent.find(
-            self._xml_path(namespace, element_name)
-        )
-
-        if element is None or element.text is None:
-            return None
-
-        value = element.text.strip()
-
-        return value or None

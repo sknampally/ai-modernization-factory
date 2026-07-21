@@ -45,9 +45,7 @@ def test_finds_unmanaged_dependency_versions(
     finding = result.findings[0]
 
     assert finding.rule_id == "DEP001"
-    assert finding.metadata["dependency"] == (
-        "org.postgresql:postgresql"
-    )
+    assert finding.metadata["dependency"] == ("org.postgresql:postgresql")
 
 
 def test_finds_dynamic_dependency_versions(

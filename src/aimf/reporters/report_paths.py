@@ -26,11 +26,7 @@ def create_report_paths(
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 
-    report_directory = (
-        base_directory
-        / result.repository.name
-        / timestamp
-    )
+    report_directory = base_directory / result.repository.name / timestamp
 
     report_directory.mkdir(
         parents=True,

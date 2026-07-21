@@ -42,19 +42,14 @@ def test_renders_repository_and_findings() -> None:
             dependencies=DependencyFacts(
                 direct_dependency_count=3,
                 test_dependency_count=1,
-                framework_dependencies=[
-                    "org.springframework.boot:spring-boot-starter-web"
-                ],
+                framework_dependencies=["org.springframework.boot:spring-boot-starter-web"],
             ),
         ),
         findings=[
             Finding(
                 rule_id="DEP001",
                 title="Dependency has no explicit version",
-                description=(
-                    "org.postgresql:postgresql does not declare "
-                    "an explicit version."
-                ),
+                description=("org.postgresql:postgresql does not declare an explicit version."),
                 category=FindingCategory.DEPENDENCY,
                 severity=Severity.MEDIUM,
                 source=FindingSource.DETERMINISTIC,
@@ -62,8 +57,7 @@ def test_renders_repository_and_findings() -> None:
                     Evidence(
                         file_path="pom.xml",
                         description=(
-                            "org.postgresql:postgresql does not declare "
-                            "an explicit version."
+                            "org.postgresql:postgresql does not declare an explicit version."
                         ),
                         detected_value="org.postgresql:postgresql",
                     )

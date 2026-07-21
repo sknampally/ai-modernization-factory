@@ -134,9 +134,7 @@ class ConsoleReporter:
 
         for technology in result.technologies:
             confidence = (
-                f"{technology.confidence:.0%}"
-                if technology.confidence is not None
-                else "Unknown"
+                f"{technology.confidence:.0%}" if technology.confidence is not None else "Unknown"
             )
 
             table.add_row(
@@ -171,10 +169,7 @@ class ConsoleReporter:
             self.console.print()
             return
 
-        technologies = ", ".join(
-            technology.name
-            for technology in result.technologies
-        )
+        technologies = ", ".join(technology.name for technology in result.technologies)
 
         self.console.print(
             Panel(
@@ -259,21 +254,11 @@ class ConsoleReporter:
 
         table.add_row(
             "Manifests",
-            str(
-                sum(
-                    not manifest.lockfile
-                    for manifest in dependencies.manifests
-                )
-            ),
+            str(sum(not manifest.lockfile for manifest in dependencies.manifests)),
         )
         table.add_row(
             "Lockfiles",
-            str(
-                sum(
-                    manifest.lockfile
-                    for manifest in dependencies.manifests
-                )
-            ),
+            str(sum(manifest.lockfile for manifest in dependencies.manifests)),
         )
         table.add_row(
             "Direct dependencies",
@@ -289,15 +274,11 @@ class ConsoleReporter:
         )
         table.add_row(
             "Frameworks",
-            self._join_or_default(
-                dependencies.framework_dependencies
-            ),
+            self._join_or_default(dependencies.framework_dependencies),
         )
         table.add_row(
             "Database libraries",
-            self._join_or_default(
-                dependencies.database_drivers
-            ),
+            self._join_or_default(dependencies.database_drivers),
         )
         table.add_row(
             "Cloud SDKs",
@@ -305,9 +286,7 @@ class ConsoleReporter:
         )
         table.add_row(
             "Testing libraries",
-            self._join_or_default(
-                dependencies.testing_libraries
-            ),
+            self._join_or_default(dependencies.testing_libraries),
         )
 
         self.console.print(table)
@@ -381,9 +360,7 @@ class ConsoleReporter:
                 "Affected technologies: ",
                 style="bold",
             )
-            technologies.append(
-                ", ".join(finding.affected_technologies)
-            )
+            technologies.append(", ".join(finding.affected_technologies))
             details.append(technologies)
 
         evidence_renderables = self._finding_evidence(finding)
@@ -429,10 +406,7 @@ class ConsoleReporter:
             if item.line_number is not None:
                 evidence.append(f":{item.line_number}")
 
-                if (
-                    item.end_line_number is not None
-                    and item.end_line_number != item.line_number
-                ):
+                if item.end_line_number is not None and item.end_line_number != item.line_number:
                     evidence.append(f"-{item.end_line_number}")
 
             rendered.append(evidence)
@@ -468,8 +442,7 @@ class ConsoleReporter:
 
     def _render_summary(self, result: AnalysisResult) -> None:
         severity_counts = Counter(
-            self._display_value(finding.severity)
-            for finding in result.findings
+            self._display_value(finding.severity) for finding in result.findings
         )
 
         table = Table(

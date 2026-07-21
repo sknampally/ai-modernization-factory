@@ -63,9 +63,7 @@ def test_extracts_maven_metadata(tmp_path: Path) -> None:
     assert facts.multi_module
     assert facts.modules == ["service-api", "service-core"]
     assert facts.packaging_types == ["pom"]
-    assert facts.plugins == [
-        "org.apache.maven.plugins:maven-compiler-plugin"
-    ]
+    assert facts.plugins == ["org.apache.maven.plugins:maven-compiler-plugin"]
     assert facts.java_source_versions == ["17"]
     assert facts.java_target_versions == ["17"]
 

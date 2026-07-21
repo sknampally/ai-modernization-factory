@@ -290,9 +290,7 @@ class BuildMetadataAnalyzer:
     ) -> list[str]:
         return [
             child.text.strip()
-            for child in element.findall(
-                self._qualified_name(name, namespace)
-            )
+            for child in element.findall(self._qualified_name(name, namespace))
             if child.text and child.text.strip()
         ]
 
@@ -309,9 +307,7 @@ class BuildMetadataAnalyzer:
         plugins: list[str] = []
 
         for plugin_path in plugin_paths:
-            for plugin in project.findall(
-                self._qualified_name(plugin_path, namespace)
-            ):
+            for plugin in project.findall(self._qualified_name(plugin_path, namespace)):
                 group_id = self._find_text(
                     plugin,
                     "groupId",
@@ -326,11 +322,7 @@ class BuildMetadataAnalyzer:
                 if not artifact_id:
                     continue
 
-                plugins.append(
-                    f"{group_id}:{artifact_id}"
-                    if group_id
-                    else artifact_id
-                )
+                plugins.append(f"{group_id}:{artifact_id}" if group_id else artifact_id)
 
         return list(dict.fromkeys(plugins))
 
@@ -339,9 +331,7 @@ class BuildMetadataAnalyzer:
         project: ElementTree.Element,
         namespace: str,
     ) -> dict[str, str]:
-        properties_element = project.find(
-            self._qualified_name("properties", namespace)
-        )
+        properties_element = project.find(self._qualified_name("properties", namespace))
 
         if properties_element is None:
             return {}
@@ -392,11 +382,7 @@ class BuildMetadataAnalyzer:
             flags=re.DOTALL,
         )
 
-        searchable_content = (
-            plugin_block_match.group("body")
-            if plugin_block_match
-            else content
-        )
+        searchable_content = plugin_block_match.group("body") if plugin_block_match else content
 
         plugins: list[str] = []
 
@@ -430,10 +416,4 @@ class BuildMetadataAnalyzer:
 
     @staticmethod
     def _non_empty(*values: str | None) -> list[str]:
-        return list(
-            dict.fromkeys(
-                value
-                for value in values
-                if value is not None and value.strip()
-            )
-        )
+        return list(dict.fromkeys(value for value in values if value is not None and value.strip()))

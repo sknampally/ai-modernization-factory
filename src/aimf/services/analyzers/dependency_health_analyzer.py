@@ -162,23 +162,17 @@ class DependencyHealthAnalyzer:
         """Find ecosystems with manifests but no lockfile."""
 
         manifest_ecosystems = {
-            manifest.ecosystem
-            for manifest in dependency_facts.manifests
-            if not manifest.lockfile
+            manifest.ecosystem for manifest in dependency_facts.manifests if not manifest.lockfile
         }
 
         lockfile_ecosystems = {
-            manifest.ecosystem
-            for manifest in dependency_facts.manifests
-            if manifest.lockfile
+            manifest.ecosystem for manifest in dependency_facts.manifests if manifest.lockfile
         }
 
         findings: list[Finding] = []
 
         for ecosystem in sorted(manifest_ecosystems):
-            accepted_lockfile_ecosystems = self.LOCKFILE_ECOSYSTEMS.get(
-                ecosystem
-            )
+            accepted_lockfile_ecosystems = self.LOCKFILE_ECOSYSTEMS.get(ecosystem)
 
             if accepted_lockfile_ecosystems is None:
                 continue
@@ -189,10 +183,7 @@ class DependencyHealthAnalyzer:
             manifest_paths = sorted(
                 manifest.path
                 for manifest in dependency_facts.manifests
-                if (
-                    manifest.ecosystem == ecosystem
-                    and not manifest.lockfile
-                )
+                if (manifest.ecosystem == ecosystem and not manifest.lockfile)
             )
 
             description = (

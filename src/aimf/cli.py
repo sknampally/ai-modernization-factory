@@ -20,6 +20,7 @@ from aimf.services.analysis_service import AnalysisService
 from aimf.services.analyzers import (
     BuildDiscoveryAnalyzer,
     BuildMetadataAnalyzer,
+    CicdDiscoveryAnalyzer,
     CompositeAnalyzer,
     DependencyDiscoveryAnalyzer,
     DependencyHealthAnalyzer,
@@ -123,6 +124,7 @@ def scan(
                 DependencyDiscoveryAnalyzer(),
                 DependencyMetadataAnalyzer(),
                 DependencyHealthAnalyzer(),
+                CicdDiscoveryAnalyzer(),
             ]
         ),
         analyzer_version=__version__,

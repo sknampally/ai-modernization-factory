@@ -120,9 +120,7 @@ class FactsAwareFindingAnalyzer:
         self.received_facts = facts
 
         build_systems = (
-            facts.build.build_systems
-            if facts is not None and facts.build is not None
-            else []
+            facts.build.build_systems if facts is not None and facts.build is not None else []
         )
         manifest_count = (
             len(facts.dependencies.manifests)
@@ -222,16 +220,13 @@ def test_composite_analyzer_passes_merged_facts_to_each_next_analyzer() -> None:
     assert facts_aware_analyzer.received_facts.build.build_systems == ["maven"]
     assert facts_aware_analyzer.received_facts.dependencies is not None
     assert [
-        manifest.path
-        for manifest in facts_aware_analyzer.received_facts.dependencies.manifests
+        manifest.path for manifest in facts_aware_analyzer.received_facts.dependencies.manifests
     ] == ["pom.xml"]
 
     assert result.facts.build is not None
     assert result.facts.build.build_systems == ["maven"]
     assert result.facts.dependencies is not None
-    assert [
-        manifest.path for manifest in result.facts.dependencies.manifests
-    ] == ["pom.xml"]
+    assert [manifest.path for manifest in result.facts.dependencies.manifests] == ["pom.xml"]
 
     assert len(result.findings) == 1
     assert result.findings[0].metadata["build_systems"] == ["maven"]

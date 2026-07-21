@@ -6,6 +6,9 @@ from aimf.services.analyzers.build_discovery_analyzer import (
 from aimf.services.analyzers.build_metadata_analyzer import (
     BuildMetadataAnalyzer,
 )
+from aimf.services.analyzers.cicd_discovery_analyzer import (
+    CicdDiscoveryAnalyzer,
+)
 from aimf.services.analyzers.composite_analyzer import CompositeAnalyzer
 from aimf.services.analyzers.dependency_discovery_analyzer import (
     DependencyDiscoveryAnalyzer,
@@ -21,11 +24,12 @@ from aimf.services.analyzers.repository_metrics_analyzer import (
 )
 
 __all__ = [
-    "CompositeAnalyzer",
-    "RepositoryMetricsAnalyzer",
     "BuildDiscoveryAnalyzer",
     "BuildMetadataAnalyzer",
+    "CicdDiscoveryAnalyzer",
+    "CompositeAnalyzer",
     "DependencyDiscoveryAnalyzer",
-    "DependencyMetadataAnalyzer",
     "DependencyHealthAnalyzer",
+    "DependencyMetadataAnalyzer",
+    "RepositoryMetricsAnalyzer",
 ]

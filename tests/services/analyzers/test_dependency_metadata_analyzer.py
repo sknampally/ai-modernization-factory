@@ -58,14 +58,9 @@ def test_extracts_maven_dependencies(tmp_path: Path) -> None:
     assert facts.direct_dependency_count == 3
     assert facts.test_dependency_count == 1
 
-    dependencies = {
-        dependency.name: dependency
-        for dependency in facts.dependencies
-    }
+    dependencies = {dependency.name: dependency for dependency in facts.dependencies}
 
-    spring = dependencies[
-        "org.springframework.boot:spring-boot-starter-web"
-    ]
+    spring = dependencies["org.springframework.boot:spring-boot-starter-web"]
     assert spring.version == "3.5.0"
     assert spring.scope == "runtime"
     assert spring.categories == ["framework"]
@@ -77,15 +72,9 @@ def test_extracts_maven_dependencies(tmp_path: Path) -> None:
     postgresql = dependencies["org.postgresql:postgresql"]
     assert postgresql.unmanaged_version is True
 
-    assert facts.framework_dependencies == [
-        "org.springframework.boot:spring-boot-starter-web"
-    ]
-    assert facts.database_drivers == [
-        "org.postgresql:postgresql"
-    ]
-    assert facts.testing_libraries == [
-        "org.junit.jupiter:junit-jupiter"
-    ]
+    assert facts.framework_dependencies == ["org.springframework.boot:spring-boot-starter-web"]
+    assert facts.database_drivers == ["org.postgresql:postgresql"]
+    assert facts.testing_libraries == ["org.junit.jupiter:junit-jupiter"]
 
 
 def test_extracts_npm_dependencies(tmp_path: Path) -> None:
@@ -125,10 +114,7 @@ def test_extracts_npm_dependencies(tmp_path: Path) -> None:
     assert facts.development_dependency_count == 1
     assert facts.test_dependency_count == 1
 
-    dependencies = {
-        dependency.name: dependency
-        for dependency in facts.dependencies
-    }
+    dependencies = {dependency.name: dependency for dependency in facts.dependencies}
 
     assert dependencies["react"].dynamic_version is True
     assert dependencies["jest"].scope == "development"
