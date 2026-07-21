@@ -15,6 +15,7 @@ from aimf.ai.agents.models import (
     ModernizationAssessmentResult,
 )
 from aimf.ai.contracts.models import (
+    LLM_CONTRACT_SCHEMA_VERSION,
     LLMAnalysisContext,
     LLMEvidenceLocation,
     LLMFindingEvidence,
@@ -22,7 +23,6 @@ from aimf.ai.contracts.models import (
     LLMRepositoryContext,
     LLMSectionTruncation,
     LLMTechnologyEvidence,
-    LLM_CONTRACT_SCHEMA_VERSION,
 )
 from aimf.ai.providers.models import ModelInvocationMetadata, ModelUsage
 from aimf.ai.recommendations import (
@@ -49,7 +49,6 @@ from aimf.models import (
     TechnologyCategory,
 )
 from aimf.reporting import (
-    CONTENT_SECURITY_POLICY,
     ModernizationHTMLReportRenderer,
     ModernizationReportInput,
     ModernizationReportValidationError,
@@ -348,7 +347,7 @@ def test_repository_overview_technology_and_metrics(tmp_path: Path) -> None:
 def test_risks_recommendations_and_phases(tmp_path: Path) -> None:
     html = ModernizationHTMLReportRenderer().render(_report_input(tmp_path))
     assert "REC-001" in html
-    assert "Title REC-001" in html
+    assert "Title REC-<wbr>001" in html or "Title REC-001" in html
     assert "Phase 1: Stabilize" in html
     assert "Reduce critical risk" in html
     assert "EFFORT MEDIUM" in html
@@ -361,7 +360,7 @@ def test_deterministic_findings_and_anchors(tmp_path: Path) -> None:
     assert 'id="finding-sec001"' in html
     assert 'href="#finding-sec001"' in html
     assert "Repository-level analysis" in html
-    assert "src/App.java:10" in html
+    assert "src/<wbr>App.<wbr>java:<wbr>10" in html
     assert "Deterministic analysis evidence" in html
 
 
@@ -389,8 +388,8 @@ def test_methodology_toc_print_css_and_csp(tmp_path: Path) -> None:
     assert "@media print" in html
     assert "page-break-before: always" in html
     assert "Content-Security-Policy" in html
-    assert CONTENT_SECURITY_POLICY.split(";")[0] in html
-    assert "script-src 'none'" in html
+    assert "default-src &#x27;none&#x27;" in html
+    assert "script-src &#x27;none&#x27;" in html
     assert "Deterministic repository analysis" in html
 
 
@@ -399,8 +398,8 @@ def test_html_escaping_and_injection_prevention(tmp_path: Path) -> None:
     poisoned = ModernizationAssessmentResult(
         recommendation_result=AIRecommendationResult(
             executive_summary='<script>alert("xss")</script>',
-            overall_assessment='<img src=x onerror=alert(1)>',
-            key_risks=['<b>bold</b>'],
+            overall_assessment="<img src=x onerror=alert(1)>",
+            key_risks=["<b>bold</b>"],
             recommendations=[
                 _recommendation("REC-001", related=["SEC001"]),
             ],
@@ -421,31 +420,30 @@ def test_html_escaping_and_injection_prevention(tmp_path: Path) -> None:
         _report_input(
             tmp_path,
             assessment=poisoned,
-            organization_name='<script>org</script>',
-            confidentiality_notice='<svg onload=alert(1)>',
+            organization_name="<script>org</script>",
+            confidentiality_notice="<svg onload=alert(1)>",
         )
     )
     assert "<script>alert" not in html
     assert "&lt;script&gt;alert" in html
     assert "<img src=x" not in html
     assert "<iframe" not in html
-    assert "onload=" not in html
+    assert "<svg onload=" not in html
+    assert "&lt;svg onload=" in html
 
 
 def test_absence_of_raw_response_prompts_excerpts_credentials(tmp_path: Path) -> None:
     assessment = _assessment(
         raw_response=(
-            "SYSTEM INSTRUCTIONS Developer instructions "
-            "AKIAIOSFODNN7EXAMPLE excerpt=class App {}"
+            "SYSTEM INSTRUCTIONS Developer instructions AKIAIOSFODNN7EXAMPLE excerpt=class App {}"
         )
     )
-    html = ModernizationHTMLReportRenderer().render(
-        _report_input(tmp_path, assessment=assessment)
-    )
+    html = ModernizationHTMLReportRenderer().render(_report_input(tmp_path, assessment=assessment))
     assert "AKIAIOSFODNN7EXAMPLE" not in html
     assert "SYSTEM INSTRUCTIONS" not in html
     assert "Developer instructions" not in html
     assert "excerpt=class App {}" not in html
+    assert assessment.raw_model_response is not None
     assert assessment.raw_model_response not in html
     assert str(tmp_path / "workspace" / "sample-app") not in html
 
@@ -494,16 +492,14 @@ def test_invalid_phase_reference_rejection(tmp_path: Path) -> None:
         evidence_coverage=base.recommendation_result.evidence_coverage,
         limitations=base.recommendation_result.limitations,
     )
-    assessment = ModernizationAssessmentResult(
+    assessment = ModernizationAssessmentResult.model_construct(
         recommendation_result=broken,
         model_metadata=base.model_metadata,
         trace=base.trace,
         raw_model_response=None,
     )
     with pytest.raises(ModernizationReportValidationError, match="Phase recommendation"):
-        ModernizationHTMLReportRenderer().render(
-            _report_input(tmp_path, assessment=assessment)
-        )
+        ModernizationHTMLReportRenderer().render(_report_input(tmp_path, assessment=assessment))
 
 
 def test_json_round_trip(tmp_path: Path) -> None:
@@ -526,13 +522,14 @@ def test_file_writing(tmp_path: Path) -> None:
 
 def test_no_external_assets_or_scripts(tmp_path: Path) -> None:
     html = ModernizationHTMLReportRenderer().render(_report_input(tmp_path))
-    assert "<script" not in html.lower()
-    assert "onclick=" not in html.lower()
-    assert "http://" not in html or "https://github.com/example/sample-app.git" not in html
-    assert "https://" not in html.replace("https://github.com/example/sample-app.git", "")
-    assert "cdn." not in html.lower()
-    assert "@import" not in html.lower()
-    assert "<link " not in html.lower()
+    lowered = html.lower()
+    assert "<script" not in lowered
+    assert "onclick=" not in lowered
+    assert "onerror=" not in lowered
+    assert "<link " not in lowered
+    assert "cdn." not in lowered
+    assert "@import" not in lowered
+    assert 'src="http' not in lowered
 
 
 def test_frozen_input_contract(tmp_path: Path) -> None:

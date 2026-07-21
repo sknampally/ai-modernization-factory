@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from aimf.ai.agents.models import AGENT_VERSION, ModernizationAssessmentResult
-from aimf.ai.contracts.models import LLMAnalysisContext, LLM_CONTRACT_SCHEMA_VERSION
+from aimf.ai.contracts.models import LLM_CONTRACT_SCHEMA_VERSION, LLMAnalysisContext
 from aimf.ai.recommendations.models import (
     AI_RECOMMENDATION_SCHEMA_VERSION,
     AIRecommendationResult,
@@ -154,8 +154,7 @@ def _assert_recommendation_finding_links(
                 missing.add(finding_id)
     if missing:
         raise ModernizationReportValidationError(
-            "Recommendation finding references do not resolve: "
-            + ", ".join(sorted(missing))
+            "Recommendation finding references do not resolve: " + ", ".join(sorted(missing))
         )
 
 
@@ -170,8 +169,7 @@ def _assert_phase_recommendation_links(
                 missing.add(recommendation_id)
     if missing:
         raise ModernizationReportValidationError(
-            "Phase recommendation references do not resolve: "
-            + ", ".join(sorted(missing))
+            "Phase recommendation references do not resolve: " + ", ".join(sorted(missing))
         )
 
 

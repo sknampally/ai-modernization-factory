@@ -54,6 +54,8 @@ CONTENT_SECURITY_POLICY = (
     "style-src 'unsafe-inline'"
 )
 
+_EMPTY_TECH_ROW = '<tr><td colspan="3">None detected</td></tr>'
+
 
 class ModernizationHTMLReportRenderer:
     """Render a polished, deterministic modernization assessment HTML report."""
@@ -102,9 +104,7 @@ class ModernizationHTMLReportRenderer:
         notice = report_input.confidentiality_notice
         generated = _format_timestamp(report_input.generated_at_utc)
         org_row = (
-            f"<dt>Organization</dt><dd>{escape_and_wrap(org)}</dd>\n"
-            if org and org.strip()
-            else ""
+            f"<dt>Organization</dt><dd>{escape_and_wrap(org)}</dd>\n" if org and org.strip() else ""
         )
         notice_block = (
             f'<p class="confidentiality">{escape_and_wrap(notice)}</p>\n'
@@ -147,8 +147,7 @@ class ModernizationHTMLReportRenderer:
             ("methodology", "Methodology"),
         ]
         links = "".join(
-            f'<li><a href="#{anchor}">{escape_html(label)}</a></li>\n'
-            for anchor, label in items
+            f'<li><a href="#{anchor}">{escape_html(label)}</a></li>\n' for anchor, label in items
         )
         return (
             '<nav id="contents" class="section toc" aria-label="Table of contents">\n'
@@ -207,9 +206,11 @@ class ModernizationHTMLReportRenderer:
         tech_table = wrap_table(
             '<table class="facts">\n'
             "<thead><tr><th>Technology</th><th>Category</th><th>Version</th></tr></thead>\n"
-            f"<tbody>{tech_rows or '<tr><td colspan=\"3\">None detected</td></tr>'}</tbody>\n"
+            f"<tbody>{tech_rows or _EMPTY_TECH_ROW}</tbody>\n"
             "</table>\n"
         )
+        source_files = _optional_int(metrics.source_file_count)
+        test_files = _optional_int(metrics.test_file_count)
         return (
             '<section id="repository-overview" '
             'class="section deterministic-section page-break">\n'
@@ -223,8 +224,8 @@ class ModernizationHTMLReportRenderer:
             "<dt>Commit</dt>"
             f"<dd>{escape_and_wrap(context.repository.commit_sha or '—')}</dd>\n"
             f"<dt>Files analyzed</dt><dd>{context.repository.file_count}</dd>\n"
-            f"<dt>Source files</dt><dd>{metrics.source_file_count if metrics.source_file_count is not None else '—'}</dd>\n"
-            f"<dt>Test files</dt><dd>{metrics.test_file_count if metrics.test_file_count is not None else '—'}</dd>\n"
+            f"<dt>Source files</dt><dd>{source_files}</dd>\n"
+            f"<dt>Test files</dt><dd>{test_files}</dd>\n"
             f"<dt>Technologies</dt><dd>{metrics.technology_count}</dd>\n"
             f"<dt>Findings (analysis)</dt><dd>{len(analysis.findings)}</dd>\n"
             f"<dt>Findings (context)</dt><dd>{len(context.findings)}</dd>\n"
@@ -241,8 +242,7 @@ class ModernizationHTMLReportRenderer:
         priority_risks = [
             item
             for item in recommendation.recommendations
-            if item.priority
-            in {AIRecommendationPriority.CRITICAL, AIRecommendationPriority.HIGH}
+            if item.priority in {AIRecommendationPriority.CRITICAL, AIRecommendationPriority.HIGH}
         ]
         anchors = finding_anchor_map(report_input.analysis_result.findings)
 
@@ -283,7 +283,7 @@ class ModernizationHTMLReportRenderer:
             '<div class="card-header">\n'
             f"{_priority_badge(recommendation.priority)}"
             f"{_confidence_badge(recommendation.confidence)}"
-            f'<span class="rule-id">{escape_and_wrap(recommendation.recommendation_id)}</span>\n'
+            f'<span class="rule-id">{escape_html(recommendation.recommendation_id)}</span>\n'
             f"<h3>{escape_and_wrap(recommendation.title)}</h3>\n"
             "</div>\n"
             f"<p>{escape_and_wrap(recommendation.description)}</p>\n"
@@ -297,9 +297,7 @@ class ModernizationHTMLReportRenderer:
         if not recommendations:
             body = '<p class="empty">No recommendations were generated.</p>\n'
         else:
-            body = "".join(
-                self._recommendation_card(item, anchors) for item in recommendations
-            )
+            body = "".join(self._recommendation_card(item, anchors) for item in recommendations)
         return (
             '<section id="recommendations" class="section ai-section page-break">\n'
             f"<h2>Recommendations ({len(recommendations)})</h2>\n"
@@ -316,15 +314,14 @@ class ModernizationHTMLReportRenderer:
         actions = (
             "<ul>"
             + "".join(
-                f"<li>{escape_and_wrap(action)}</li>"
-                for action in recommendation.suggested_actions
+                f"<li>{escape_and_wrap(action)}</li>" for action in recommendation.suggested_actions
             )
             + "</ul>"
             if recommendation.suggested_actions
             else "<p>None</p>"
         )
         dependencies = (
-            ", ".join(escape_and_wrap(item) for item in recommendation.dependencies)
+            ", ".join(escape_html(item) for item in recommendation.dependencies)
             if recommendation.dependencies
             else escape_html("None")
         )
@@ -337,7 +334,7 @@ class ModernizationHTMLReportRenderer:
             f"{_effort_badge(recommendation.effort)}"
             f"{_impact_badge(recommendation.impact)}"
             f"{_confidence_badge(recommendation.confidence)}"
-            f'<span class="rule-id">{escape_and_wrap(recommendation.recommendation_id)}</span>\n'
+            f'<span class="rule-id">{escape_html(recommendation.recommendation_id)}</span>\n'
             f"<h3>{escape_and_wrap(recommendation.title)}</h3>\n"
             "</div>\n"
             f"<p>{escape_and_wrap(recommendation.description)}</p>\n"
@@ -365,8 +362,7 @@ class ModernizationHTMLReportRenderer:
     def _phase_card(self, phase: ModernizationPhase) -> str:
         recommendations = (
             ", ".join(
-                f'<a href="#recommendation-{escape_html(_slug(item))}">'
-                f"{escape_and_wrap(item)}</a>"
+                f'<a href="#recommendation-{escape_html(_slug(item))}">{escape_html(item)}</a>'
                 for item in phase.recommendations
             )
             if phase.recommendations
@@ -413,7 +409,10 @@ class ModernizationHTMLReportRenderer:
                 rule_id = finding.rule_id or ""
                 index = occurrence.get(rule_id, 0)
                 occurrence[rule_id] = index + 1
-                anchor = finding_anchor_id(rule_id or finding.id, index=index)
+                anchor = finding_anchor_id(
+                    rule_id or str(finding.id),
+                    index=index,
+                )
                 cards.append(self._finding_card(finding, anchor))
             blocks.append(
                 f'<div class="category-group">\n'
@@ -444,7 +443,7 @@ class ModernizationHTMLReportRenderer:
             f'<article id="{escape_html(anchor)}" class="card finding-card deterministic-card">\n'
             '<div class="card-header">\n'
             f"{_severity_badge(finding.severity)}"
-            f'<span class="rule-id">{escape_and_wrap(finding.rule_id or "No rule ID")}</span>\n'
+            f'<span class="rule-id">{escape_html(finding.rule_id or "No rule ID")}</span>\n'
             f"<h4>{escape_and_wrap(finding.title)}</h4>\n"
             "</div>\n"
             f"<p>{escape_and_wrap(finding.description)}</p>\n"
@@ -470,16 +469,20 @@ class ModernizationHTMLReportRenderer:
             )
             if path in {".", "./"} or item.file_path.strip() in {".", "./"}:
                 location = REPOSITORY_LEVEL_EVIDENCE_LABEL
-            parts = [
-                f'<span class="technical-value evidence-location">'
-                f"{escape_and_wrap(location)}</span>"
-            ]
+                parts = [
+                    f'<span class="technical-value evidence-location">'
+                    f"{escape_html(location)}</span>"
+                ]
+            else:
+                parts = [
+                    f'<span class="technical-value evidence-location">'
+                    f"{escape_and_wrap(location)}</span>"
+                ]
             if item.description:
                 parts.append(f" — {escape_and_wrap(item.description)}")
             items.append(f"<li>{''.join(parts)}</li>")
         return (
-            '<p><strong>Evidence:</strong></p>\n'
-            f'<ul class="evidence-list">{"".join(items)}</ul>\n'
+            f'<p><strong>Evidence:</strong></p>\n<ul class="evidence-list">{"".join(items)}</ul>\n'
         )
 
     def _render_coverage_and_limitations(
@@ -525,16 +528,19 @@ class ModernizationHTMLReportRenderer:
         metadata = assessment.model_metadata
         trace = assessment.trace
         usage = metadata.usage
+        input_tokens = _optional_int(usage.input_tokens)
+        output_tokens = _optional_int(usage.output_tokens)
+        total_tokens = _optional_int(usage.total_tokens)
         return (
             '<section id="execution" class="section page-break">\n'
             "<h2>Assessment Execution Details</h2>\n"
             '<dl class="meta-grid">\n'
-            f"<dt>Provider</dt><dd>{escape_and_wrap(metadata.provider)}</dd>\n"
-            f"<dt>Model ID</dt><dd>{escape_and_wrap(metadata.model_id)}</dd>\n"
+            f"<dt>Provider</dt><dd>{escape_html(metadata.provider)}</dd>\n"
+            f"<dt>Model ID</dt><dd>{escape_html(metadata.model_id)}</dd>\n"
             f"<dt>Latency (ms)</dt><dd>{metadata.latency_ms:.2f}</dd>\n"
-            f"<dt>Input tokens</dt><dd>{usage.input_tokens if usage.input_tokens is not None else '—'}</dd>\n"
-            f"<dt>Output tokens</dt><dd>{usage.output_tokens if usage.output_tokens is not None else '—'}</dd>\n"
-            f"<dt>Total tokens</dt><dd>{usage.total_tokens if usage.total_tokens is not None else '—'}</dd>\n"
+            f"<dt>Input tokens</dt><dd>{input_tokens}</dd>\n"
+            f"<dt>Output tokens</dt><dd>{output_tokens}</dd>\n"
+            f"<dt>Total tokens</dt><dd>{total_tokens}</dd>\n"
             f"<dt>Agent version</dt><dd>{escape_html(trace.agent_version)}</dd>\n"
             f"<dt>Tool-call count</dt><dd>{trace.tool_call_count}</dd>\n"
             f"<dt>Model-call count</dt><dd>{trace.model_call_count}</dd>\n"
@@ -576,7 +582,7 @@ class ModernizationHTMLReportRenderer:
         parts: list[str] = []
         for finding_id in finding_ids:
             anchor = anchors.get(finding_id)
-            label = escape_and_wrap(finding_id)
+            label = escape_html(finding_id)
             if anchor:
                 parts.append(f'<a href="#{escape_html(anchor)}">{label}</a>')
             else:
@@ -584,20 +590,18 @@ class ModernizationHTMLReportRenderer:
         return ", ".join(parts)
 
 
+def _optional_int(value: int | None) -> str:
+    return str(value) if value is not None else "—"
+
+
 def _severity_badge(severity: Severity | str) -> str:
     value = str(getattr(severity, "value", severity)).lower()
-    return (
-        f'<span class="badge severity-{escape_html(value)}">'
-        f"{escape_html(value.upper())}</span>"
-    )
+    return f'<span class="badge severity-{escape_html(value)}">{escape_html(value.upper())}</span>'
 
 
 def _priority_badge(priority: AIRecommendationPriority | str) -> str:
     value = str(getattr(priority, "value", priority)).lower()
-    return (
-        f'<span class="badge priority-{escape_html(value)}">'
-        f"{escape_html(value.upper())}</span>"
-    )
+    return f'<span class="badge priority-{escape_html(value)}">{escape_html(value.upper())}</span>'
 
 
 def _effort_badge(effort: AIRecommendationEffort | str) -> str:
