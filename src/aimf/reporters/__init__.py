@@ -1,6 +1,7 @@
 """Analysis result reporters."""
 
 from aimf.reporters.console_reporter import ConsoleReporter
+from aimf.reporters.html_file_reporter import HtmlFileReporter
 from aimf.reporters.json_file_reporter import JsonFileReporter
 from aimf.reporters.report_paths import (
     ReportPaths,
@@ -11,6 +12,7 @@ from aimf.reporters.text_file_reporter import TextFileReporter
 
 __all__ = [
     "ConsoleReporter",
+    "HtmlFileReporter",
     "JsonFileReporter",
     "ReportPaths",
     "TextFileReporter",

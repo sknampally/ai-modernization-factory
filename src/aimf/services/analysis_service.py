@@ -2,12 +2,17 @@
 
 import logging
 from datetime import UTC, datetime
+from pathlib import Path
 from time import perf_counter
 
-from aimf.models import AnalysisResult, Repository, RepositoryFacts
+from aimf import RULESET_VERSION
+from aimf.models import AnalysisResult, Finding, Repository, RepositoryFacts
 from aimf.services.contracts import Analyzer, RecommendationEngine, TechnologyDetector
 from aimf.services.recommendation_engine import ModernizationRecommendationEngine
 from aimf.services.technology_facts import technology_facts_from_detections
+from aimf.static_analysis.models import StaticAnalysisResult
+from aimf.static_analysis.ordering import sort_findings
+from aimf.static_analysis.service import StaticAnalysisService
 
 logger = logging.getLogger(__name__)
 
@@ -21,13 +26,20 @@ class AnalysisService:
         analyzer: Analyzer,
         analyzer_version: str,
         recommendation_engine: RecommendationEngine | None = None,
+        static_analysis_service: StaticAnalysisService | None = None,
     ) -> None:
         self._technology_detector = technology_detector
         self._analyzer = analyzer
         self._analyzer_version = analyzer_version
         self._recommendation_engine = recommendation_engine or ModernizationRecommendationEngine()
+        self._static_analysis_service = static_analysis_service
 
-    def analyze(self, repository: Repository) -> AnalysisResult:
+    def analyze(
+        self,
+        repository: Repository,
+        *,
+        static_analysis_output_directory: Path | None = None,
+    ) -> AnalysisResult:
         """Analyze a scanned repository and return structured results."""
 
         started_at = datetime.now(UTC)
@@ -66,9 +78,20 @@ class AnalysisService:
                 )
             )
 
+            static_analysis_results: list[StaticAnalysisResult] = []
+            provider_findings: list[Finding] = []
+            if self._static_analysis_service is not None:
+                static_analysis_results, provider_findings = self._static_analysis_service.analyze(
+                    repository=repository,
+                    technologies=technologies,
+                    output_directory=static_analysis_output_directory,
+                )
+
+            findings = sort_findings([*analyzer_result.findings, *provider_findings])
+
             recommendations = self._recommendation_engine.generate(
                 facts=facts,
-                findings=analyzer_result.findings,
+                findings=findings,
                 technologies=technologies,
             )
 
@@ -81,7 +104,7 @@ class AnalysisService:
                     "repository_name": repository.name,
                     "stage": "analysis",
                     "technology_count": len(technologies),
-                    "finding_count": len(analyzer_result.findings),
+                    "finding_count": len(findings),
                     "recommendation_count": len(recommendations),
                     "duration_ms": duration_ms,
                 },
@@ -91,11 +114,13 @@ class AnalysisService:
                 repository=repository,
                 technologies=technologies,
                 facts=facts,
-                findings=analyzer_result.findings,
+                findings=findings,
                 recommendations=recommendations,
+                static_analysis_results=static_analysis_results,
                 started_at=started_at,
                 completed_at=completed_at,
                 analyzer_version=self._analyzer_version,
+                ruleset_version=RULESET_VERSION,
             )
 
         except Exception:

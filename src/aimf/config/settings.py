@@ -1,16 +1,32 @@
 """Application configuration loaded from a TOML file."""
 
+from __future__ import annotations
+
 import tomllib
 from pathlib import Path
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from aimf.repository_auth.github_urls import parse_github_repository_url
+from aimf.repository_auth.models import RepositoryAuthenticationConfig
 
 
 class RepositorySettings(BaseModel):
     """Configuration for the repository being analyzed."""
 
-    url: HttpUrl
+    url: str
     branch: str | None = None
+    authentication: RepositoryAuthenticationConfig | None = None
+
+    @field_validator("url")
+    @classmethod
+    def validate_repository_url(cls, value: str) -> str:
+        compact = value.strip()
+        if not compact:
+            raise ValueError("repository.url must be a nonempty GitHub URL")
+        # Validate shape at configuration load time; do not resolve credentials.
+        parse_github_repository_url(compact)
+        return compact
 
 
 class WorkspaceSettings(BaseModel):
@@ -20,12 +36,91 @@ class WorkspaceSettings(BaseModel):
     clean_before_clone: bool = True
 
 
+class PmdSettings(BaseModel):
+    """Configuration for the PMD static-analysis provider."""
+
+    enabled: bool = True
+    executable: str = "pmd"
+    rulesets: list[str] = Field(
+        default_factory=lambda: [
+            "category/java/bestpractices.xml",
+            "category/java/errorprone.xml",
+            "category/java/design.xml",
+        ]
+    )
+    minimum_priority: int = 5
+    timeout_seconds: int = 120
+
+    @field_validator("executable")
+    @classmethod
+    def validate_executable(cls, value: str) -> str:
+        compact = value.strip()
+        if not compact:
+            raise ValueError("PMD executable must be a nonempty string")
+        if any(character in compact for character in [";", "|", "&", "`", "$", "\n"]):
+            raise ValueError("PMD executable must not contain shell metacharacters")
+        return compact
+
+    @field_validator("rulesets")
+    @classmethod
+    def validate_rulesets(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("PMD rulesets must not be empty")
+        cleaned: list[str] = []
+        for item in value:
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError("PMD rulesets must be nonempty strings")
+            cleaned.append(item.strip())
+        return cleaned
+
+    @field_validator("minimum_priority")
+    @classmethod
+    def validate_priority(cls, value: int) -> int:
+        if value < 1 or value > 5:
+            raise ValueError("PMD minimum_priority must be between 1 and 5")
+        return value
+
+    @field_validator("timeout_seconds")
+    @classmethod
+    def validate_timeout(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("PMD timeout_seconds must be a positive integer")
+        return value
+
+
+class StaticAnalysisProviderSettings(BaseModel):
+    """Provider-specific static-analysis settings."""
+
+    pmd: PmdSettings = Field(default_factory=PmdSettings)
+
+
+class StaticAnalysisSettings(BaseModel):
+    """Top-level static-analysis subsystem settings."""
+
+    enabled: bool = False
+    fail_on_provider_error: bool = False
+    pmd: PmdSettings = Field(default_factory=PmdSettings)
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_nested_pmd(cls, value: object) -> object:
+        """Allow both [static_analysis.pmd] nesting styles from TOML."""
+
+        if not isinstance(value, dict):
+            return value
+        # tomllib may provide pmd as nested table already.
+        return value
+
+
 class AimfSettings(BaseModel):
     """Top-level AIMF application settings."""
 
     repository: RepositorySettings
     workspace: WorkspaceSettings = Field(
         default_factory=WorkspaceSettings,
+    )
+    static_analysis: StaticAnalysisSettings = Field(
+        default_factory=StaticAnalysisSettings,
     )
 
 

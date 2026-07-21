@@ -12,6 +12,9 @@ from aimf.models import (
     RepositoryFacts,
     Technology,
 )
+from aimf.services.analyzers.cicd_command_classifier import (
+    CicdCommandClassifier,
+)
 from aimf.services.analyzers.github_actions_parser import (
     GitHubActionsParser,
 )
@@ -42,10 +45,12 @@ class CicdDiscoveryAnalyzer:
     def __init__(
         self,
         github_actions_parser: GitHubActionsParser | None = None,
+        command_classifier: CicdCommandClassifier | None = None,
     ) -> None:
         """Initialize the CI/CD discovery analyzer."""
 
         self._github_actions_parser = github_actions_parser or GitHubActionsParser()
+        self._command_classifier = command_classifier or CicdCommandClassifier()
 
     def analyze(
         self,
@@ -87,6 +92,16 @@ class CicdDiscoveryAnalyzer:
 
         job_count = sum(len(pipeline.jobs) for pipeline in pipelines)
         has_deployment_workflow = any(pipeline.deployment_commands for pipeline in pipelines)
+        has_build = any(pipeline.build_commands for pipeline in pipelines)
+        has_tests = any(
+            pipeline.test_commands or self._build_commands_imply_tests(pipeline.build_commands)
+            for pipeline in pipelines
+        )
+        has_security_scanning = any(pipeline.security_commands for pipeline in pipelines)
+        uses_matrix_builds = any(pipeline.uses_matrix_builds for pipeline in pipelines)
+        uses_caching = any(pipeline.uses_caching for pipeline in pipelines)
+        uses_artifacts = any(pipeline.uses_artifacts for pipeline in pipelines)
+        uses_containers = any(pipeline.uses_containers for pipeline in pipelines)
 
         return AnalyzerResult(
             findings=[],
@@ -99,8 +114,15 @@ class CicdDiscoveryAnalyzer:
                     pipeline_count=len(pipelines),
                     job_count=job_count,
                     has_ci=bool(pipelines),
+                    has_build=has_build,
+                    has_tests=has_tests,
                     has_deployment=has_deployment_workflow,
                     has_deployment_workflow=has_deployment_workflow,
+                    has_security_scanning=has_security_scanning,
+                    uses_matrix_builds=uses_matrix_builds,
+                    uses_caching=uses_caching,
+                    uses_artifacts=uses_artifacts,
+                    uses_containers=uses_containers,
                 )
             ),
         )
@@ -182,3 +204,16 @@ class CicdDiscoveryAnalyzer:
                 return file_name[: -len(suffix)]
 
         return file_name
+
+    def _build_commands_imply_tests(
+        self,
+        build_commands: list[str],
+    ) -> bool:
+        """Return whether build commands inherently execute tests."""
+
+        for command in build_commands:
+            normalized = self._command_classifier.normalize(command)
+            if "gradle build" in normalized or "mvn verify" in normalized:
+                return True
+
+        return False

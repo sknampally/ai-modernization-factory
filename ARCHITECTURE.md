@@ -35,7 +35,8 @@ Benefits:
 | Detectors | Identify languages, frameworks, and tools |
 | Analyzers | Produce facts and findings |
 | CompositeAnalyzer | Run analyzers sequentially and merge facts |
-| AnalysisService | Orchestrate detection + analysis |
+| StaticAnalysisService | Orchestrate external providers (for example PMD) |
+| AnalysisService | Orchestrate detection + native analysis + providers |
 | Reporters | Present `AnalysisResult` |
 | CLI | Load config, invoke pipeline, write output |
 
@@ -64,21 +65,77 @@ Findings include title, description, category, severity, source, and structured 
                         ▼
                  AnalysisService
                         │
-          ┌─────────────┴─────────────┐
-          ▼                           ▼
- CompositeTechnologyDetector   CompositeAnalyzer
-          │                           │
-          ▼                           ▼
-     technologies              facts + findings
-          │                           │
-          └─────────────┬─────────────┘
-                        ▼
-                 AnalysisResult
-                        │
-          ┌─────────────┼─────────────┐
-          ▼             ▼             ▼
-     report.txt    report.json   console / JSON
+          ┌─────────────┼─────────────────────┐
+          ▼             ▼                     ▼
+ Technology      CompositeAnalyzer   StaticAnalysisService
+ detection              │              ├── PMD
+          │             ▼              └── Future providers
+          │      facts + findings             │
+          │             │                     ▼
+          │             │            normalized findings
+          └─────────────┴─────────────┬───────┘
+                                      ▼
+                           Recommendation engine
+                                      ▼
+                              AnalysisResult
+                                      │
+                        ┌─────────────┼─────────────┐
+                        ▼             ▼             ▼
+                   report.txt    report.json   report.html
 ```
+
+### Provider boundary
+
+AIMF owns:
+
+* provider orchestration and availability checks
+* normalization into `Finding` / `Evidence`
+* modernization interpretation and recommendations
+* reporting and baseline comparison
+
+PMD owns:
+
+* Java language rules
+* source-level issue detection
+
+### Adding a future provider
+
+1. Implement `StaticAnalysisProvider` (`provider_id`, applicability, availability, `analyze`)
+2. Normalize tool output into AIMF `Finding` objects with `FindingSource.EXTERNAL_STATIC_ANALYSIS`
+3. Register the provider in the CLI when its config section is enabled
+4. Keep command construction and parsing isolated from `AnalysisService`
+
+### Repository authentication trust boundary
+
+Private GitHub access uses a provider-neutral authentication boundary:
+
+```text
+Configuration reference
+        ↓
+RepositoryAuthenticationService
+        ↓
+Credential provider
+        ↓
+Runtime-only credential
+        ↓
+Scoped Git execution context
+        ↓
+Git clone
+        ↓
+Cleanup and redaction
+```
+
+Trust rules:
+
+* AIMF configuration contains credential references only (`token_env`), never secret values
+* Runtime credentials never enter analysis-domain models, reports, or baselines
+* Git subprocess authentication is scoped to a single clone operation via `GIT_ASKPASS`
+* Shared redaction (`aimf.security.redaction`) is defense-in-depth for operational output
+* Future hosted deployments should use short-lived GitHub App installation tokens
+* Future AWS-hosted deployments may resolve references through AWS Secrets Manager
+* Those future capabilities are not implemented in this milestone
+
+Authentication applies only to remote GitHub cloning. Local repository scanning ignores authentication configuration.
 
 ### Analyzer fact pipeline
 
@@ -108,27 +165,18 @@ src/aimf/
 ├── cli.py
 ├── config/
 │   └── settings.py
+├── repository_auth/
+│   ├── models.py
+│   ├── service.py
+│   ├── providers/
+│   └── ...
+├── security/
+│   └── redaction.py
 ├── models/
-│   ├── analysis_result.py
-│   ├── analyzer_result.py
-│   ├── build_facts.py
-│   ├── cicd.py
-│   ├── dependency_facts.py
-│   ├── enums.py
-│   ├── evidence.py
-│   ├── finding.py
-│   ├── recommendation.py
-│   ├── repository.py
-│   ├── repository_facts.py
-│   └── technology.py
 ├── reporters/
-│   ├── console_reporter.py
-│   ├── json_file_reporter.py
-│   ├── report_paths.py
-│   └── text_file_reporter.py
+├── static_analysis/
 └── services/
     ├── analysis_service.py
-    ├── contracts.py
     ├── analyzers/
     ├── detectors/
     └── scanners/
@@ -140,15 +188,16 @@ src/aimf/
 
 `aimf.toml` is loaded into Pydantic settings:
 
-* `repository.url` — public GitHub HTTPS URL
+* `repository.url` — GitHub HTTPS or SSH URL
 * `repository.branch` — optional branch
+* `repository.authentication` — optional credential reference (`github_token` or `ssh_agent`)
 * `workspace.directory` — clone workspace
 * `workspace.clean_before_clone` — whether to replace an existing clone
 
 ### Scanners
 
 * `LocalRepositoryScanner` — walks a local tree and collects relative file paths
-* `GitHubRepositoryScanner` — shallow-clones a public GitHub repo, then uses the local scanner
+* `GitHubRepositoryScanner` — shallow-clones a GitHub repo (public or authenticated private), then uses the local scanner
 
 ### Technology detectors
 

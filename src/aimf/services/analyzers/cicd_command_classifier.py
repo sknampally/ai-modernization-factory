@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum
 
 
@@ -19,6 +20,9 @@ class CicdCommandCategory(StrEnum):
 
 class CicdCommandClassifier:
     """Classify CI/CD commands using deterministic patterns."""
+
+    _MVN_WRAPPER_PATTERN = re.compile(r"(?:\.\/)?mvnw(?:\.cmd)?\b")
+    _GRADLE_WRAPPER_PATTERN = re.compile(r"(?:\.\/)?gradlew(?:\.bat)?\b")
 
     _CATEGORY_PATTERNS: dict[
         CicdCommandCategory,
@@ -47,7 +51,9 @@ class CicdCommandClassifier:
             "mvn test",
             "mvn verify",
             "gradle test",
+            "gradle build",
             "./gradlew test",
+            "./gradlew build",
             "npm test",
             "npm run test",
             "yarn test",
@@ -146,15 +152,15 @@ class CicdCommandClassifier:
     ) -> set[CicdCommandCategory]:
         """Return all categories matching a command or action."""
 
-        normalized_command = self._normalize(command)
+        candidates = self._match_candidates(command)
 
-        if not normalized_command:
+        if not candidates:
             return set()
 
         return {
             category
             for category, patterns in self._CATEGORY_PATTERNS.items()
-            if any(pattern in normalized_command for pattern in patterns)
+            if any(pattern in candidate for candidate in candidates for pattern in patterns)
         }
 
     def belongs_to(
@@ -182,13 +188,43 @@ class CicdCommandClassifier:
 
         return {category: self._unique(values) for category, values in classified.items()}
 
+    def normalize(
+        self,
+        command: str,
+    ) -> str:
+        """Normalize wrappers, whitespace, and casing for matching."""
+
+        normalized = " ".join(command.lower().split())
+        normalized = self._MVN_WRAPPER_PATTERN.sub("mvn", normalized)
+        normalized = self._GRADLE_WRAPPER_PATTERN.sub("gradle", normalized)
+        return normalized
+
+    def _match_candidates(
+        self,
+        command: str,
+    ) -> list[str]:
+        """Build normalized command variants used for pattern matching."""
+
+        normalized = self.normalize(command)
+
+        if not normalized:
+            return []
+
+        without_flags = " ".join(token for token in normalized.split() if not token.startswith("-"))
+
+        candidates = [normalized]
+        if without_flags and without_flags != normalized:
+            candidates.append(without_flags)
+
+        return candidates
+
     def _normalize(
         self,
         command: str,
     ) -> str:
-        """Normalize whitespace and casing for matching."""
+        """Compatibility wrapper for normalize()."""
 
-        return " ".join(command.lower().split())
+        return self.normalize(command)
 
     def _unique(
         self,

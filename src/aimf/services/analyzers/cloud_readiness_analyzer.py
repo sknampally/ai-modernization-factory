@@ -100,6 +100,7 @@ class CloudReadinessAnalyzer:
 
         detected: dict[str, list[str]] = {
             "docker": [],
+            "devcontainer": [],
             "docker_compose": [],
             "kubernetes": [],
             "terraform": [],
@@ -117,7 +118,10 @@ class CloudReadinessAnalyzer:
             path_parts = set(path.parts)
 
             if self._is_dockerfile(file_name):
-                detected["docker"].append(normalized_path)
+                if self._is_devcontainer_path(path):
+                    detected["devcontainer"].append(normalized_path)
+                else:
+                    detected["docker"].append(normalized_path)
 
             if file_name in self._DOCKER_COMPOSE_FILES:
                 detected["docker_compose"].append(normalized_path)
@@ -162,6 +166,7 @@ class CloudReadinessAnalyzer:
         findings.extend(self._readiness_summary(detected))
 
         has_docker = bool(detected["docker"])
+        has_devcontainer = bool(detected["devcontainer"])
         has_docker_compose = bool(detected["docker_compose"])
         has_kubernetes = bool(detected["kubernetes"])
         has_helm = bool(detected["helm"])
@@ -174,6 +179,7 @@ class CloudReadinessAnalyzer:
             capability
             for capability, present in (
                 ("docker", has_docker),
+                ("devcontainer", has_devcontainer),
                 ("docker-compose", has_docker_compose),
                 ("kubernetes", has_kubernetes),
                 ("helm", has_helm),
@@ -190,6 +196,7 @@ class CloudReadinessAnalyzer:
             facts=RepositoryFacts(
                 cloud=CloudReadinessFacts(
                     has_docker=has_docker,
+                    has_devcontainer=has_devcontainer,
                     has_docker_compose=has_docker_compose,
                     has_kubernetes=has_kubernetes,
                     has_helm=has_helm,
@@ -412,6 +419,14 @@ class CloudReadinessAnalyzer:
         """Return whether the file is a Dockerfile."""
 
         return file_name in self._DOCKER_FILE_NAMES or file_name.startswith("dockerfile.")
+
+    def _is_devcontainer_path(
+        self,
+        path: PurePosixPath,
+    ) -> bool:
+        """Return whether a Dockerfile belongs to a development container."""
+
+        return ".devcontainer" in path.parts
 
     def _is_kubernetes_file(
         self,

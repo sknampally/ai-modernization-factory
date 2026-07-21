@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from aimf.models import AnalysisResult, Repository
+from aimf.reporters.html_file_reporter import HtmlFileReporter
 from aimf.reporters.json_file_reporter import JsonFileReporter
 from aimf.reporters.report_paths import (
     create_report_paths,
@@ -36,6 +37,7 @@ def _create_run_directory(
     run_directory.mkdir(parents=True, exist_ok=True)
     (run_directory / "report.txt").write_text("txt", encoding="utf-8")
     (run_directory / "report.json").write_text("{}", encoding="utf-8")
+    (run_directory / "report.html").write_text("<html></html>", encoding="utf-8")
     return run_directory
 
 
@@ -52,6 +54,7 @@ def test_create_report_paths_uses_timestamped_run_directories(
     assert report_paths.directory == (tmp_path / "reports" / "sample" / report_paths.timestamp)
     assert report_paths.text_report == report_paths.directory / "report.txt"
     assert report_paths.json_report == report_paths.directory / "report.json"
+    assert report_paths.html_report == report_paths.directory / "report.html"
     assert report_paths.directory.is_dir()
 
 
@@ -220,9 +223,14 @@ def test_cleanup_runs_only_after_successful_report_generation(
         result=result,
         output_path=report_paths.json_report,
     )
+    HtmlFileReporter().write(
+        result=result,
+        output_path=report_paths.html_report,
+    )
     retain_recent_reports(report_paths.directory.parent)
 
     remaining_after_success = sorted(path.name for path in repository_directory.iterdir())
     assert "20260101-010101" not in remaining_after_success
     assert report_paths.timestamp in remaining_after_success
     assert len([name for name in remaining_after_success if name.startswith("2026")]) == 3
+    assert (report_paths.directory / "report.html").is_file()

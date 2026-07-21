@@ -2,6 +2,31 @@
 url = "https://github.com/spring-projects/spring-petclinic"
 branch = "main"
 
+# Optional private-repository authentication (disabled by default).
+# Never place token values in this file.
+#
+# [repository.authentication]
+# type = "github_token"
+# token_env = "AIMF_GITHUB_TOKEN"
+#
+# [repository.authentication]
+# type = "ssh_agent"
+
 [workspace]
 directory = ".aimf/workspace"
-cleanup = true
+clean_before_clone = true
+
+[static_analysis]
+enabled = true
+fail_on_provider_error = false
+
+[static_analysis.pmd]
+enabled = true
+executable = "pmd"
+rulesets = [
+  "category/java/bestpractices.xml",
+  "category/java/errorprone.xml",
+  "category/java/design.xml",
+]
+minimum_priority = 5
+timeout_seconds = 120

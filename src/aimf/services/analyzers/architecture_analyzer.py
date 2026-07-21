@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Sequence
+from pathlib import PurePosixPath
 
 from aimf.models import (
     AnalyzerResult,
@@ -22,16 +23,14 @@ from aimf.models.normalized_facts import ArchitectureFacts, StructureFacts
 class ArchitectureAnalyzer:
     """Detect repository architecture using deterministic path conventions."""
 
-    _CONTROLLER_MARKERS = {
+    _CONTROLLER_DIRECTORY_MARKERS = {
         "controller",
         "controllers",
-        "resource",
-        "resources",
         "endpoint",
         "endpoints",
     }
 
-    _SERVICE_MARKERS = {
+    _SERVICE_DIRECTORY_MARKERS = {
         "service",
         "services",
         "business",
@@ -39,15 +38,17 @@ class ArchitectureAnalyzer:
         "usecases",
     }
 
-    _REPOSITORY_MARKERS = {
+    _REPOSITORY_DIRECTORY_MARKERS = {
         "repository",
         "repositories",
         "dao",
         "daos",
         "persistence",
+        "jpa",
+        "hibernate",
     }
 
-    _DOMAIN_MARKERS = {
+    _DOMAIN_DIRECTORY_MARKERS = {
         "domain",
         "model",
         "models",
@@ -55,18 +56,18 @@ class ArchitectureAnalyzer:
         "entities",
     }
 
-    _CONFIG_MARKERS = {
+    _CONFIG_DIRECTORY_MARKERS = {
         "config",
         "configuration",
     }
 
-    _API_MARKERS = {
+    _API_DIRECTORY_MARKERS = {
         "api",
         "rest",
         "graphql",
     }
 
-    _TEST_MARKERS = {
+    _TEST_DIRECTORY_MARKERS = {
         "test",
         "tests",
         "__tests__",
@@ -79,6 +80,47 @@ class ArchitectureAnalyzer:
         "microservices",
         "apps",
         "packages",
+    }
+
+    _SOURCE_SUFFIXES = {
+        ".java",
+        ".kt",
+        ".kts",
+        ".scala",
+        ".groovy",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".py",
+        ".php",
+        ".go",
+        ".cs",
+        ".rb",
+    }
+
+    _CONTROLLER_STEM_SUFFIXES = (
+        "controller",
+        "controllers",
+        "resourcecontroller",
+        "restcontroller",
+    )
+
+    _REPOSITORY_STEM_SUFFIXES = (
+        "repository",
+        "repositories",
+        "dao",
+        "daos",
+        "entity",
+        "entities",
+    )
+
+    _EXCLUDED_DIRECTORY_TOKENS = {
+        "resources",
+        "static",
+        "templates",
+        "public",
+        "assets",
     }
 
     def analyze(
@@ -119,6 +161,9 @@ class ArchitectureAnalyzer:
                 path_parts=path_parts,
                 component_paths=component_paths,
             )
+
+        for component, paths in component_paths.items():
+            component_paths[component] = sorted(dict.fromkeys(paths))
 
         findings: list[Finding] = []
 
@@ -185,34 +230,65 @@ class ArchitectureAnalyzer:
     ) -> None:
         """Classify a repository path into architectural components."""
 
-        path_tokens = set(path_parts)
+        file_name = path_parts[-1]
+        directory_tokens = set(path_parts[:-1])
+        stem = PurePosixPath(file_name).stem
+        is_source = self._is_source_file(file_name)
+        in_excluded_assets = bool(directory_tokens & self._EXCLUDED_DIRECTORY_TOKENS)
+        in_test = bool(directory_tokens & self._TEST_DIRECTORY_MARKERS)
 
-        if path_tokens & self._CONTROLLER_MARKERS:
-            component_paths["controllers"].append(relative_path)
+        if in_test:
+            component_paths["tests"].append(relative_path)
+            return
 
-        if path_tokens & self._SERVICE_MARKERS:
-            component_paths["services"].append(relative_path)
+        if is_source and not in_excluded_assets:
+            if (directory_tokens & self._CONTROLLER_DIRECTORY_MARKERS) or self._stem_matches(
+                stem,
+                self._CONTROLLER_STEM_SUFFIXES,
+            ):
+                component_paths["controllers"].append(relative_path)
 
-        if path_tokens & self._REPOSITORY_MARKERS:
-            component_paths["repositories"].append(relative_path)
+            if directory_tokens & self._API_DIRECTORY_MARKERS:
+                component_paths["apis"].append(relative_path)
 
-        if path_tokens & self._DOMAIN_MARKERS:
-            component_paths["domain"].append(relative_path)
+            if (directory_tokens & self._REPOSITORY_DIRECTORY_MARKERS) or self._stem_matches(
+                stem,
+                self._REPOSITORY_STEM_SUFFIXES,
+            ):
+                component_paths["repositories"].append(relative_path)
 
-        if path_tokens & self._CONFIG_MARKERS:
+            if (directory_tokens & self._SERVICE_DIRECTORY_MARKERS) or self._is_service_class(stem):
+                component_paths["services"].append(relative_path)
+
+            if directory_tokens & self._DOMAIN_DIRECTORY_MARKERS:
+                component_paths["domain"].append(relative_path)
+
+        if directory_tokens & self._CONFIG_DIRECTORY_MARKERS:
             component_paths["configuration"].append(relative_path)
 
-        if path_tokens & self._API_MARKERS:
-            component_paths["apis"].append(relative_path)
+    def _is_source_file(self, file_name: str) -> bool:
+        """Return whether a file looks like application source code."""
 
-        if path_tokens & self._TEST_MARKERS:
-            component_paths["tests"].append(relative_path)
+        return PurePosixPath(file_name).suffix.lower() in self._SOURCE_SUFFIXES
+
+    def _stem_matches(self, stem: str, suffixes: tuple[str, ...]) -> bool:
+        """Return whether a file stem ends with a known architectural suffix."""
+
+        return any(stem.endswith(suffix) for suffix in suffixes)
+
+    def _is_service_class(self, stem: str) -> bool:
+        """Return whether a production class name indicates a service layer."""
+
+        if stem.endswith(("servicetest", "servicetests", "servicespec")):
+            return False
+
+        return stem.endswith("service") or stem.endswith("services")
 
     def _detect_layered_architecture(
         self,
         component_paths: dict[str, list[str]],
     ) -> list[Finding]:
-        """Detect controller-service-repository layering."""
+        """Detect production architecture components or full layering."""
 
         layers = {
             layer
@@ -227,14 +303,26 @@ class ArchitectureAnalyzer:
         if len(layers) < 2:
             return []
 
+        complete_layered = layers == {
+            "controllers",
+            "services",
+            "repositories",
+        }
+        title = (
+            "Layered application architecture detected"
+            if complete_layered
+            else "Application architecture components detected"
+        )
+
         return [
             self._finding(
                 rule_id="ARCH001",
-                title="Layered application architecture detected",
+                title=title,
                 severity=Severity.INFO,
                 evidence=("Detected architectural layers: " + ", ".join(sorted(layers))),
                 metadata={
                     "layers": sorted(layers),
+                    "complete_layered_architecture": complete_layered,
                     "controller_count": len(component_paths["controllers"]),
                     "service_count": len(component_paths["services"]),
                     "repository_count": len(component_paths["repositories"]),
@@ -248,10 +336,12 @@ class ArchitectureAnalyzer:
     ) -> list[Finding]:
         """Detect an API or controller layer."""
 
-        api_paths = {
-            *component_paths["controllers"],
-            *component_paths["apis"],
-        }
+        api_paths = sorted(
+            {
+                *component_paths["controllers"],
+                *component_paths["apis"],
+            }
+        )
 
         if not api_paths:
             return []
@@ -264,7 +354,7 @@ class ArchitectureAnalyzer:
                 evidence=(f"Detected {len(api_paths)} API-related files"),
                 metadata={
                     "file_count": len(api_paths),
-                    "sample_paths": sorted(api_paths)[:10],
+                    "sample_paths": api_paths[:10],
                 },
             )
         ]

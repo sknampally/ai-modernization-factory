@@ -5,7 +5,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from aimf.models.enums import TechnologyCategory
-from aimf.models.normalized_facts import TechnologyFacts
+from aimf.models.normalized_facts import (
+    TechnologyFacts,
+    merge_unique_strings_case_insensitive,
+)
 from aimf.models.technology import Technology
 
 
@@ -33,10 +36,21 @@ def technology_facts_from_detections(
         elif technology.category == TechnologyCategory.TESTING:
             test_frameworks.append(name)
 
+    empty: list[str] = []
+
     return TechnologyFacts(
-        programming_languages=list(dict.fromkeys(programming_languages)),
-        frameworks=list(dict.fromkeys(frameworks)),
-        build_tools=list(dict.fromkeys(build_tools)),
-        test_frameworks=list(dict.fromkeys(test_frameworks)),
-        detected_technologies=list(dict.fromkeys(detected_technologies)),
+        programming_languages=merge_unique_strings_case_insensitive(
+            programming_languages,
+            empty,
+        ),
+        frameworks=merge_unique_strings_case_insensitive(frameworks, empty),
+        build_tools=merge_unique_strings_case_insensitive(build_tools, empty),
+        test_frameworks=merge_unique_strings_case_insensitive(
+            test_frameworks,
+            empty,
+        ),
+        detected_technologies=merge_unique_strings_case_insensitive(
+            detected_technologies,
+            empty,
+        ),
     )

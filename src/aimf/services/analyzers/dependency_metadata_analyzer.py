@@ -14,7 +14,6 @@ from aimf.models import (
     RepositoryFacts,
     Technology,
 )
-from aimf.models.normalized_facts import TechnologyFacts
 from aimf.services.analyzers.maven_dependency_parser import (
     MavenDependencyParser,
 )
@@ -75,10 +74,6 @@ class DependencyMetadataAnalyzer:
             findings=[],
             facts=RepositoryFacts(
                 dependencies=dependency_facts,
-                technology=TechnologyFacts(
-                    frameworks=list(dependency_facts.framework_dependencies),
-                    test_frameworks=list(dependency_facts.testing_libraries),
-                ),
             ),
         )
 

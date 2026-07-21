@@ -57,6 +57,35 @@ def test_load_settings_uses_workspace_defaults(
     assert settings.workspace.clean_before_clone is True
 
 
+def test_load_settings_reads_static_analysis_configuration(
+    tmp_path: Path,
+) -> None:
+    config_file = tmp_path / "aimf.toml"
+    config_file.write_text(
+        """
+        [repository]
+        url = "https://github.com/example/sample-java-app.git"
+
+        [static_analysis]
+        enabled = true
+        fail_on_provider_error = false
+
+        [static_analysis.pmd]
+        enabled = true
+        executable = "pmd"
+        minimum_priority = 4
+        timeout_seconds = 60
+        """,
+        encoding="utf-8",
+    )
+
+    settings = load_settings(config_file)
+
+    assert settings.static_analysis.enabled is True
+    assert settings.static_analysis.pmd.minimum_priority == 4
+    assert settings.static_analysis.pmd.timeout_seconds == 60
+
+
 def test_load_settings_rejects_missing_file(
     tmp_path: Path,
 ) -> None:

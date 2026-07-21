@@ -21,6 +21,7 @@ class ReportPaths:
     directory: Path
     text_report: Path
     json_report: Path
+    html_report: Path
     timestamp: str
 
 
@@ -34,6 +35,7 @@ def create_report_paths(
 
     ``<base_directory>/<repository-name>/<YYYYMMDD-HHMMSS>/report.txt``
     ``<base_directory>/<repository-name>/<YYYYMMDD-HHMMSS>/report.json``
+    ``<base_directory>/<repository-name>/<YYYYMMDD-HHMMSS>/report.html``
     """
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -49,6 +51,7 @@ def create_report_paths(
         directory=run_directory,
         text_report=run_directory / "report.txt",
         json_report=run_directory / "report.json",
+        html_report=run_directory / "report.html",
         timestamp=timestamp,
     )
 

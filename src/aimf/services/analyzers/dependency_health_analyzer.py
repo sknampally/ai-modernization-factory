@@ -159,8 +159,9 @@ class DependencyHealthAnalyzer:
         self,
         dependency_facts: DependencyFacts,
     ) -> list[Finding]:
-        """Find ecosystems with manifests but no lockfile."""
+        """Find ecosystems where dependency locking is not configured."""
 
+        # Maven does not use a conventional lockfile; do not treat it as missing.
         manifest_ecosystems = {
             manifest.ecosystem for manifest in dependency_facts.manifests if not manifest.lockfile
         }
@@ -186,19 +187,27 @@ class DependencyHealthAnalyzer:
                 if (manifest.ecosystem == ecosystem and not manifest.lockfile)
             )
 
+            severity = (
+                Severity.MEDIUM
+                if self._ecosystem_has_dependency_risk(
+                    ecosystem=ecosystem,
+                    dependency_facts=dependency_facts,
+                )
+                else Severity.LOW
+            )
+
             description = (
-                f"{ecosystem} manifest detected without a "
-                f"corresponding lockfile: "
+                f"{ecosystem} dependency locking is not configured for: "
                 f"{', '.join(manifest_paths)}."
             )
 
             findings.append(
                 Finding(
                     rule_id="DEP003",
-                    title="Dependency manifest has no lockfile",
+                    title="Dependency locking is not configured",
                     description=description,
                     category=FindingCategory.DEPENDENCY,
-                    severity=Severity.MEDIUM,
+                    severity=severity,
                     source=FindingSource.DETERMINISTIC,
                     evidence=[
                         Evidence(
@@ -216,3 +225,21 @@ class DependencyHealthAnalyzer:
             )
 
         return findings
+
+    def _ecosystem_has_dependency_risk(
+        self,
+        ecosystem: str,
+        dependency_facts: DependencyFacts,
+    ) -> bool:
+        """Return whether an ecosystem has dynamic or unmanaged versions."""
+
+        related_ecosystems = self.LOCKFILE_ECOSYSTEMS.get(ecosystem, {ecosystem})
+
+        for dependency in dependency_facts.dependencies:
+            if dependency.ecosystem not in related_ecosystems and dependency.ecosystem != ecosystem:
+                continue
+
+            if dependency.dynamic_version or dependency.unmanaged_version:
+                return True
+
+        return False

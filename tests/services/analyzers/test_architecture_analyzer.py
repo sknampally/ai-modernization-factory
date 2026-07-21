@@ -50,7 +50,7 @@ def _rule_ids(
 def test_detects_layered_architecture(
     tmp_path: Path,
 ) -> None:
-    """Controller, service, and repository folders imply layering."""
+    """Controller, service, and repository folders imply complete layering."""
 
     repository = _repository(
         tmp_path,
@@ -61,12 +61,83 @@ def test_detects_layered_architecture(
         ],
     )
 
-    rule_ids = _rule_ids(repository)
+    result = ArchitectureAnalyzer().analyze(repository=repository, technologies=[])
+    finding = next(item for item in result.findings if item.rule_id == "ARCH001")
 
-    assert "ARCH001" in rule_ids
-    assert "ARCH002" in rule_ids
-    assert "ARCH003" in rule_ids
-    assert "ARCH007" in rule_ids
+    assert finding.title == "Layered application architecture detected"
+    assert result.facts.architecture is not None
+    assert result.facts.architecture.has_service_layer is True
+    assert "ARCH002" in {item.rule_id for item in result.findings}
+    assert "ARCH003" in {item.rule_id for item in result.findings}
+    assert "ARCH007" in {item.rule_id for item in result.findings}
+
+
+def test_controllers_and_repositories_without_service_are_partial(
+    tmp_path: Path,
+) -> None:
+    """Controllers plus repositories alone must not claim complete layering."""
+
+    repository = _repository(
+        tmp_path,
+        [
+            "src/main/java/org/example/owner/OwnerController.java",
+            "src/main/java/org/example/owner/OwnerRepository.java",
+        ],
+    )
+
+    result = ArchitectureAnalyzer().analyze(repository=repository, technologies=[])
+    finding = next(item for item in result.findings if item.rule_id == "ARCH001")
+
+    assert finding.title == "Application architecture components detected"
+    assert finding.metadata["complete_layered_architecture"] is False
+    assert result.facts.architecture is not None
+    assert result.facts.architecture.has_service_layer is False
+    assert result.facts.architecture.has_api_layer is True
+    assert result.facts.architecture.has_persistence_layer is True
+
+
+def test_production_service_class_enables_service_layer(
+    tmp_path: Path,
+) -> None:
+    """A production *Service class should establish the service layer."""
+
+    repository = _repository(
+        tmp_path,
+        [
+            "src/main/java/org/example/owner/OwnerController.java",
+            "src/main/java/org/example/owner/ClinicService.java",
+            "src/main/java/org/example/owner/OwnerRepository.java",
+        ],
+    )
+
+    result = ArchitectureAnalyzer().analyze(repository=repository, technologies=[])
+    finding = next(item for item in result.findings if item.rule_id == "ARCH001")
+
+    assert finding.title == "Layered application architecture detected"
+    assert result.facts.architecture is not None
+    assert result.facts.architecture.has_service_layer is True
+
+
+def test_test_only_service_directories_do_not_enable_service_layer(
+    tmp_path: Path,
+) -> None:
+    """Service classes under test directories must not set has_service_layer."""
+
+    repository = _repository(
+        tmp_path,
+        [
+            "src/main/java/org/example/owner/OwnerController.java",
+            "src/main/java/org/example/owner/OwnerRepository.java",
+            "src/test/java/org/example/service/FakeClinicService.java",
+        ],
+    )
+
+    result = ArchitectureAnalyzer().analyze(repository=repository, technologies=[])
+
+    assert result.facts.architecture is not None
+    assert result.facts.architecture.has_service_layer is False
+    finding = next(item for item in result.findings if item.rule_id == "ARCH001")
+    assert finding.title == "Application architecture components detected"
 
 
 def test_detects_api_layer(

@@ -12,6 +12,7 @@ from rich.table import Table
 from rich.text import Text
 
 from aimf.models import AnalysisResult, Finding, Priority, Recommendation
+from aimf.reporters.evidence_location import format_evidence_item_location
 
 
 class ConsoleReporter:
@@ -35,11 +36,13 @@ class ConsoleReporter:
         self._render_repository(result)
         self._render_technologies(result)
         self._render_repository_facts(result)
+        self._render_static_analysis_providers(result)
         self._render_build_facts(result)
         self._render_dependency_facts(result)
         self._render_findings(result)
         self._render_recommendations(result)
         self._render_prioritized_roadmap(result)
+        self._render_comparison(result)
         self._render_summary(result)
 
     def render_summary(
@@ -47,19 +50,27 @@ class ConsoleReporter:
         result: AnalysisResult,
         text_report_path: Path | None = None,
         json_report_path: Path | None = None,
+        html_report_path: Path | None = None,
     ) -> None:
         """Render a concise analysis summary."""
 
         self._render_header()
         self._render_repository_summary(result)
         self._render_technology_summary(result)
+        self._render_static_analysis_providers(result)
         self._render_recommendation_summary(result)
+        self._render_comparison_summary(result)
         self._render_summary(result)
 
-        if text_report_path is not None or json_report_path is not None:
+        if (
+            text_report_path is not None
+            or json_report_path is not None
+            or html_report_path is not None
+        ):
             self._render_report_locations(
                 text_report_path=text_report_path,
                 json_report_path=json_report_path,
+                html_report_path=html_report_path,
             )
 
     def _render_header(self) -> None:
@@ -311,6 +322,7 @@ class ConsoleReporter:
                 )
             for label, flag in (
                 ("Docker", cloud.has_docker),
+                ("Dev Container", cloud.has_devcontainer),
                 ("Docker Compose", cloud.has_docker_compose),
                 ("Kubernetes", cloud.has_kubernetes),
                 ("Helm", cloud.has_helm),
@@ -525,6 +537,16 @@ class ConsoleReporter:
         source.append(self._display_value(finding.source))
         details.append(source)
 
+        provider_name = finding.metadata.get("provider_name")
+        if isinstance(provider_name, str) and provider_name:
+            provider = Text()
+            provider.append("Provider: ", style="bold")
+            provider.append(provider_name)
+            external_rule = finding.metadata.get("external_rule_id")
+            if isinstance(external_rule, str) and external_rule:
+                provider.append(f" ({external_rule})")
+            details.append(provider)
+
         if finding.affected_technologies:
             technologies = Text()
             technologies.append(
@@ -572,13 +594,14 @@ class ConsoleReporter:
         ):
             evidence = Text()
             evidence.append(f"  {index}. ", style="dim")
-            evidence.append(item.file_path, style="bold")
-
-            if item.line_number is not None:
-                evidence.append(f":{item.line_number}")
-
-                if item.end_line_number is not None and item.end_line_number != item.line_number:
-                    evidence.append(f"-{item.end_line_number}")
+            location = format_evidence_item_location(item)
+            evidence.append(location, style="bold")
+            if (
+                item.line_number is not None
+                and item.end_line_number is not None
+                and item.end_line_number != item.line_number
+            ):
+                evidence.append(f"-{item.end_line_number}")
 
             rendered.append(evidence)
 
@@ -611,6 +634,36 @@ class ConsoleReporter:
 
         return rendered
 
+    def _render_static_analysis_providers(self, result: AnalysisResult) -> None:
+        if not result.static_analysis_results:
+            return
+
+        table = Table(
+            title="Static Analysis Providers",
+            show_header=True,
+            box=None,
+        )
+        table.add_column("Provider", style="bold")
+        table.add_column("Status")
+        table.add_column("Findings", justify="right")
+        table.add_column("Version")
+        table.add_column("Details", overflow="fold")
+
+        for provider_result in result.static_analysis_results:
+            details = provider_result.error_message or ""
+            if provider_result.warnings and not details:
+                details = "; ".join(provider_result.warnings)
+            table.add_row(
+                provider_result.provider_name,
+                provider_result.status.value,
+                str(len(provider_result.findings)),
+                provider_result.provider_version or "—",
+                details or "—",
+            )
+
+        self.console.print(table)
+        self.console.print()
+
     def _render_summary(self, result: AnalysisResult) -> None:
         severity_counts = Counter(
             self._display_value(finding.severity) for finding in result.findings
@@ -640,6 +693,117 @@ class ConsoleReporter:
 
         self.console.print(table)
         self.console.print()
+
+    def _render_comparison_summary(self, result: AnalysisResult) -> None:
+        comparison = result.comparison
+
+        if comparison is None or not comparison.baseline_available:
+            self.console.print(
+                Panel(
+                    "No previous completed scan is available for comparison.",
+                    title="Changes Since Previous Scan",
+                )
+            )
+            self.console.print()
+            return
+
+        summary = comparison.summary
+        table = Table(
+            title="Changes Since Previous Scan",
+            show_header=False,
+            box=None,
+        )
+        table.add_column("Field", style="bold")
+        table.add_column("Value", overflow="fold")
+        table.add_row("Baseline", comparison.baseline_timestamp or "Unknown")
+        table.add_row("Current", comparison.current_timestamp or "Unknown")
+        table.add_row("New findings", str(summary.new_findings))
+        table.add_row("Resolved findings", str(summary.resolved_findings))
+        table.add_row("Worsened findings", str(summary.worsened_findings))
+        table.add_row("Improved findings", str(summary.improved_findings))
+        table.add_row("New recommendations", str(summary.new_recommendations))
+        table.add_row(
+            "Resolved recommendations",
+            str(summary.resolved_recommendations),
+        )
+        table.add_row("Fact changes", str(summary.fact_changes))
+
+        if comparison.notes:
+            table.add_row("Notes", "; ".join(comparison.notes))
+
+        self.console.print(table)
+        self.console.print()
+
+    def _render_comparison(self, result: AnalysisResult) -> None:
+        comparison = result.comparison
+
+        if comparison is None or not comparison.baseline_available:
+            self.console.print(
+                Panel(
+                    "No previous completed scan is available for comparison.",
+                    title="Changes Since Previous Scan",
+                )
+            )
+            self.console.print()
+            return
+
+        self._render_comparison_summary(result)
+
+        if comparison.new_findings:
+            self.console.print(Text("New Findings", style="bold"))
+            for finding in comparison.new_findings:
+                self.console.print(f"  [New] {finding.rule_id or 'No rule ID'} — {finding.title}")
+            self.console.print()
+
+        if comparison.resolved_findings:
+            self.console.print(Text("Resolved Findings", style="bold"))
+            for finding in comparison.resolved_findings:
+                self.console.print(
+                    f"  [Resolved] {finding.rule_id or 'No rule ID'} — {finding.title}"
+                )
+            self.console.print()
+
+        if comparison.severity_changes:
+            self.console.print(Text("Severity Changes", style="bold"))
+            for severity_change in comparison.severity_changes:
+                label = "Worsened" if severity_change.direction == "increased" else "Improved"
+                self.console.print(
+                    f"  [{label}] {severity_change.rule_id or 'No rule ID'} — "
+                    f"{severity_change.previous_severity} → "
+                    f"{severity_change.current_severity}"
+                )
+            self.console.print()
+
+        if comparison.new_recommendations:
+            self.console.print(Text("New Recommendations", style="bold"))
+            for recommendation in comparison.new_recommendations:
+                self.console.print(f"  [New] {recommendation.rule_id} — {recommendation.title}")
+            self.console.print()
+
+        if comparison.resolved_recommendations:
+            self.console.print(Text("Resolved Recommendations", style="bold"))
+            for recommendation in comparison.resolved_recommendations:
+                self.console.print(
+                    f"  [Resolved] {recommendation.rule_id} — {recommendation.title}"
+                )
+            self.console.print()
+
+        if comparison.priority_changes:
+            self.console.print(Text("Priority Changes", style="bold"))
+            for priority_change in comparison.priority_changes:
+                label = "Worsened" if priority_change.direction == "increased" else "Improved"
+                self.console.print(
+                    f"  [{label}] {priority_change.rule_id} — "
+                    f"{priority_change.previous_priority} → "
+                    f"{priority_change.current_priority}"
+                )
+            self.console.print()
+
+        if comparison.fact_changes:
+            self.console.print(Text("Repository Fact Changes", style="bold"))
+            for fact_change in comparison.fact_changes:
+                self.console.print(f"  [Changed] {fact_change.display_text()}")
+            self.console.print()
 
     def _render_recommendation_summary(
         self,
@@ -843,7 +1007,7 @@ class ConsoleReporter:
         for index, item in enumerate(recommendation.evidence, start=1):
             evidence = Text()
             evidence.append(f"  {index}. ", style="dim")
-            evidence.append(item.file_path, style="bold")
+            evidence.append(format_evidence_item_location(item), style="bold")
 
             if item.description:
                 evidence.append(f" — {item.description}")
@@ -866,6 +1030,7 @@ class ConsoleReporter:
         self,
         text_report_path: Path | None,
         json_report_path: Path | None,
+        html_report_path: Path | None = None,
     ) -> None:
         table = Table(
             title="Generated Reports",
@@ -885,6 +1050,12 @@ class ConsoleReporter:
             table.add_row(
                 "JSON",
                 str(json_report_path),
+            )
+
+        if html_report_path is not None:
+            table.add_row(
+                "HTML",
+                str(html_report_path),
             )
 
         self.console.print(table)
