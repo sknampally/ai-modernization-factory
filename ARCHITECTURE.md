@@ -2,312 +2,237 @@
 
 ## Purpose
 
-AI Modernization Factory (AIMF) is a platform for analyzing enterprise applications and generating evidence-based modernization recommendations.
+AI Modernization Factory (AIMF) analyzes enterprise application repositories and produces evidence-based modernization assessments.
 
-Rather than relying on AI to inspect source code directly, AIMF first performs deterministic analysis to discover technologies, architecture, dependencies, and implementation characteristics. AI is then used to interpret this structured evidence and generate modernization insights, migration strategies, and implementation recommendations.
+AIMF first performs deterministic analysis to discover technologies, build systems, dependencies, CI/CD configuration, and related repository characteristics. Structured facts and findings are the primary output today. AI interpretation of those facts is a planned later layer.
 
-This approach produces repeatable, explainable, and production-ready results suitable for enterprise software modernization.
-
-
-# Engineering Philosophy
-
-AIMF is built on one fundamental principle:
+## Engineering Philosophy
 
 > **Deterministic analysis first. AI reasoning second.**
 
-Large Language Models are excellent at reasoning over structured information but are less reliable at discovering facts from large codebases.
+Large language models are useful for reasoning over structured information, but less reliable at inventing facts from large codebases.
 
-Instead of asking:
-
-> Analyze this repository.
-
-AIMF asks:
+Instead of asking an LLM to “analyze this repository,” AIMF aims to ask:
 
 > Here is everything we discovered about this application. Based on these facts, what modernization strategy would you recommend?
 
-This architecture provides:
+Benefits:
 
-- Repeatable analysis
-- Explainable recommendations
-- Reduced hallucinations
-- Lower token consumption
-- Easier testing
-- Enterprise-ready governance
+* Repeatable analysis
+* Explainable findings
+* Lower hallucination risk
+* Lower token cost when AI is added
+* Easier unit testing
+* Clear separation between facts and interpretation
 
-# Design Principles
+## Design Principles
 
-## Separation of Responsibilities
+### Separation of responsibilities
 
-Each component has a single responsibility.
+| Layer | Responsibility |
+| ----- | -------------- |
+| Scanners | Acquire source and inventory files |
+| Detectors | Identify languages, frameworks, and tools |
+| Analyzers | Produce facts and findings |
+| CompositeAnalyzer | Run analyzers sequentially and merge facts |
+| AnalysisService | Orchestrate detection + analysis |
+| Reporters | Present `AnalysisResult` |
+| CLI | Load config, invoke pipeline, write output |
 
-- Repository scanners obtain source code.
-- Technology detectors identify technologies.
-- Analyzers collect evidence.
-- Recommendation engines transform evidence into recommendations.
-- AI interprets structured results rather than raw source code.
+### Composable components
 
+New scanners, detectors, analyzers, and reporters can be added without rewriting the orchestration layer. Analyzers implement a shared protocol and return deltas; the composite merges them.
 
-## Composable Architecture
+### Evidence-based findings
 
-The platform is composed of independent components.
+Findings include title, description, category, severity, source, and structured evidence (file paths and supporting details). Recommendations, when added, must remain traceable to findings.
 
-New scanners, analyzers, detectors, or recommendation engines can be added without changing existing implementations.
-
-
-## Evidence-Based Recommendations
-
-Every recommendation should be traceable back to measurable findings.
-
-For example:
-
-Finding
-
-- Spring Boot application
-- Dockerfile detected
-- Stateless architecture
-- Externalized configuration
-
-Recommendation
-
-> Suitable candidate for containerization and Kubernetes deployment.
-
-Recommendations should always be explainable.
-
-
-## AI as an Interpreter
-
-AI should interpret facts, not discover them.
-
-Whenever deterministic analysis is possible, AIMF performs it before invoking an LLM.
-
-
-# Current Architecture
-
-The current implementation provides the foundation for the analysis pipeline.
+## Runtime Pipeline
 
 ```text
-                 +----------------+
-                 |      CLI       |
-                 +----------------+
-                         │
-                         ▼
-          +-----------------------------+
-          | GitHubRepositoryScanner     |
-          +-----------------------------+
-                         │
-                         ▼
-                 +----------------+
-                 |   Repository   |
-                 +----------------+
-                         │
-                         ▼
-               +-------------------+
-               | AnalysisService   |
-               +-------------------+
-                         │
-                         ▼
-        +--------------------------------+
-        | CompositeTechnologyDetector    |
-        +--------------------------------+
-                         │
-                         ▼
-                +----------------+
-                | AnalysisResult |
-                +----------------+
+                    aimf.toml
+                        │
+                        ▼
+                      CLI
+                        │
+                        ▼
+             GitHubRepositoryScanner
+                        │
+                        ▼
+                   Repository
+                        │
+                        ▼
+                 AnalysisService
+                        │
+          ┌─────────────┴─────────────┐
+          ▼                           ▼
+ CompositeTechnologyDetector   CompositeAnalyzer
+          │                           │
+          ▼                           ▼
+     technologies              facts + findings
+          │                           │
+          └─────────────┬─────────────┘
+                        ▼
+                 AnalysisResult
+                        │
+          ┌─────────────┼─────────────┐
+          ▼             ▼             ▼
+     report.txt    report.json   console / JSON
 ```
 
+### Analyzer fact pipeline
 
-# Component Responsibilities
+`CompositeAnalyzer` runs analyzers in order:
 
-## CLI
+1. Pass accumulated `RepositoryFacts` into the analyzer
+2. Receive new findings and newly produced facts (a delta)
+3. Merge the delta into the accumulated facts
+4. Pass the merged facts to the next analyzer
 
-The command-line interface is responsible for:
+This allows later analyzers (for example dependency health) to consume earlier discovery/metadata facts.
 
-- Loading configuration
-- Invoking the analysis pipeline
-- Producing output
+Default analyzer order in the CLI:
 
-Business logic should never reside in the CLI.
+1. `RepositoryMetricsAnalyzer`
+2. `BuildDiscoveryAnalyzer`
+3. `BuildMetadataAnalyzer`
+4. `DependencyDiscoveryAnalyzer`
+5. `DependencyMetadataAnalyzer`
+6. `DependencyHealthAnalyzer`
+7. `CicdDiscoveryAnalyzer`
 
-
-## Repository Scanners
-
-Repository scanners obtain the source code to analyze.
-
-Current implementations:
-
-- Local Repository Scanner
-- GitHub Repository Scanner
-
-Future implementations may include:
-
-- Azure DevOps
-- GitLab
-- Bitbucket
-- ZIP archives
-- Local workspace management
-
-
-## Repository
-
-The Repository model represents the scanned application.
-
-It contains:
-
-- Repository metadata
-- File inventory
-- Repository location
-
-The Repository acts as the immutable input to the analysis pipeline.
-
-
-## Analysis Service
-
-The Analysis Service orchestrates the complete analysis workflow.
-
-Responsibilities include:
-
-- Executing technology detection
-- Executing analyzers
-- Aggregating results
-- Producing the final AnalysisResult
-
-The service coordinates the workflow but does not perform analysis itself.
-
-## Technology Detection
-
-Technology detection identifies technologies used by the application.
-
-Examples include:
-
-- Java
-- Spring Boot
-- Maven
-- Gradle
-- JUnit
-
-Technology detection is deterministic and repeatable.
-
-## Analysis Result
-
-AnalysisResult represents the complete output of the analysis pipeline.
-
-It contains:
-
-- Repository
-- Detected technologies
-- Findings
-- Recommendations
-- Analysis metadata
-
-This model becomes the primary input to downstream reporting and AI reasoning.
-
-# Target Architecture
-
-The long-term architecture expands deterministic analysis before AI reasoning.
+## Package Layout
 
 ```text
-                        Repository
-                             │
-                             ▼
-                  Technology Detection
-                             │
-                             ▼
-                      Technology List
-                             │
-                             ▼
-                 +-----------------------+
-                 | Composite Analyzer    |
-                 +-----------------------+
-                             │
-      ┌──────────────────────┼─────────────────────────┐
-      ▼                      ▼                         ▼
-Repository Metrics      Build Analyzer      Architecture Analyzer
-      │                      │                         │
-      ▼                      ▼                         ▼
-Dependency Analyzer     Security Analyzer      Cloud Analyzer
-      └──────────────────────┼─────────────────────────┘
-                             ▼
-                          Findings
-                             │
-                             ▼
-                 Recommendation Engine
-                             │
-                             ▼
-                    LLM Interpretation
-                             │
-                             ▼
-                  Modernization Report
+src/aimf/
+├── cli.py
+├── config/
+│   └── settings.py
+├── models/
+│   ├── analysis_result.py
+│   ├── analyzer_result.py
+│   ├── build_facts.py
+│   ├── cicd.py
+│   ├── dependency_facts.py
+│   ├── enums.py
+│   ├── evidence.py
+│   ├── finding.py
+│   ├── recommendation.py
+│   ├── repository.py
+│   ├── repository_facts.py
+│   └── technology.py
+├── reporters/
+│   ├── console_reporter.py
+│   ├── json_file_reporter.py
+│   ├── report_paths.py
+│   └── text_file_reporter.py
+└── services/
+    ├── analysis_service.py
+    ├── contracts.py
+    ├── analyzers/
+    ├── detectors/
+    └── scanners/
 ```
 
-# Analysis Pipeline
+## Component Details
 
-Every repository follows the same analysis lifecycle.
+### Configuration
 
-1. Repository acquisition
-2. Repository scanning
-3. Technology detection
-4. Deterministic analysis
-5. Evidence collection
-6. Recommendation generation
-7. AI interpretation
-8. Modernization report generation
+`aimf.toml` is loaded into Pydantic settings:
 
-# Planned Analyzer Categories
+* `repository.url` — public GitHub HTTPS URL
+* `repository.branch` — optional branch
+* `workspace.directory` — clone workspace
+* `workspace.clean_before_clone` — whether to replace an existing clone
 
-The platform is designed to support specialized analyzers.
+### Scanners
 
-Examples include:
+* `LocalRepositoryScanner` — walks a local tree and collects relative file paths
+* `GitHubRepositoryScanner` — shallow-clones a public GitHub repo, then uses the local scanner
 
-- Repository Metrics Analyzer
-- Build Analyzer
-- Dependency Analyzer
-- Architecture Analyzer
-- Security Analyzer
-- Cloud Readiness Analyzer
-- AI Readiness Analyzer
-- Database Analyzer
-- API Analyzer
-- Testing Analyzer
+### Technology detectors
 
-Each analyzer focuses on one responsibility and contributes structured findings.
+`CompositeTechnologyDetector` combines:
 
-# Long-Term Vision
+* `JavaTechnologyDetector`
+* `JavaScriptTechnologyDetector`
+* `PhpTechnologyDetector`
 
-AI Modernization Factory aims to become a comprehensive enterprise modernization platform capable of:
+### Analyzers
 
-- Repository assessment
-- Legacy application analysis
-- Technical debt assessment
-- Architecture discovery
-- Dependency analysis
-- Cloud readiness assessment
-- AI readiness assessment
-- Security posture analysis
-- Modernization planning
-- Migration roadmap generation
-- Executive reporting
-- Automated modernization workflows
+| Analyzer | Produces |
+| -------- | -------- |
+| `RepositoryMetricsAnalyzer` | Structural metrics findings |
+| `BuildDiscoveryAnalyzer` | `BuildFacts` (systems, wrappers, lockfiles) |
+| `BuildMetadataAnalyzer` | Richer `BuildFacts` (modules, packaging, Java versions, commands) |
+| `DependencyDiscoveryAnalyzer` | Dependency manifests / lockfiles |
+| `DependencyMetadataAnalyzer` | Parsed direct dependencies and categories |
+| `DependencyHealthAnalyzer` | Findings such as unmanaged/dynamic versions and missing lockfiles |
+| `CicdDiscoveryAnalyzer` | `CicdFacts` for detected pipeline files |
 
-The architecture is intentionally modular so that new capabilities can be added without impacting existing components.
+Supporting parsers:
 
-# Current Status
+* `maven_dependency_parser.py` / `maven_version_resolver.py`
+* `github_actions_parser.py` (GitHub Actions YAML parsing; available for deeper CI metadata)
 
-## Completed
+### Domain models
 
-- Project foundation
-- Configuration management
-- Domain model
-- Local repository scanning
-- GitHub repository scanning
-- Technology detection
-- Analysis orchestration
-- CLI integration
-- Automated testing
-- Static analysis (Ruff, MyPy)
+`RepositoryFacts` aggregates:
 
-## Next Milestone
+* `build: BuildFacts | None`
+* `dependencies: DependencyFacts | None`
+* `cicd: CicdFacts | None`
 
-Introduce deterministic analyzers that produce structured findings describing repository characteristics, build systems, architecture, dependencies, and cloud readiness.
+`AnalysisResult` includes repository, technologies, facts, findings, recommendations (currently empty), and run metadata.
 
-These findings will serve as the foundation for AI-generated modernization recommendations.
+`AnalyzerResult` is the per-analyzer return value: findings plus newly produced facts.
+
+### Reporters
+
+* `TextFileReporter` / `JsonFileReporter` — write `report.txt` and `report.json`
+* `ConsoleReporter` — summary or detailed terminal output
+* Reports land in `.aimf/reports/<repo>/<timestamp>/` by default
+
+## Contracts
+
+Key protocols in `services/contracts.py`:
+
+* `TechnologyDetector.detect(repository) -> list[Technology]`
+* `Analyzer.analyze(repository, technologies, facts=None) -> AnalyzerResult`
+
+Analyzers should return only facts they produce. They must not echo the full accumulated facts; merging is the composite’s job.
+
+## Current Status
+
+### Completed
+
+* Project packaging and CLI (`aimf version`, `aimf scan`)
+* Config loading
+* Local and GitHub scanning
+* Technology detection (Java / JS / PHP)
+* Analysis orchestration
+* Build, dependency, metrics, and CI/CD discovery analyzers
+* Dependency health findings
+* Fact-merging composite pipeline
+* Console and file reporters
+* Automated tests and static analysis
+
+### Next milestones
+
+* Wire deeper CI/CD metadata parsing into the main pipeline
+* Expand deterministic rule packs (security, quality, testing)
+* Recommendation engine over findings
+* AI interpretation of structured facts/findings
+* Broader language and repository-source support
+
+## Long-Term Vision
+
+AIMF is intended to grow into a modular enterprise modernization platform covering:
+
+* Repository and architecture assessment
+* Technical debt and dependency risk analysis
+* Cloud and AI readiness
+* Modernization roadmaps and executive reporting
+* Assisted refactoring and continuous monitoring
+
+New capabilities should plug into the existing scan → detect → analyze → report flow without breaking deterministic guarantees.
