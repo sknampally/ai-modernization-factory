@@ -42,7 +42,11 @@ dependencies = [
 
 
 [project.optional-dependencies]
+bedrock = [
+    "boto3>=1.35,<2.0",
+]
 dev = [
+    "boto3>=1.35,<2.0",
     "mypy>=1.14,<2.0",
     "pytest>=8.3,<9.0",
     "pytest-cov>=6.0,<7.0",
@@ -111,6 +115,13 @@ explicit_package_bases = true
 pretty = true
 show_error_codes = true
 warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "boto3",
+    "botocore.*",
+]
+ignore_missing_imports = true
 
 
 [tool.coverage.run]
