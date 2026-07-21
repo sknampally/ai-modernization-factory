@@ -3,7 +3,14 @@
 from collections.abc import Sequence
 from typing import Protocol
 
-from aimf.models import AnalyzerResult, Repository, RepositoryFacts, Technology
+from aimf.models import (
+    AnalyzerResult,
+    Finding,
+    Recommendation,
+    Repository,
+    RepositoryFacts,
+    Technology,
+)
 
 
 class TechnologyDetector(Protocol):
@@ -40,4 +47,17 @@ class Analyzer(Protocol):
             Do not return previously accumulated facts; CompositeAnalyzer
             merges the returned facts into the running total.
         """
+        ...
+
+
+class RecommendationEngine(Protocol):
+    """Generates modernization recommendations from normalized analysis inputs."""
+
+    def generate(
+        self,
+        facts: RepositoryFacts,
+        findings: Sequence[Finding],
+        technologies: Sequence[Technology],
+    ) -> list[Recommendation]:
+        """Generate deterministic recommendations."""
         ...

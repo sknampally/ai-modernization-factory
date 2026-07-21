@@ -1,5 +1,7 @@
 """Tests for the build discovery analyzer."""
 
+from pathlib import Path
+
 from aimf.models import Repository
 from aimf.services.analyzers import BuildDiscoveryAnalyzer
 
@@ -7,7 +9,7 @@ from aimf.services.analyzers import BuildDiscoveryAnalyzer
 def test_detects_maven_build_system() -> None:
     repository = Repository(
         name="sample-maven-project",
-        path="/tmp/sample-maven-project",
+        path=Path("/tmp/sample-maven-project"),
         files=[
             "pom.xml",
             "mvnw",
@@ -32,7 +34,7 @@ def test_detects_maven_build_system() -> None:
 def test_detects_multiple_build_systems() -> None:
     repository = Repository(
         name="full-stack-project",
-        path="/tmp/sample-maven-project",
+        path=Path("/tmp/sample-maven-project"),
         files=[
             "backend/pom.xml",
             "backend/mvnw",
@@ -65,7 +67,7 @@ def test_detects_multiple_build_systems() -> None:
 def test_returns_empty_build_facts_when_no_build_system_is_detected() -> None:
     repository = Repository(
         name="documentation-project",
-        path="/tmp/sample-maven-project",
+        path=Path("/tmp/sample-maven-project"),
         files=[
             "README.md",
             "docs/architecture.md",

@@ -141,3 +141,6 @@ repositories/
 
 # AIMF local workspace
 .aimf/
+
+# Generated analysis reports
+reports/

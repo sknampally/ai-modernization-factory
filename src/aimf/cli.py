@@ -14,18 +14,22 @@ from aimf.reporters import (
     JsonFileReporter,
     TextFileReporter,
     create_report_paths,
+    retain_recent_reports,
 )
 from aimf.result_renderer import render_json
 from aimf.services.analysis_service import AnalysisService
 from aimf.services.analyzers import (
+    ArchitectureAnalyzer,
     BuildDiscoveryAnalyzer,
     BuildMetadataAnalyzer,
     CicdDiscoveryAnalyzer,
+    CloudReadinessAnalyzer,
     CompositeAnalyzer,
     DependencyDiscoveryAnalyzer,
     DependencyHealthAnalyzer,
     DependencyMetadataAnalyzer,
     RepositoryMetricsAnalyzer,
+    SecurityAnalyzer,
 )
 from aimf.services.detectors.composite_technology_detector import (
     CompositeTechnologyDetector,
@@ -84,7 +88,7 @@ def scan(
             "--report-directory",
             help="Directory where analysis reports are written.",
         ),
-    ] = Path(".aimf/reports"),
+    ] = Path("reports"),
     verbose: Annotated[
         bool,
         typer.Option(
@@ -125,6 +129,9 @@ def scan(
                 DependencyMetadataAnalyzer(),
                 DependencyHealthAnalyzer(),
                 CicdDiscoveryAnalyzer(),
+                SecurityAnalyzer(),
+                ArchitectureAnalyzer(),
+                CloudReadinessAnalyzer(),
             ]
         ),
         analyzer_version=__version__,
@@ -146,6 +153,8 @@ def scan(
         result=result,
         output_path=report_paths.json_report,
     )
+
+    retain_recent_reports(report_paths.directory.parent)
 
     if output == OutputFormat.JSON:
         render_json(result)

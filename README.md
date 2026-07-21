@@ -68,17 +68,18 @@ aimf version
 aimf scan
 aimf scan --verbose
 aimf scan --output json
-aimf scan --report-directory .aimf/reports
+aimf scan --report-directory reports
 ```
 
 Reports are written under:
 
 ```text
-.aimf/reports/<repository-name>/<timestamp>/
+reports/<repository-name>/<timestamp>/
 ├── report.txt
 └── report.json
 ```
 
+Only the latest 3 timestamped run directories are kept for each repository.
 ## CLI
 
 | Command | Description |
@@ -92,7 +93,7 @@ Reports are written under:
 | ------ | ------- | ----------- |
 | `--config` / `-c` | `aimf.toml` | TOML configuration path |
 | `--output` / `-o` | `text` | Terminal output format (`text` or `json`) |
-| `--report-directory` | `.aimf/reports` | Where report files are written |
+| `--report-directory` | `reports` | Where report files are written |
 | `--verbose` / `-v` | off | Print the full console report |
 
 ## Analysis Pipeline

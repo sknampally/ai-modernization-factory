@@ -191,7 +191,8 @@ Supporting parsers:
 
 * `TextFileReporter` / `JsonFileReporter` — write `report.txt` and `report.json`
 * `ConsoleReporter` — summary or detailed terminal output
-* Reports land in `.aimf/reports/<repo>/<timestamp>/` by default
+* Reports land in `reports/<repo>/<YYYYMMDD-HHMMSS>/` by default
+* Only the latest 3 timestamped run directories are retained per repository
 
 ## Contracts
 

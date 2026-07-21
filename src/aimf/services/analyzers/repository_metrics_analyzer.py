@@ -14,6 +14,7 @@ from aimf.models import (
     Severity,
     Technology,
 )
+from aimf.models.normalized_facts import StructureFacts
 
 
 class RepositoryMetricsAnalyzer:
@@ -157,7 +158,17 @@ class RepositoryMetricsAnalyzer:
             metadata=metrics,
         )
 
-        return AnalyzerResult(findings=[finding], facts=RepositoryFacts())
+        return AnalyzerResult(
+            findings=[finding],
+            facts=RepositoryFacts(
+                structure=StructureFacts(
+                    file_count=len(files),
+                    source_file_count=len(source_files),
+                    test_file_count=len(test_files),
+                    has_tests=bool(test_files),
+                )
+            ),
+        )
 
     @staticmethod
     def _is_test_file(file_path: PurePosixPath) -> bool:

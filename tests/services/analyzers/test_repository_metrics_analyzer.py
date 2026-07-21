@@ -78,6 +78,12 @@ def test_repository_metrics_analyzer_collects_structural_metrics() -> None:
         "pom.xml",
     }
 
+    assert result.facts.structure is not None
+    assert result.facts.structure.file_count == 9
+    assert result.facts.structure.source_file_count == 3
+    assert result.facts.structure.test_file_count == 1
+    assert result.facts.structure.has_tests is True
+
 
 def test_repository_metrics_analyzer_returns_zero_counts() -> None:
     repository = Repository(

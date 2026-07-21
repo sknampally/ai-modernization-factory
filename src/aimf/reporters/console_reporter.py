@@ -11,7 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from aimf.models import AnalysisResult, Finding
+from aimf.models import AnalysisResult, Finding, Priority, Recommendation
 
 
 class ConsoleReporter:
@@ -34,9 +34,12 @@ class ConsoleReporter:
         self._render_header()
         self._render_repository(result)
         self._render_technologies(result)
+        self._render_repository_facts(result)
         self._render_build_facts(result)
         self._render_dependency_facts(result)
         self._render_findings(result)
+        self._render_recommendations(result)
+        self._render_prioritized_roadmap(result)
         self._render_summary(result)
 
     def render_summary(
@@ -50,6 +53,7 @@ class ConsoleReporter:
         self._render_header()
         self._render_repository_summary(result)
         self._render_technology_summary(result)
+        self._render_recommendation_summary(result)
         self._render_summary(result)
 
         if text_report_path is not None or json_report_path is not None:
@@ -177,6 +181,173 @@ class ConsoleReporter:
                 title="Technologies",
             )
         )
+        self.console.print()
+
+    def _render_repository_facts(self, result: AnalysisResult) -> None:
+        """Render a concise normalized repository facts section."""
+
+        facts = result.facts
+        rows: list[tuple[str, str]] = []
+
+        structure = facts.structure
+        if structure is not None:
+            if structure.file_count is not None:
+                rows.append(("File count", str(structure.file_count)))
+            if structure.source_file_count is not None:
+                rows.append(("Source files", str(structure.source_file_count)))
+            if structure.test_file_count is not None:
+                rows.append(("Test files", str(structure.test_file_count)))
+            if structure.application_count is not None:
+                rows.append(("Applications", str(structure.application_count)))
+            if structure.has_tests is not None:
+                rows.append(("Has tests", "Yes" if structure.has_tests else "No"))
+            if structure.architecture_layers:
+                rows.append(
+                    (
+                        "Architecture layers",
+                        self._join_or_default(structure.architecture_layers),
+                    )
+                )
+
+        technology = facts.technology
+        if technology is not None:
+            if technology.programming_languages:
+                rows.append(
+                    (
+                        "Languages",
+                        self._join_or_default(technology.programming_languages),
+                    )
+                )
+            if technology.frameworks:
+                rows.append(
+                    (
+                        "Frameworks",
+                        self._join_or_default(technology.frameworks),
+                    )
+                )
+            if technology.build_tools:
+                rows.append(
+                    (
+                        "Build tools",
+                        self._join_or_default(technology.build_tools),
+                    )
+                )
+            if technology.test_frameworks:
+                rows.append(
+                    (
+                        "Test frameworks",
+                        self._join_or_default(technology.test_frameworks),
+                    )
+                )
+
+        dependencies = facts.dependencies
+        if dependencies is not None:
+            rows.append(
+                (
+                    "Dependency count",
+                    str(dependencies.dependency_count or dependencies.direct_dependency_count),
+                )
+            )
+            if dependencies.outdated_dependencies:
+                rows.append(
+                    (
+                        "Outdated dependencies",
+                        self._join_or_default(dependencies.outdated_dependencies),
+                    )
+                )
+
+        cicd = facts.cicd
+        if cicd is not None:
+            platforms = cicd.ci_platforms or cicd.providers
+            if platforms:
+                rows.append(("CI platforms", self._join_or_default(platforms)))
+            rows.append(("Has CI", "Yes" if cicd.has_ci else "No"))
+            rows.append(
+                (
+                    "Deployment workflow",
+                    "Yes" if cicd.has_deployment_workflow else "No",
+                )
+            )
+
+        security = facts.security
+        if security is not None:
+            if security.sensitive_file_count is not None:
+                rows.append(
+                    (
+                        "Sensitive files",
+                        str(security.sensitive_file_count),
+                    )
+                )
+            if security.secret_finding_count is not None:
+                rows.append(
+                    (
+                        "Secret findings",
+                        str(security.secret_finding_count),
+                    )
+                )
+            if security.weak_crypto_count is not None:
+                rows.append(
+                    (
+                        "Weak crypto findings",
+                        str(security.weak_crypto_count),
+                    )
+                )
+            if security.dangerous_execution_count is not None:
+                rows.append(
+                    (
+                        "Dangerous execution findings",
+                        str(security.dangerous_execution_count),
+                    )
+                )
+
+        cloud = facts.cloud
+        if cloud is not None:
+            if cloud.cloud_capabilities:
+                rows.append(
+                    (
+                        "Cloud capabilities",
+                        self._join_or_default(cloud.cloud_capabilities),
+                    )
+                )
+            for label, flag in (
+                ("Docker", cloud.has_docker),
+                ("Docker Compose", cloud.has_docker_compose),
+                ("Kubernetes", cloud.has_kubernetes),
+                ("Helm", cloud.has_helm),
+                ("Terraform", cloud.has_terraform),
+                ("CloudFormation", cloud.has_cloudformation),
+                ("Serverless", cloud.has_serverless),
+            ):
+                if flag is not None:
+                    rows.append((label, "Yes" if flag else "No"))
+
+        architecture = facts.architecture
+        if architecture is not None:
+            for label, flag in (
+                ("API layer", architecture.has_api_layer),
+                ("Service layer", architecture.has_service_layer),
+                ("Persistence layer", architecture.has_persistence_layer),
+                ("Domain layer", architecture.has_domain_layer),
+                ("Multi-application", architecture.is_multi_application),
+            ):
+                if flag is not None:
+                    rows.append((label, "Yes" if flag else "No"))
+
+        if not rows:
+            return
+
+        table = Table(
+            title="Repository Facts",
+            show_header=False,
+            box=None,
+        )
+        table.add_column("Field", style="bold")
+        table.add_column("Value", overflow="fold")
+
+        for field_name, field_value in rows:
+            table.add_row(field_name, field_value)
+
+        self.console.print(table)
         self.console.print()
 
     def _render_build_facts(self, result: AnalysisResult) -> None:
@@ -469,6 +640,227 @@ class ConsoleReporter:
 
         self.console.print(table)
         self.console.print()
+
+    def _render_recommendation_summary(
+        self,
+        result: AnalysisResult,
+    ) -> None:
+        recommendations = result.recommendations
+
+        priority_counts = Counter(
+            self._display_value(recommendation.priority) for recommendation in recommendations
+        )
+
+        counts_table = Table(
+            title="Recommendations by Priority",
+            show_header=False,
+            box=None,
+        )
+        counts_table.add_column("Priority", style="bold")
+        counts_table.add_column("Count", justify="right")
+
+        for priority in ("critical", "high", "medium", "low"):
+            counts_table.add_row(
+                priority.upper(),
+                str(priority_counts.get(priority, 0)),
+            )
+
+        counts_table.add_row("Total", str(len(recommendations)))
+        self.console.print(counts_table)
+        self.console.print()
+
+        if not recommendations:
+            return
+
+        top_recommendations = recommendations[:5]
+
+        self.console.print(
+            Text(
+                f"Top Recommendations ({len(top_recommendations)})",
+                style="bold",
+            )
+        )
+        self.console.print()
+
+        for recommendation in top_recommendations:
+            self._render_recommendation(recommendation, compact=True)
+
+    def _render_recommendations(self, result: AnalysisResult) -> None:
+        recommendations = result.recommendations
+
+        if not recommendations:
+            self.console.print(
+                Panel(
+                    "[green]No modernization recommendations generated.[/green]",
+                    title="Modernization Recommendations",
+                    border_style="green",
+                )
+            )
+            self.console.print()
+            return
+
+        self.console.print(
+            Text(
+                f"Modernization Recommendations ({len(recommendations)})",
+                style="bold",
+            )
+        )
+        self.console.print()
+
+        for recommendation in recommendations:
+            self._render_recommendation(recommendation, compact=False)
+
+    def _render_prioritized_roadmap(self, result: AnalysisResult) -> None:
+        recommendations = result.recommendations
+
+        groups = {
+            "Immediate": [
+                recommendation
+                for recommendation in recommendations
+                if recommendation.priority in {Priority.CRITICAL, Priority.HIGH}
+            ],
+            "Near term": [
+                recommendation
+                for recommendation in recommendations
+                if recommendation.priority == Priority.MEDIUM
+            ],
+            "Later": [
+                recommendation
+                for recommendation in recommendations
+                if recommendation.priority == Priority.LOW
+            ],
+        }
+
+        self.console.print(Text("Prioritized Roadmap", style="bold"))
+        self.console.print()
+
+        for group_name, group_recommendations in groups.items():
+            if not group_recommendations:
+                self.console.print(
+                    Panel(
+                        "None",
+                        title=group_name,
+                        border_style="dim",
+                    )
+                )
+                self.console.print()
+                continue
+
+            lines = [
+                f"{self._display_value(recommendation.priority).upper()}: {recommendation.title}"
+                for recommendation in group_recommendations
+            ]
+
+            self.console.print(
+                Panel(
+                    "\n".join(lines),
+                    title=group_name,
+                    border_style="blue",
+                )
+            )
+            self.console.print()
+
+    def _render_recommendation(
+        self,
+        recommendation: Recommendation,
+        *,
+        compact: bool,
+    ) -> None:
+        priority = self._display_value(recommendation.priority)
+
+        heading = Text()
+        heading.append(priority.upper(), style=self._priority_style(priority))
+        heading.append("  ")
+        heading.append(recommendation.rule_id, style="bold")
+        heading.append("  ")
+        heading.append(recommendation.title, style="bold")
+
+        details: list[Text] = []
+
+        rationale = Text()
+        rationale.append("Rationale: ", style="bold")
+        rationale.append(recommendation.rationale)
+        details.append(rationale)
+
+        action = Text()
+        action.append("Proposed action: ", style="bold")
+        action.append(recommendation.description)
+        details.append(action)
+
+        if not compact:
+            effort = Text()
+            effort.append("Effort: ", style="bold")
+            effort.append(self._display_value(recommendation.effort))
+            details.append(effort)
+
+            risk = Text()
+            risk.append("Risk: ", style="bold")
+            risk.append(self._display_value(recommendation.risk))
+            details.append(risk)
+
+            category = Text()
+            category.append("Category: ", style="bold")
+            category.append(self._display_value(recommendation.category))
+            details.append(category)
+
+            evidence_lines = self._recommendation_evidence(recommendation)
+            panel_content = Group(*details, Text(), *evidence_lines)
+        else:
+            effort = Text()
+            effort.append("Effort: ", style="bold")
+            effort.append(self._display_value(recommendation.effort))
+            details.append(effort)
+
+            risk = Text()
+            risk.append("Risk: ", style="bold")
+            risk.append(self._display_value(recommendation.risk))
+            details.append(risk)
+
+            panel_content = Group(*details)
+
+        self.console.print(
+            Panel(
+                panel_content,
+                title=heading,
+                title_align="left",
+                border_style=self._priority_style(priority),
+                expand=True,
+            )
+        )
+
+    def _recommendation_evidence(
+        self,
+        recommendation: Recommendation,
+    ) -> list[Text]:
+        if not recommendation.evidence:
+            no_evidence = Text()
+            no_evidence.append("Evidence: ", style="bold")
+            no_evidence.append("No structured evidence provided.")
+            return [no_evidence]
+
+        rendered: list[Text] = [Text("Evidence:", style="bold")]
+
+        for index, item in enumerate(recommendation.evidence, start=1):
+            evidence = Text()
+            evidence.append(f"  {index}. ", style="dim")
+            evidence.append(item.file_path, style="bold")
+
+            if item.description:
+                evidence.append(f" — {item.description}")
+
+            rendered.append(evidence)
+
+        return rendered
+
+    def _priority_style(self, priority: str) -> str:
+        styles = {
+            "critical": "bold red",
+            "high": "red",
+            "medium": "yellow",
+            "low": "cyan",
+        }
+
+        return styles.get(priority, "white")
 
     def _render_report_locations(
         self,

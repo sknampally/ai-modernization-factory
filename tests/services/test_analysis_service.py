@@ -9,6 +9,7 @@ from aimf.models import (
     FindingCategory,
     FindingSource,
     Repository,
+    RepositoryFacts,
     Severity,
     Technology,
     TechnologyCategory,
@@ -21,6 +22,8 @@ class StubTechnologyDetector:
 
     def detect(self, repository: Repository) -> list[Technology]:
         """Return a predictable technology result."""
+
+        del repository
 
         return [
             Technology(
@@ -39,8 +42,11 @@ class StubAnalyzer:
         self,
         repository: Repository,
         technologies: Sequence[Technology],
-    ) -> list[Finding]:
+        facts: RepositoryFacts | None = None,
+    ) -> AnalyzerResult:
         """Return a predictable finding."""
+
+        del facts
 
         return AnalyzerResult(
             findings=[
@@ -83,7 +89,11 @@ def test_analysis_service_creates_analysis_result() -> None:
     assert result.findings[0].source == FindingSource.DETERMINISTIC
     assert result.findings[0].affected_technologies == ["Java"]
 
-    assert result.recommendations == []
+    assert isinstance(result.recommendations, list)
     assert result.completed_at is not None
     assert result.completed_at >= result.started_at
     assert result.analyzer_version == "0.2.0"
+
+    assert result.facts.technology is not None
+    assert result.facts.technology.programming_languages == ["Java"]
+    assert result.facts.technology.detected_technologies == ["Java"]

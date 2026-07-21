@@ -15,6 +15,7 @@ from aimf.models import (
     Severity,
     Technology,
 )
+from aimf.models.normalized_facts import TechnologyFacts
 
 
 class BuildDiscoveryAnalyzer:
@@ -175,5 +176,10 @@ class BuildDiscoveryAnalyzer:
 
         return AnalyzerResult(
             findings=[finding],
-            facts=RepositoryFacts(build=build_facts),
+            facts=RepositoryFacts(
+                build=build_facts,
+                technology=TechnologyFacts(
+                    build_tools=list(build_facts.build_systems),
+                ),
+            ),
         )

@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from aimf.models import (
     AnalysisResult,
     Finding,
@@ -67,7 +69,7 @@ def _create_result() -> AnalysisResult:
 
 
 def test_render_text_outputs_human_readable_summary(
-    capsys,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     result = _create_result()
 
@@ -87,7 +89,7 @@ def test_render_text_outputs_human_readable_summary(
 
 
 def test_render_json_outputs_complete_analysis_result(
-    capsys,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     result = _create_result()
 
