@@ -44,6 +44,7 @@ class PmdCommandBuilder:
             self._executable,
             "check",
             "--no-cache",
+            "--no-progress",
             "--format",
             format_name,
             "--report-file",
@@ -51,10 +52,10 @@ class PmdCommandBuilder:
             "--rulesets",
             ",".join(rulesets),
             "--minimum-priority",
-            str(minimum_priority),
+            _format_minimum_priority(minimum_priority),
         ]
         for source_root in source_roots:
-            args.extend(["--dir", str(source_root)])
+            args.extend(["--dir", str(source_root.resolve())])
 
         return PmdCommand(
             args=args,
@@ -79,10 +80,13 @@ class PmdCommandBuilder:
     ) -> PmdCommand:
         """Build a legacy PMD 6-style analysis command."""
 
+        if not source_roots:
+            raise ValueError("source_roots must not be empty")
+
         args = [
             self._executable,
             "-d",
-            str(source_roots[0]),
+            ",".join(str(root.resolve()) for root in source_roots),
             "-R",
             ",".join(rulesets),
             "-f",
@@ -103,3 +107,18 @@ class PmdCommandBuilder:
                 "cli_style": "pmd6-legacy",
             },
         )
+
+
+def _format_minimum_priority(minimum_priority: int | str) -> str:
+    """Map AIMF numeric priorities to PMD 7 named thresholds when possible."""
+
+    if isinstance(minimum_priority, str):
+        return minimum_priority
+    mapping = {
+        1: "HIGH",
+        2: "MEDIUM_HIGH",
+        3: "MEDIUM",
+        4: "MEDIUM_LOW",
+        5: "LOW",
+    }
+    return mapping.get(minimum_priority, str(minimum_priority))

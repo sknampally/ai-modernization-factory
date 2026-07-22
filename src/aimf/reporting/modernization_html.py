@@ -31,14 +31,28 @@ from aimf.reporters.html_rendering import (
     render_collection,
     wrap_table,
 )
-from aimf.reporting.modernization_models import ModernizationReportInput
+from aimf.reporting.deterministic_content import (
+    render_comparison_section,
+    render_deterministic_executive_summary,
+    render_deterministic_recommendations,
+    render_repository_system_intelligence,
+    render_static_analysis_providers,
+)
+from aimf.reporting.modernization_models import AssessmentMode, ModernizationReportInput
 from aimf.reporting.modernization_view import (
+    assessment_mode_label,
     finding_anchor_id,
     finding_anchor_map,
     repository_identifier,
     sanitize_display_path,
     sorted_findings,
     validate_modernization_report_input,
+)
+from aimf.static_analysis.models import StaticAnalysisStatus
+
+AI_NOT_EXECUTED_MESSAGE = (
+    "AI interpretation was not executed for this assessment. "
+    "The report contains AIMF deterministic system intelligence only."
 )
 
 CONTENT_SECURITY_POLICY = (
@@ -54,8 +68,6 @@ CONTENT_SECURITY_POLICY = (
     "style-src 'unsafe-inline'"
 )
 
-_EMPTY_TECH_ROW = '<tr><td colspan="3">None detected</td></tr>'
-
 
 class ModernizationHTMLReportRenderer:
     """Render a polished, deterministic modernization assessment HTML report."""
@@ -66,7 +78,7 @@ class ModernizationHTMLReportRenderer:
         """Return a complete self-contained HTML document."""
 
         validated = validate_modernization_report_input(report_input)
-        title = validated.report_title
+        analysis = validated.analysis_result
         repo_name = repository_identifier(validated)
         return (
             "<!DOCTYPE html>\n"
@@ -76,22 +88,24 @@ class ModernizationHTMLReportRenderer:
             '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
             f'<meta http-equiv="Content-Security-Policy" '
             f'content="{escape_html(CONTENT_SECURITY_POLICY)}">\n'
-            f"<title>{escape_html(f'{title} — {repo_name}')}</title>\n"
+            f"<title>{escape_html(f'AIMF Assessment — {repo_name}')}</title>\n"
             f"<style>{_css()}</style>\n"
             "</head>\n"
             "<body>\n"
             '<div class="page">\n'
             f"{self._render_cover(validated)}"
-            f"{self._render_toc()}"
-            f"{self._render_executive_summary(validated)}"
-            f"{self._render_repository_overview(validated)}"
-            f"{self._render_key_risks(validated)}"
-            f"{self._render_recommendations(validated)}"
-            f"{self._render_roadmap(validated)}"
+            f"{self._render_toc(validated)}"
+            f"{render_deterministic_executive_summary(analysis)}"
+            f"{render_repository_system_intelligence(analysis)}"
+            f"{render_static_analysis_providers(analysis)}"
             f"{self._render_findings(validated)}"
+            f"{render_deterministic_recommendations(analysis)}"
+            f"{render_comparison_section(analysis)}"
+            f"{self._render_ai_interpretation(validated)}"
+            f"{self._render_analysis_coverage(validated)}"
             f"{self._render_coverage_and_limitations(validated)}"
             f"{self._render_execution_details(validated)}"
-            f"{self._render_methodology()}"
+            f"{self._render_methodology(validated)}"
             f"{self._render_footer(validated)}"
             "</div>\n"
             "</body>\n"
@@ -99,10 +113,29 @@ class ModernizationHTMLReportRenderer:
         )
 
     def _render_cover(self, report_input: ModernizationReportInput) -> str:
-        repo = report_input.analysis_context.repository
+        analysis = report_input.analysis_result
+        context = report_input.analysis_context
+        source_type = (
+            context.repository.source_type
+            if context is not None
+            else ("github" if analysis.repository.source_url else "local")
+        )
         org = report_input.organization_name
         notice = report_input.confidentiality_notice
         generated = _format_timestamp(report_input.generated_at_utc)
+        mode_label = assessment_mode_label(report_input.assessment_mode)
+        technologies = ", ".join(tech.name for tech in analysis.technologies) or ("None detected")
+        build_systems = (
+            ", ".join(analysis.facts.build.build_systems)
+            if analysis.facts.build is not None and analysis.facts.build.build_systems
+            else "None detected"
+        )
+        dependency_count = "Unknown"
+        if analysis.facts.dependencies is not None:
+            deps = analysis.facts.dependencies
+            count = deps.dependency_count or deps.direct_dependency_count
+            if count is not None:
+                dependency_count = str(count)
         org_row = (
             f"<dt>Organization</dt><dd>{escape_and_wrap(org)}</dd>\n" if org and org.strip() else ""
         )
@@ -111,41 +144,83 @@ class ModernizationHTMLReportRenderer:
             if notice and notice.strip()
             else ""
         )
+        warning_block = ""
+        if report_input.warnings:
+            items = "".join(f"<li>{escape_and_wrap(item)}</li>" for item in report_input.warnings)
+            warning_block = (
+                '<div class="warning" role="status">\n'
+                "<strong>Assessment warnings</strong>\n"
+                f"<ul>{items}</ul>\n"
+                "</div>\n"
+            )
+        schema_rows = ""
+        if report_input.ai_executed:
+            schema_rows = (
+                "<dt>Context schema</dt>"
+                f"<dd>{escape_html(LLM_CONTRACT_SCHEMA_VERSION)}</dd>\n"
+                "<dt>Recommendation schema</dt>"
+                f"<dd>{escape_html(AI_RECOMMENDATION_SCHEMA_VERSION)}</dd>\n"
+                f"<dt>Agent version</dt><dd>{escape_html(AGENT_VERSION)}</dd>\n"
+            )
+        legend = (
+            '<p class="legend">'
+            '<span class="chip deterministic">Deterministic evidence</span> '
+            + (
+                '<span class="chip ai">AI-generated interpretation</span>'
+                if report_input.ai_executed
+                else '<span class="chip">AI interpretation not executed</span>'
+            )
+            + "</p>\n"
+        )
+        subtitle = (
+            "AI-enhanced modernization assessment"
+            if report_input.ai_executed
+            else "Deterministic modernization assessment"
+        )
         return (
             '<header id="cover" class="report-header cover">\n'
-            f"<h1>{escape_and_wrap(report_input.report_title)}</h1>\n"
-            '<p class="subtitle">Customer modernization assessment report</p>\n'
+            "<h1>AI Modernization Factory</h1>\n"
+            f'<p class="subtitle">{escape_html(subtitle)}</p>\n'
             f"{notice_block}"
+            f"{warning_block}"
             '<dl class="meta-grid">\n'
             f"<dt>Repository</dt><dd>{escape_and_wrap(repository_identifier(report_input))}</dd>\n"
             f"{org_row}"
+            f"<dt>Assessment mode</dt><dd>{escape_html(mode_label)}</dd>\n"
             f"<dt>Generated (UTC)</dt><dd>{escape_and_wrap(generated)}</dd>\n"
-            f"<dt>Source type</dt><dd>{escape_and_wrap(repo.source_type)}</dd>\n"
-            "<dt>Context schema</dt>"
-            f"<dd>{escape_html(LLM_CONTRACT_SCHEMA_VERSION)}</dd>\n"
-            "<dt>Recommendation schema</dt>"
-            f"<dd>{escape_html(AI_RECOMMENDATION_SCHEMA_VERSION)}</dd>\n"
-            f"<dt>Agent version</dt><dd>{escape_html(AGENT_VERSION)}</dd>\n"
+            f"<dt>Source type</dt><dd>{escape_and_wrap(source_type)}</dd>\n"
+            f"<dt>Files scanned</dt><dd>{len(analysis.repository.files)}</dd>\n"
+            f"<dt>Detected technologies</dt><dd>{escape_and_wrap(technologies)}</dd>\n"
+            f"<dt>Build systems</dt><dd>{escape_and_wrap(build_systems)}</dd>\n"
+            f"<dt>Dependency count</dt><dd>{escape_and_wrap(dependency_count)}</dd>\n"
+            f"{schema_rows}"
             "</dl>\n"
-            '<p class="legend">'
-            '<span class="chip deterministic">Deterministic evidence</span> '
-            '<span class="chip ai">AI-generated interpretation</span>'
-            "</p>\n"
+            f"{legend}"
             "</header>\n"
         )
 
-    def _render_toc(self) -> str:
+    def _render_toc(self, report_input: ModernizationReportInput) -> str:
         items = [
             ("executive-summary", "Executive Summary"),
-            ("repository-overview", "Repository Overview"),
-            ("key-risks", "Key Risks"),
-            ("recommendations", "Recommendations"),
-            ("roadmap", "Modernization Roadmap"),
+            ("repository-intelligence", "Repository System Intelligence"),
+            ("static-analysis", "Static Analysis"),
             ("findings", "Deterministic Findings"),
-            ("coverage", "Evidence Coverage and Limitations"),
-            ("execution", "Assessment Execution Details"),
-            ("methodology", "Methodology"),
+            ("deterministic-recommendations", "Deterministic Recommendations"),
         ]
+        if (
+            report_input.analysis_result.comparison is not None
+            and report_input.analysis_result.comparison.baseline_available
+        ):
+            items.append(("comparison", "Changes Since Previous Assessment"))
+        items.extend(
+            [
+                ("ai-interpretation", "AI Interpretation"),
+                ("analysis-coverage", "Analysis Coverage"),
+                ("coverage", "Evidence Coverage and Limitations"),
+                ("execution", "Assessment Execution Details"),
+                ("methodology", "Methodology"),
+            ]
+        )
         links = "".join(
             f'<li><a href="#{anchor}">{escape_html(label)}</a></li>\n' for anchor, label in items
         )
@@ -156,7 +231,30 @@ class ModernizationHTMLReportRenderer:
             "</nav>\n"
         )
 
-    def _render_executive_summary(self, report_input: ModernizationReportInput) -> str:
+    def _render_ai_interpretation(self, report_input: ModernizationReportInput) -> str:
+        if not report_input.ai_executed:
+            return (
+                '<section id="ai-interpretation" class="section ai-section page-break">\n'
+                "<h2>AI Interpretation</h2>\n"
+                '<p class="ai-label">AI interpretation</p>\n'
+                f'<p class="ai-not-executed">{escape_and_wrap(AI_NOT_EXECUTED_MESSAGE)}</p>\n'
+                "</section>\n"
+            )
+
+        return (
+            '<section id="ai-interpretation" class="section ai-section page-break">\n'
+            "<h2>AI Interpretation</h2>\n"
+            '<p class="ai-label">AI-generated interpretation based on deterministic evidence</p>\n'
+            f"{self._render_ai_executive_body(report_input)}"
+            f"{self._render_key_risks_body(report_input)}"
+            f"{self._render_ai_recommendations_body(report_input)}"
+            f"{self._render_ai_roadmap_body(report_input)}"
+            "</section>\n"
+        )
+
+    def _render_ai_executive_body(self, report_input: ModernizationReportInput) -> str:
+        assert report_input.assessment_result is not None
+        assert report_input.analysis_context is not None
         recommendation = report_input.assessment_result.recommendation_result
         coverage = recommendation.evidence_coverage
         truncation = report_input.analysis_context.findings_truncation
@@ -171,9 +269,7 @@ class ModernizationHTMLReportRenderer:
                 "</p>\n"
             )
         return (
-            '<section id="executive-summary" class="section ai-section page-break">\n'
-            "<h2>Executive Summary</h2>\n"
-            '<p class="ai-label">AI-generated interpretation based on deterministic evidence</p>\n'
+            "<h3>Executive Interpretation</h3>\n"
             f"<p>{escape_and_wrap(recommendation.executive_summary)}</p>\n"
             f"<p>{escape_and_wrap(recommendation.overall_assessment)}</p>\n"
             '<dl class="meta-grid">\n'
@@ -183,62 +279,12 @@ class ModernizationHTMLReportRenderer:
             f"<dd>{coverage.findings_referenced} / {coverage.total_findings}</dd>\n"
             "</dl>\n"
             f"{warning}"
-            "</section>\n"
         )
 
-    def _render_repository_overview(self, report_input: ModernizationReportInput) -> str:
-        context = report_input.analysis_context
-        analysis = report_input.analysis_result
-        metrics = context.metrics
-        tech_rows = "".join(
-            (
-                "<tr>"
-                f"<td>{escape_and_wrap(tech.name)}</td>"
-                f"<td>{escape_and_wrap(tech.category)}</td>"
-                f"<td>{escape_and_wrap(tech.version or '—')}</td>"
-                "</tr>\n"
-            )
-            for tech in sorted(
-                context.technologies,
-                key=lambda item: (item.category.lower(), item.name.lower()),
-            )
-        )
-        tech_table = wrap_table(
-            '<table class="facts">\n'
-            "<thead><tr><th>Technology</th><th>Category</th><th>Version</th></tr></thead>\n"
-            f"<tbody>{tech_rows or _EMPTY_TECH_ROW}</tbody>\n"
-            "</table>\n"
-        )
-        source_files = _optional_int(metrics.source_file_count)
-        test_files = _optional_int(metrics.test_file_count)
-        return (
-            '<section id="repository-overview" '
-            'class="section deterministic-section page-break">\n'
-            "<h2>Repository Overview</h2>\n"
-            '<p class="deterministic-label">Deterministic analysis evidence</p>\n'
-            '<dl class="meta-grid">\n'
-            f"<dt>Repository</dt><dd>{escape_and_wrap(context.repository.name)}</dd>\n"
-            f"<dt>Source type</dt><dd>{escape_and_wrap(context.repository.source_type)}</dd>\n"
-            "<dt>Default branch</dt>"
-            f"<dd>{escape_and_wrap(context.repository.default_branch or '—')}</dd>\n"
-            "<dt>Commit</dt>"
-            f"<dd>{escape_and_wrap(context.repository.commit_sha or '—')}</dd>\n"
-            f"<dt>Files analyzed</dt><dd>{context.repository.file_count}</dd>\n"
-            f"<dt>Source files</dt><dd>{source_files}</dd>\n"
-            f"<dt>Test files</dt><dd>{test_files}</dd>\n"
-            f"<dt>Technologies</dt><dd>{metrics.technology_count}</dd>\n"
-            f"<dt>Findings (analysis)</dt><dd>{len(analysis.findings)}</dd>\n"
-            f"<dt>Findings (context)</dt><dd>{len(context.findings)}</dd>\n"
-            "</dl>\n"
-            "<h3>Technologies</h3>\n"
-            f"{tech_table}"
-            "</section>\n"
-        )
-
-    def _render_key_risks(self, report_input: ModernizationReportInput) -> str:
+    def _render_key_risks_body(self, report_input: ModernizationReportInput) -> str:
+        assert report_input.assessment_result is not None
         recommendation = report_input.assessment_result.recommendation_result
         risks = recommendation.key_risks
-        # Prefer structured high/critical recommendations as risk cards when present.
         priority_risks = [
             item
             for item in recommendation.recommendations
@@ -264,13 +310,7 @@ class ModernizationHTMLReportRenderer:
         else:
             cards.append('<p class="empty">No key risks were identified.</p>\n')
 
-        return (
-            '<section id="key-risks" class="section ai-section page-break">\n'
-            "<h2>Key Risks</h2>\n"
-            '<p class="ai-label">AI-generated interpretation based on deterministic evidence</p>\n'
-            + "".join(cards)
-            + "</section>\n"
-        )
+        return "<h3>Key Modernization Risks</h3>\n" + "".join(cards)
 
     def _risk_card_from_recommendation(
         self,
@@ -291,20 +331,15 @@ class ModernizationHTMLReportRenderer:
             "</article>\n"
         )
 
-    def _render_recommendations(self, report_input: ModernizationReportInput) -> str:
+    def _render_ai_recommendations_body(self, report_input: ModernizationReportInput) -> str:
+        assert report_input.assessment_result is not None
         recommendations = report_input.assessment_result.recommendation_result.recommendations
         anchors = finding_anchor_map(report_input.analysis_result.findings)
         if not recommendations:
-            body = '<p class="empty">No recommendations were generated.</p>\n'
+            body = '<p class="empty">No AI recommendations were generated.</p>\n'
         else:
             body = "".join(self._recommendation_card(item, anchors) for item in recommendations)
-        return (
-            '<section id="recommendations" class="section ai-section page-break">\n'
-            f"<h2>Recommendations ({len(recommendations)})</h2>\n"
-            '<p class="ai-label">AI-generated interpretation based on deterministic evidence</p>\n'
-            f"{body}"
-            "</section>\n"
-        )
+        return f"<h3>AI Recommendations ({len(recommendations)})</h3>\n{body}"
 
     def _recommendation_card(
         self,
@@ -345,19 +380,14 @@ class ModernizationHTMLReportRenderer:
             "</article>\n"
         )
 
-    def _render_roadmap(self, report_input: ModernizationReportInput) -> str:
+    def _render_ai_roadmap_body(self, report_input: ModernizationReportInput) -> str:
+        assert report_input.assessment_result is not None
         phases = report_input.assessment_result.recommendation_result.modernization_phases
         if not phases:
             body = '<p class="empty">No modernization phases were defined.</p>\n'
         else:
             body = "".join(self._phase_card(phase) for phase in phases)
-        return (
-            '<section id="roadmap" class="section ai-section page-break">\n'
-            "<h2>Modernization Roadmap</h2>\n"
-            '<p class="ai-label">AI-generated interpretation based on deterministic evidence</p>\n'
-            f"{body}"
-            "</section>\n"
-        )
+        return f"<h3>Modernization Roadmap</h3>\n{body}"
 
     def _phase_card(self, phase: ModernizationPhase) -> str:
         recommendations = (
@@ -385,8 +415,22 @@ class ModernizationHTMLReportRenderer:
         )
 
     def _render_findings(self, report_input: ModernizationReportInput) -> str:
-        findings = sorted_findings(report_input.analysis_result.findings)
-        if not findings:
+        all_findings = sorted_findings(report_input.analysis_result.findings)
+        primary_supporting = [
+            finding
+            for finding in all_findings
+            if str(finding.metadata.get("customer_visibility") or "primary")
+            in {"primary", "supporting"}
+            or finding.source.value != "external_static_analysis"
+        ]
+        informational = [
+            finding
+            for finding in all_findings
+            if finding.source.value == "external_static_analysis"
+            and finding.metadata.get("customer_visibility") == "informational"
+        ]
+
+        if not primary_supporting and not informational:
             return (
                 '<section id="findings" class="section deterministic-section page-break">\n'
                 "<h2>Deterministic Findings</h2>\n"
@@ -395,6 +439,31 @@ class ModernizationHTMLReportRenderer:
                 "</section>\n"
             )
 
+        blocks = self._finding_category_blocks(primary_supporting)
+        appendix = self._informational_appendix(informational)
+        disclosure = ""
+        results = report_input.analysis_result.static_analysis_results
+        if any(item.suppressed_from_html_count > 0 for item in results):
+            disclosure = (
+                '<p class="static-analysis-disclosure">'
+                "Some low-value or repetitive static-analysis observations are retained "
+                "in the JSON assessment but summarized or omitted from the "
+                "customer-facing HTML."
+                "</p>\n"
+            )
+
+        visible_count = len(primary_supporting) + len(informational)
+        return (
+            '<section id="findings" class="section deterministic-section page-break">\n'
+            f"<h2>Deterministic Findings ({visible_count})</h2>\n"
+            '<p class="deterministic-label">Deterministic analysis evidence</p>\n'
+            + disclosure
+            + "".join(blocks)
+            + appendix
+            + "</section>\n"
+        )
+
+    def _finding_category_blocks(self, findings: list[Finding]) -> list[str]:
         grouped: dict[tuple[str, str], list[Finding]] = defaultdict(list)
         occurrence: dict[str, int] = {}
         for finding in findings:
@@ -420,13 +489,42 @@ class ModernizationHTMLReportRenderer:
                 + "".join(cards)
                 + "</div>\n"
             )
+        return blocks
 
+    def _informational_appendix(self, findings: list[Finding]) -> str:
+        if not findings:
+            return ""
+        row_parts: list[str] = []
+        for finding in findings:
+            occurrence = finding.metadata.get("occurrence_count") or 1
+            file_count = finding.metadata.get("affected_file_count")
+            if file_count is None:
+                file_count = len(finding.evidence)
+            severity = str(getattr(finding.severity, "value", finding.severity))
+            row_parts.append(
+                "<tr>"
+                f'<td class="technical-value">{escape_and_wrap(finding.rule_id or "—")}</td>'
+                f"<td>{escape_and_wrap(finding.title)}</td>"
+                f"<td>{escape_html(str(occurrence))}</td>"
+                f"<td>{escape_html(str(file_count))}</td>"
+                f"<td>{escape_html(severity)}</td>"
+                "</tr>\n"
+            )
+        rows = "".join(row_parts)
+        table = wrap_table(
+            '<table class="facts informational-appendix">\n'
+            "<thead><tr><th>Rule</th><th>Title</th><th>Occurrences</th>"
+            "<th>Files</th><th>Severity</th></tr></thead>\n"
+            f"<tbody>{rows}</tbody>\n"
+            "</table>\n",
+            css_class="table-wrapper informational-appendix-wrapper",
+        )
         return (
-            '<section id="findings" class="section deterministic-section page-break">\n'
-            f"<h2>Deterministic Findings ({len(findings)})</h2>\n"
-            '<p class="deterministic-label">Deterministic analysis evidence</p>\n'
-            + "".join(blocks)
-            + "</section>\n"
+            '<div class="informational-appendix category-group">\n'
+            "<h3>Informational static-analysis groups</h3>\n"
+            "<p>Compact appendix of lower-value or repetitive PMD patterns.</p>\n"
+            f"{table}"
+            "</div>\n"
         )
 
     def _finding_card(self, finding: Finding, anchor: str) -> str:
@@ -439,14 +537,26 @@ class ModernizationHTMLReportRenderer:
             if finding.affected_technologies
             else escape_html("None")
         )
+        provider_badges = _provider_badges(finding)
+        occurrence = finding.metadata.get("occurrence_count")
+        occurrence_html = ""
+        if isinstance(occurrence, int) and occurrence > 1:
+            files = finding.metadata.get("affected_file_count") or len(finding.evidence)
+            occurrence_html = (
+                f'<p class="grouped-occurrence"><strong>Occurrences:</strong> '
+                f"{occurrence} across {files} file"
+                f"{'s' if files != 1 else ''}</p>\n"
+            )
         return (
             f'<article id="{escape_html(anchor)}" class="card finding-card deterministic-card">\n'
             '<div class="card-header">\n'
             f"{_severity_badge(finding.severity)}"
+            f"{provider_badges}"
             f'<span class="rule-id">{escape_html(finding.rule_id or "No rule ID")}</span>\n'
             f"<h4>{escape_and_wrap(finding.title)}</h4>\n"
             "</div>\n"
             f"<p>{escape_and_wrap(finding.description)}</p>\n"
+            f"{occurrence_html}"
             '<div class="affected-technologies">\n'
             "<strong>Affected technologies:</strong>\n"
             f"{technologies}\n"
@@ -485,15 +595,116 @@ class ModernizationHTMLReportRenderer:
             f'<p><strong>Evidence:</strong></p>\n<ul class="evidence-list">{"".join(items)}</ul>\n'
         )
 
+    def _render_analysis_coverage(self, report_input: ModernizationReportInput) -> str:
+        results = report_input.analysis_result.static_analysis_results
+        if not results:
+            static_status = "disabled"
+            static_detail = "Static analysis was not configured for this assessment."
+            static_meta = ""
+        else:
+            primary = results[0]
+            static_status = primary.status.value
+            if primary.status == StaticAnalysisStatus.UNAVAILABLE:
+                static_detail = (
+                    f"{primary.provider_name} static analysis was unavailable for this "
+                    "assessment. Repository scanning, technology detection, and the "
+                    "remaining deterministic analyzers completed successfully."
+                )
+            elif primary.status == StaticAnalysisStatus.DISABLED:
+                static_detail = (
+                    f"{primary.provider_name} static analysis was disabled for this assessment."
+                )
+            elif primary.status == StaticAnalysisStatus.FAILED:
+                static_detail = (
+                    f"{primary.provider_name} static analysis failed. "
+                    "Remaining deterministic analyzers completed successfully."
+                )
+            elif primary.status == StaticAnalysisStatus.SKIPPED:
+                static_detail = (
+                    f"{primary.provider_name} static analysis was skipped "
+                    "(not applicable for this repository)."
+                )
+            else:
+                finding_count = sum(len(item.findings) for item in results)
+                version = primary.provider_version or "unknown"
+                static_detail = (
+                    f"{primary.provider_name} {version} completed with {finding_count} finding(s)."
+                )
+            duration = f"{primary.duration_ms:.2f}" if primary.duration_ms is not None else "—"
+            static_meta = (
+                '<dl class="meta-grid">\n'
+                f"<dt>Provider</dt><dd>{escape_html(primary.provider_name)}</dd>\n"
+                "<dt>Provider version</dt>"
+                f"<dd>{escape_html(primary.provider_version or '—')}</dd>\n"
+                f"<dt>Duration (ms)</dt><dd>{duration}</dd>\n"
+                "<dt>Findings</dt>"
+                f"<dd>{sum(len(item.findings) for item in results)}</dd>\n"
+                "</dl>\n"
+            )
+
+        ai_status = "executed" if report_input.ai_executed else "not executed"
+        timing_rows = ""
+        if report_input.timing is not None:
+            timing = report_input.timing
+            timing_rows = (
+                "<h3>Execution Timing</h3>\n"
+                '<dl class="meta-grid">\n'
+                f"<dt>Total (ms)</dt><dd>{timing.total_ms:.2f}</dd>\n"
+                f"<dt>Scan (ms)</dt><dd>{_optional_float(timing.scan_ms)}</dd>\n"
+                f"<dt>Analysis (ms)</dt><dd>{_optional_float(timing.analysis_ms)}</dd>\n"
+                "<dt>Static analysis (ms)</dt>"
+                f"<dd>{_optional_float(timing.static_analysis_ms)}</dd>\n"
+                f"<dt>AI (ms)</dt><dd>{_optional_float(timing.ai_ms)}</dd>\n"
+                f"<dt>Report (ms)</dt><dd>{_optional_float(timing.report_ms)}</dd>\n"
+                "</dl>\n"
+            )
+
+        return (
+            '<section id="analysis-coverage" class="section deterministic-section page-break">\n'
+            "<h2>Analysis Coverage</h2>\n"
+            '<p class="deterministic-label">Execution coverage for this assessment</p>\n'
+            '<dl class="meta-grid">\n'
+            "<dt>Deterministic analysis</dt><dd>completed</dd>\n"
+            f"<dt>Static analysis</dt><dd>{escape_html(static_status)}</dd>\n"
+            f"<dt>AI interpretation</dt><dd>{escape_html(ai_status)}</dd>\n"
+            "</dl>\n"
+            f"<p>{escape_and_wrap(static_detail)}</p>\n"
+            f"{static_meta}"
+            f"{timing_rows}"
+            "</section>\n"
+        )
+
     def _render_coverage_and_limitations(
         self,
         report_input: ModernizationReportInput,
     ) -> str:
-        recommendation = report_input.assessment_result.recommendation_result
+        if not report_input.ai_executed:
+            findings = report_input.analysis_result.findings
+            with_evidence = sum(1 for item in findings if item.evidence)
+            return (
+                '<section id="coverage" class="section page-break">\n'
+                "<h2>Evidence Coverage and Limitations</h2>\n"
+                '<dl class="meta-grid">\n'
+                f"<dt>Total findings</dt><dd>{len(findings)}</dd>\n"
+                f"<dt>Findings with evidence</dt><dd>{with_evidence}</dd>\n"
+                "<dt>AI coverage</dt><dd>Not applicable</dd>\n"
+                "</dl>\n"
+                '<p class="validation-note">'
+                "This report contains deterministic repository evidence only. "
+                "Enable AI-enhanced assessment when modernization recommendations "
+                "and roadmap interpretation are required."
+                "</p>\n"
+                "</section>\n"
+            )
+        assessment = report_input.assessment_result
+        context = report_input.analysis_context
+        assert assessment is not None
+        assert context is not None
+        recommendation = assessment.recommendation_result
         coverage = recommendation.evidence_coverage
-        truncation = report_input.analysis_context.findings_truncation
-        findings = report_input.analysis_context.findings
-        with_evidence = sum(1 for item in findings if item.evidence)
+        truncation = context.findings_truncation
+        context_findings = context.findings
+        with_evidence = sum(1 for item in context_findings if item.evidence)
         limitations = recommendation.limitations
         limitation_items = (
             "".join(f"<li>{escape_and_wrap(item)}</li>" for item in limitations)
@@ -524,6 +735,24 @@ class ModernizationHTMLReportRenderer:
         )
 
     def _render_execution_details(self, report_input: ModernizationReportInput) -> str:
+        mode_label = assessment_mode_label(report_input.assessment_mode)
+        if not report_input.ai_executed:
+            return (
+                '<section id="execution" class="section page-break">\n'
+                "<h2>Assessment Execution Details</h2>\n"
+                '<dl class="meta-grid">\n'
+                f"<dt>Assessment mode</dt><dd>{escape_html(mode_label)}</dd>\n"
+                "<dt>AI executed</dt><dd>No</dd>\n"
+                "<dt>Provider</dt><dd>Not applicable</dd>\n"
+                "<dt>Model ID</dt><dd>Not applicable</dd>\n"
+                "<dt>Latency (ms)</dt><dd>Not applicable</dd>\n"
+                "<dt>Input tokens</dt><dd>Not applicable</dd>\n"
+                "<dt>Output tokens</dt><dd>Not applicable</dd>\n"
+                "<dt>Total tokens</dt><dd>Not applicable</dd>\n"
+                "</dl>\n"
+                "</section>\n"
+            )
+        assert report_input.assessment_result is not None
         assessment = report_input.assessment_result
         metadata = assessment.model_metadata
         trace = assessment.trace
@@ -535,6 +764,8 @@ class ModernizationHTMLReportRenderer:
             '<section id="execution" class="section page-break">\n'
             "<h2>Assessment Execution Details</h2>\n"
             '<dl class="meta-grid">\n'
+            f"<dt>Assessment mode</dt><dd>{escape_html(mode_label)}</dd>\n"
+            "<dt>AI executed</dt><dd>Yes</dd>\n"
             f"<dt>Provider</dt><dd>{escape_html(metadata.provider)}</dd>\n"
             f"<dt>Model ID</dt><dd>{escape_html(metadata.model_id)}</dd>\n"
             f"<dt>Latency (ms)</dt><dd>{metadata.latency_ms:.2f}</dd>\n"
@@ -548,22 +779,35 @@ class ModernizationHTMLReportRenderer:
             "</section>\n"
         )
 
-    def _render_methodology(self) -> str:
+    def _render_methodology(self, report_input: ModernizationReportInput) -> str:
+        if report_input.assessment_mode == AssessmentMode.DETERMINISTIC:
+            steps = (
+                "<li>Deterministic repository analysis produces findings, technologies, "
+                "and metrics without generative invention.</li>\n"
+                "<li>Evidence is rendered into a customer-facing HTML report without "
+                "invoking an AI provider.</li>\n"
+                "<li>AI interpretation, recommendations, and roadmap phases are omitted "
+                "until an AI-enhanced assessment is requested.</li>\n"
+                "<li>This report separates deterministic evidence from AI interpretation "
+                "and does not invent modernization guidance.</li>\n"
+            )
+        else:
+            steps = (
+                "<li>Deterministic repository analysis produces findings, technologies, "
+                "and metrics without generative invention.</li>\n"
+                "<li>Analysis evidence is normalized into a structured LLM analysis "
+                "contract with explicit truncation metadata.</li>\n"
+                "<li>AI interpretation produces modernization recommendations only from "
+                "that structured evidence.</li>\n"
+                "<li>Recommendations are validated so finding, dependency, and phase "
+                "references resolve against known identifiers.</li>\n"
+                "<li>This report separates deterministic evidence from AI interpretation "
+                "and requires engineering validation before action.</li>\n"
+            )
         return (
             '<section id="methodology" class="section page-break">\n'
             "<h2>Methodology</h2>\n"
-            "<ol>\n"
-            "<li>Deterministic repository analysis produces findings, technologies, "
-            "and metrics without generative invention.</li>\n"
-            "<li>Analysis evidence is normalized into a structured LLM analysis "
-            "contract with explicit truncation metadata.</li>\n"
-            "<li>AI interpretation produces modernization recommendations only from "
-            "that structured evidence.</li>\n"
-            "<li>Recommendations are validated so finding, dependency, and phase "
-            "references resolve against known identifiers.</li>\n"
-            "<li>This report separates deterministic evidence from AI interpretation "
-            "and requires engineering validation before action.</li>\n"
-            "</ol>\n"
+            f"<ol>\n{steps}</ol>\n"
             "</section>\n"
         )
 
@@ -592,6 +836,28 @@ class ModernizationHTMLReportRenderer:
 
 def _optional_int(value: int | None) -> str:
     return str(value) if value is not None else "—"
+
+
+def _optional_float(value: float | None) -> str:
+    return f"{value:.2f}" if value is not None else "—"
+
+
+def _provider_badges(finding: Finding) -> str:
+    provider_name = finding.metadata.get("provider_name")
+    if not isinstance(provider_name, str) or not provider_name:
+        return ""
+    badges = [f'<span class="badge provider">{escape_and_wrap(provider_name)}</span>']
+    priority = finding.metadata.get("original_priority")
+    if priority is not None:
+        badges.append(
+            f'<span class="badge category">{escape_and_wrap(provider_name)} priority '
+            f"{escape_html(str(priority))}</span>"
+        )
+    ruleset = finding.metadata.get("ruleset")
+    if isinstance(ruleset, str) and ruleset:
+        label = ruleset.rsplit("/", maxsplit=1)[-1].removesuffix(".xml")
+        badges.append(f'<span class="badge category">{escape_and_wrap(label)}</span>')
+    return "".join(badges)
 
 
 def _severity_badge(severity: Severity | str) -> str:
@@ -683,7 +949,8 @@ body {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
-.report-header, .section, .card {
+.report-header, .section, .summary-card, .fact-group, .roadmap-group, .card,
+.provider-summary-section, .comparison-section {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -716,6 +983,31 @@ body {
 }
 .chip.deterministic { color: var(--deterministic); }
 .chip.ai { color: var(--ai); }
+.summary-grid, .fact-groups, .roadmap-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  min-width: 0;
+  max-width: 100%;
+}
+.summary-card, .fact-group, .roadmap-group {
+  padding: 1rem;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.metric {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0.25rem 0 0.75rem;
+}
+.summary-signals { margin-top: 1rem; }
+.change-list { margin: 0.25rem 0 0 1.1rem; padding: 0; }
+.badge.provider, .badge.category { background: #e8eef3; color: var(--ai); }
+.badge.change-new, .badge.change-worsened { background: #feecdc; color: var(--high); }
+.badge.change-resolved, .badge.change-improved { background: #e1f5f0; color: var(--low); }
+.badge.change-changed { background: #e6eff8; color: var(--info); }
 .confidentiality {
   border: 1px solid var(--warn-border);
   background: var(--warn-bg);

@@ -2,7 +2,7 @@
 
 AI Modernization Factory (`aimf`) is a deterministic analysis platform for enterprise application modernization.
 
-It clones a public GitHub repository, extracts structured facts about the codebase, detects technologies and engineering risks, and writes evidence-based reports. AI interpretation of those structured findings is planned; the current product focuses on reliable, repeatable deterministic analysis first.
+It clones a public GitHub repository, extracts structured facts about the codebase, detects technologies and engineering risks, and writes evidence-based reports. Use `aimf assess` for a customer-facing HTML report: deterministic by default (no cloud account required), or AI-enhanced with `--with-ai`.
 
 ## Vision
 
@@ -31,14 +31,13 @@ Implemented today:
 * Optional external static-analysis providers (PMD for Java)
 * Baseline comparison between scans
 * Console summary plus text/JSON/HTML report files
+* `aimf assess` with deterministic (default) and AI-enhanced HTML modernization reports
 * Typed domain models, tests, Ruff, and MyPy
 
 Not implemented yet:
 
-* AI interpretation / executive summaries
 * SonarQube / Semgrep / CodeQL providers
 * Markdown modernization assessment reports
-* Local-path analyze command (scan currently uses `aimf.toml` GitHub URL)
 
 ## Quick Start
 
@@ -71,6 +70,7 @@ fail_on_provider_error = false
 [static_analysis.pmd]
 enabled = true
 executable = "pmd"
+profile = "standard"  # focused | standard | comprehensive
 rulesets = [
   "category/java/bestpractices.xml",
   "category/java/errorprone.xml",
@@ -147,14 +147,42 @@ SSH URLs without an authentication section continue to use normal Git/SSH agent 
 ### External static analysis (PMD)
 
 AIMF can optionally run external engines through a provider architecture.
-PMD is the first supported Java provider.
+PMD is the first supported Java provider and is recommended for deeper Java analysis.
+PMD is optional: deterministic assessment succeeds without it.
 
-* PMD must be installed and available on `PATH` (or configured via `executable`).
 * AIMF does not download or install PMD.
-* When `fail_on_provider_error = false` and PMD is missing, the scan still
-  succeeds and reports PMD as `unavailable`.
+* When `fail_on_provider_error = false` and PMD is missing, assessment still
+  succeeds and records PMD as `unavailable` in HTML, JSON, and console warnings.
 * When `fail_on_provider_error = true`, an enabled but unavailable/failed
   provider fails the scan before reports are written.
+
+#### PMD discovery order
+
+1. `--pmd-path` on `aimf assess`
+2. `AIMF_PMD_PATH` environment variable
+3. `static_analysis.pmd.executable` from `aimf.toml` (command name or path)
+4. `pmd` / `pmd-bin` on `PATH`
+5. Common Homebrew locations on macOS (`/opt/homebrew/bin/pmd`, `/usr/local/bin/pmd`)
+
+Validate a local install:
+
+```bash
+pmd --version
+```
+
+Optional environment override:
+
+```bash
+export AIMF_PMD_PATH=/path/to/pmd
+```
+
+Optional config:
+
+```toml
+[static_analysis.pmd]
+enabled = true
+executable = "pmd"  # or an absolute path to the executable
+```
 
 Example:
 
@@ -172,7 +200,7 @@ aimf scan --output json
 aimf scan --report-directory reports
 ```
 
-Reports are written under:
+`aimf scan` reports are written under:
 
 ```text
 reports/<repository-name>/<timestamp>/
@@ -183,6 +211,26 @@ reports/<repository-name>/<timestamp>/
 
 Only the latest 3 timestamped run directories are kept for each repository.
 
+`aimf assess` writes immutable timestamped assessment runs:
+
+```text
+reports/
+└── spring-petclinic/
+    ├── 20260721-153045/
+    │   ├── report.html
+    │   └── report.json
+    └── archive/
+        └── 20260721-120000/
+            ├── report.html
+            └── report.json
+```
+
+* HTML is the customer-facing assessment
+* JSON is the machine-readable assessment record for APIs, MCP, CI/CD, comparison, and knowledge-graph ingestion
+* Each successful execution creates a new timestamped run directory
+* Only the latest three active runs are kept under the repository directory; older runs are moved to `archive/`
+* Both artifacts are produced from the same validated assessment input
+
 ### HTML report usability
 
 The HTML report is self-contained (embedded CSS, no JavaScript) and is designed for desktop, mobile, and print:
@@ -192,6 +240,8 @@ The HTML report is self-contained (embedded CSS, no JavaScript) and is designed 
 * Tables sit in local wrappers so any needed horizontal scrolling stays inside the component
 * Evidence locations use repository-relative `path`, `path:line`, or `path:line:column` formatting consistently across HTML, console, and text reports
 * Repository-derived and provider-derived text is HTML-escaped; absolute workspace, executable, and temporary provider paths are not shown
+* PMD findings are normalized, grouped by rule/remediation pattern, and classified for customer visibility; raw observations remain in JSON
+* Low-value or repetitive static-analysis observations may be summarized or omitted from HTML while remaining in `report.json`
 
 ## CLI
 
@@ -199,6 +249,7 @@ The HTML report is self-contained (embedded CSS, no JavaScript) and is designed 
 | ------- | ----------- |
 | `aimf version` | Print the package version |
 | `aimf scan` | Clone the configured GitHub repo, analyze it, write reports |
+| `aimf assess` | Assess a local path or GitHub URL; write HTML and JSON assessment reports |
 
 `scan` options:
 
@@ -208,6 +259,63 @@ The HTML report is self-contained (embedded CSS, no JavaScript) and is designed 
 | `--output` / `-o` | `text` | Terminal output format (`text` or `json`) |
 | `--report-directory` | `reports` | Where report files are written |
 | `--verbose` / `-v` | off | Print the full console report |
+
+`assess` options (selected):
+
+| Option | Default | Description |
+| ------ | ------- | ----------- |
+| `--repo` / `-r` | required | Local repository path or GitHub URL |
+| `--output` / `-o` | `reports` | Base directory for timestamped HTML and JSON assessment runs |
+| `--with-ai` / `--no-ai` | `--no-ai` | Enable AI-enhanced assessment (requires credentials + model ID) |
+| `--model-id` | none | Bedrock model ID (only with `--with-ai`) |
+| `--pmd-path` | none | Optional PMD executable path/name (overrides env/config) |
+| `--pmd-profile` | config (`standard`) | PMD profile: `focused`, `standard`, or `comprehensive` |
+| `--static-analysis` / `--no-static-analysis` | follow config | Enable or disable external static analysis for this run |
+| `--verbose` / `-v` | off | Diagnostic logging and failure stack traces |
+
+### Assessment Execution Levels
+
+AIMF supports three clearly separated assessment levels. Deterministic mode is the default and does **not** require AWS credentials, a Bedrock model ID, or any AI provider.
+
+#### 1. Deterministic CLI Integration Test
+
+Purpose: validate scanning, technology detection, deterministic analysis, serialization, HTML generation, file output, and CLI experience.
+
+Requirements: no AWS, no model ID, no provider initialization, no prompt creation, no model invocation.
+
+```bash
+aimf assess \
+  --repo .aimf/workspace/spring-petclinic \
+  --output reports
+```
+
+#### 2. AI Integration Test
+
+Purpose: validate prompt builder, provider integration, authentication, model response parsing, recommendation validation, and AI report sections.
+
+Requirements: explicit `--with-ai`, a resolvable model ID (CLI → `AIMF_BEDROCK_MODEL_ID` → `ai.bedrock.model_id`), valid provider credentials, and exactly one model invocation.
+
+```bash
+aimf assess \
+  --repo .aimf/workspace/spring-petclinic \
+  --output reports \
+  --with-ai \
+  --model-id <model-id>
+```
+
+#### 3. Customer Acceptance Test
+
+Purpose: run the complete product flow on a real repository and review the quality and usability of the generated report.
+
+This uses the same AI-enhanced command as Level 2, treated as a manual acceptance workflow rather than only an integration check.
+
+```bash
+aimf assess \
+  --repo <path-or-github-url> \
+  --output reports \
+  --with-ai \
+  --model-id <model-id>
+```
 
 ## Analysis Pipeline
 

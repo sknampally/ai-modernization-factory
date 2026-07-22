@@ -75,14 +75,30 @@ def _finding(rule_id: str) -> Finding:
     )
 
 
-def test_disabled_subsystem_returns_empty(tmp_path: Path) -> None:
+def test_disabled_subsystem_returns_disabled_status(tmp_path: Path) -> None:
     service = StaticAnalysisService(providers=[], enabled=False)
     results, findings = service.analyze(
         repository=Repository(name="r", path=tmp_path, files=[]),
         technologies=[],
     )
-    assert results == []
     assert findings == []
+    assert len(results) == 1
+    assert results[0].status == StaticAnalysisStatus.DISABLED
+    assert results[0].provider_name == "PMD"
+
+
+def test_disabled_subsystem_with_providers_skips_execution(tmp_path: Path) -> None:
+    provider = _StubProvider("pmd", available=True, raise_error=True)
+    service = StaticAnalysisService(providers=[provider], enabled=False)
+    results, findings = service.analyze(
+        repository=Repository(name="r", path=tmp_path, files=["A.java"]),
+        technologies=[
+            Technology(name="Java", category=TechnologyCategory.LANGUAGE, confidence=1.0)
+        ],
+    )
+    assert findings == []
+    assert results[0].status == StaticAnalysisStatus.DISABLED
+    assert results[0].provider_id == "pmd"
 
 
 def test_unavailable_provider_non_strict(tmp_path: Path) -> None:

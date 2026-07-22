@@ -47,7 +47,27 @@ class StaticAnalysisService:
         """Run applicable providers and return results plus merged findings."""
 
         if not self._enabled:
-            return [], []
+            disabled = [
+                StaticAnalysisResult(
+                    provider_id=provider.provider_id,
+                    provider_name=provider.display_name,
+                    status=StaticAnalysisStatus.DISABLED,
+                    error_message=(
+                        f"{provider.display_name} static analysis was disabled for this assessment."
+                    ),
+                )
+                for provider in sorted(self._providers, key=lambda item: item.provider_id)
+            ]
+            if not disabled:
+                disabled = [
+                    StaticAnalysisResult(
+                        provider_id="pmd",
+                        provider_name="PMD",
+                        status=StaticAnalysisStatus.DISABLED,
+                        error_message=("Static analysis was disabled for this assessment."),
+                    )
+                ]
+            return disabled, []
 
         context = StaticAnalysisContext(
             repository=repository,
@@ -100,7 +120,8 @@ class StaticAnalysisService:
                 ),
                 warnings=[f"{provider.display_name} was unavailable and was skipped."],
             )
-            logger.warning(
+            # Keep diagnostics in verbose/debug logs only; CLI prints one user warning.
+            logger.debug(
                 "Static-analysis provider unavailable",
                 extra={"provider_id": provider.provider_id},
             )
@@ -111,17 +132,21 @@ class StaticAnalysisService:
             result = provider.analyze(context)
         except Exception as exc:  # noqa: BLE001 - provider boundary
             duration_ms = round((perf_counter() - started) * 1000, 2)
-            logger.exception(
+            logger.debug(
                 "Static-analysis provider failed",
+                exc_info=True,
                 extra={"provider_id": provider.provider_id},
             )
+            sanitized = " ".join(str(exc).split())
+            if len(sanitized) > 300:
+                sanitized = sanitized[:297] + "..."
             return StaticAnalysisResult(
                 provider_id=provider.provider_id,
                 provider_name=provider.display_name,
                 status=StaticAnalysisStatus.FAILED,
                 duration_ms=duration_ms,
-                error_message=str(exc),
-                warnings=[f"{provider.display_name} failed: {exc}"],
+                error_message=sanitized,
+                warnings=[f"{provider.display_name} failed."],
             )
 
         if result.duration_ms is None:

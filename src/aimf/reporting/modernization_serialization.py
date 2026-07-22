@@ -1,14 +1,25 @@
-"""Serialization and file output helpers for modernization HTML reports."""
+"""Serialization and file output helpers for modernization assessment reports."""
 
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from aimf.reporters.report_paths import ReportPaths
+from aimf.reporting.assessment_json import (
+    assessment_json_to_text,
+    build_assessment_json_document,
+)
 from aimf.reporting.modernization_html import ModernizationHTMLReportRenderer
-from aimf.reporting.modernization_models import ModernizationReportInput
+from aimf.reporting.modernization_models import (
+    AssessmentTiming,
+    ModernizationReportInput,
+)
+from aimf.reporting.modernization_view import validate_modernization_report_input
 
 
 def _json_default(value: Any) -> Any:
@@ -24,7 +35,7 @@ def _json_default(value: Any) -> Any:
 def modernization_report_input_to_dict(
     report_input: ModernizationReportInput,
 ) -> dict[str, Any]:
-    """Return a deterministic JSON-ready dictionary."""
+    """Return a deterministic JSON-ready dictionary of the internal report input."""
 
     return report_input.model_dump(mode="json")
 
@@ -68,5 +79,127 @@ def write_modernization_html_report(
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     html = ModernizationHTMLReportRenderer().render(report_input)
-    path.write_text(html, encoding="utf-8")
+    _atomic_write_text(path, html)
     return path
+
+
+def write_modernization_json_report(
+    report_input: ModernizationReportInput,
+    output_path: Path | str,
+) -> Path:
+    """Validate, serialize, and write the sanitized assessment JSON report."""
+
+    validated = validate_modernization_report_input(report_input)
+    document = build_assessment_json_document(validated)
+    text = assessment_json_to_text(document)
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write_text(path, text)
+    return path
+
+
+def write_modernization_assessment_reports(
+    report_input: ModernizationReportInput,
+    report_paths: ReportPaths,
+) -> ReportPaths:
+    """Validate once, render HTML and JSON in memory, then write atomically.
+
+    When ``report_input.timing`` is present, ``report_ms`` and ``total_ms`` are
+    refreshed after in-memory rendering so both artifacts stay aligned.
+    """
+
+    from time import perf_counter
+
+    validated = validate_modernization_report_input(report_input)
+    started = perf_counter()
+    html, json_text = _render_artifacts(validated)
+    report_ms = round((perf_counter() - started) * 1000, 2)
+
+    if validated.timing is not None:
+        base = validated.timing
+        final_timing = AssessmentTiming(
+            total_ms=round(base.total_ms + report_ms, 2),
+            scan_ms=base.scan_ms,
+            analysis_ms=base.analysis_ms,
+            static_analysis_ms=base.static_analysis_ms,
+            ai_ms=base.ai_ms,
+            report_ms=report_ms,
+        )
+        finalized = validated.model_copy(update={"timing": final_timing})
+        html, json_text = _render_artifacts(finalized)
+
+    run_directory = report_paths.run_directory
+    pairs = (
+        (report_paths.html_report_path, html),
+        (report_paths.json_report_path, json_text),
+    )
+
+    run_directory.mkdir(parents=True, exist_ok=True)
+
+    temp_paths: list[Path] = []
+    renamed_paths: list[Path] = []
+    try:
+        for final_path, content in pairs:
+            temp_paths.append(_write_temp_sibling(final_path, content))
+        for temp_path, (final_path, _content) in zip(temp_paths, pairs, strict=True):
+            os.replace(temp_path, final_path)
+            renamed_paths.append(final_path)
+        temp_paths.clear()
+    except Exception:
+        for renamed in renamed_paths:
+            try:
+                renamed.unlink(missing_ok=True)
+            except OSError:
+                pass
+        for temp_path in temp_paths:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        _remove_empty_run_directory(run_directory)
+        raise
+
+    return report_paths
+
+
+def _render_artifacts(report_input: ModernizationReportInput) -> tuple[str, str]:
+    html = ModernizationHTMLReportRenderer().render(report_input)
+    document = build_assessment_json_document(report_input)
+    json_text = assessment_json_to_text(document)
+    return html, json_text
+
+
+def _remove_empty_run_directory(run_directory: Path) -> None:
+    try:
+        if run_directory.exists() and not any(run_directory.iterdir()):
+            run_directory.rmdir()
+    except OSError:
+        pass
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    temp_path = _write_temp_sibling(path, content)
+    try:
+        os.replace(temp_path, path)
+    except Exception:
+        temp_path.unlink(missing_ok=True)
+        raise
+
+
+def _write_temp_sibling(path: Path, content: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=str(path.parent),
+    )
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(content)
+            if not content.endswith("\n"):
+                handle.write("\n")
+    except Exception:
+        temp_path.unlink(missing_ok=True)
+        raise
+    return temp_path

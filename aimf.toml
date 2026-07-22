@@ -23,6 +23,7 @@ fail_on_provider_error = false
 [static_analysis.pmd]
 enabled = true
 executable = "pmd"
+profile = "standard"
 rulesets = [
   "category/java/bestpractices.xml",
   "category/java/errorprone.xml",

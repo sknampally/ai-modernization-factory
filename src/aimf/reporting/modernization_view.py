@@ -18,6 +18,7 @@ from aimf.ai.recommendations.validation import (
 )
 from aimf.models import AnalysisResult, Finding, Severity
 from aimf.reporting.modernization_models import (
+    AssessmentMode,
     ModernizationReportInput,
     ModernizationReportValidationError,
 )
@@ -45,11 +46,24 @@ def validate_modernization_report_input(
     """Validate cross-contract consistency before HTML rendering."""
 
     analysis_name = report_input.analysis_result.repository.name.strip()
-    context_name = report_input.analysis_context.repository.name.strip()
-    if analysis_name != context_name:
+    if report_input.analysis_context is not None:
+        context_name = report_input.analysis_context.repository.name.strip()
+        if analysis_name != context_name:
+            raise ModernizationReportValidationError(
+                "Inconsistent repository identifiers between AnalysisResult "
+                f"('{analysis_name}') and LLMAnalysisContext ('{context_name}')"
+            )
+
+    if report_input.assessment_mode == AssessmentMode.DETERMINISTIC:
+        if report_input.assessment_result is not None:
+            raise ModernizationReportValidationError(
+                "Deterministic reports must not include an AI assessment result"
+            )
+        return report_input
+
+    if report_input.assessment_result is None or report_input.analysis_context is None:
         raise ModernizationReportValidationError(
-            "Inconsistent repository identifiers between AnalysisResult "
-            f"('{analysis_name}') and LLMAnalysisContext ('{context_name}')"
+            "AI-enhanced reports require analysis_context and assessment_result"
         )
 
     recommendation_result = report_input.assessment_result.recommendation_result
@@ -72,21 +86,47 @@ def repository_identifier(report_input: ModernizationReportInput) -> str:
 
     if report_input.repository_display_name and report_input.repository_display_name.strip():
         return report_input.repository_display_name.strip()
-    return report_input.analysis_context.repository.name
+    if report_input.analysis_context is not None:
+        return report_input.analysis_context.repository.name
+    return report_input.analysis_result.repository.name
+
+
+def assessment_mode_label(mode: AssessmentMode) -> str:
+    """Return a human-readable assessment mode label."""
+
+    if mode == AssessmentMode.AI_ENHANCED:
+        return "AI Enhanced"
+    return "Deterministic"
 
 
 def sorted_findings(findings: Iterable[Finding]) -> list[Finding]:
-    """Return findings in stable severity/category/rule order."""
+    """Return findings in customer-priority order.
 
-    return sorted(
-        findings,
-        key=lambda finding: (
+    Order: severity → native AIMF before PMD → primary → supporting →
+    informational → rule id.
+    """
+
+    visibility_rank = {
+        "primary": 0,
+        "supporting": 1,
+        "informational": 2,
+        "suppressed_from_html": 3,
+    }
+
+    def sort_key(finding: Finding) -> tuple[object, ...]:
+        source = str(getattr(finding.source, "value", finding.source))
+        native_rank = 0 if source != "external_static_analysis" else 1
+        visibility = str(finding.metadata.get("customer_visibility") or "primary")
+        return (
             SEVERITY_ORDER.get(finding.severity, 99),
+            native_rank,
+            visibility_rank.get(visibility, 1),
             str(getattr(finding.category, "value", finding.category)).lower(),
             (finding.rule_id or "").lower(),
             finding.title.lower(),
-        ),
-    )
+        )
+
+    return sorted(findings, key=sort_key)
 
 
 def finding_anchor_id(rule_id: str | None, *, index: int = 0) -> str:
@@ -124,7 +164,6 @@ def sanitize_display_path(path: str) -> str:
     candidate = Path(compact)
     if candidate.is_absolute():
         return candidate.name or compact
-    # Windows-style absolute paths without Path recognizing them on POSIX.
     if len(compact) >= 3 and compact[1] == ":" and compact[2] in {"\\", "/"}:
         return Path(compact.replace("\\", "/")).name or compact
     if compact.startswith("\\\\"):

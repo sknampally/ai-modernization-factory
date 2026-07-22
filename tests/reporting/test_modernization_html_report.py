@@ -49,6 +49,8 @@ from aimf.models import (
     TechnologyCategory,
 )
 from aimf.reporting import (
+    AssessmentMode,
+    AssessmentTiming,
     ModernizationHTMLReportRenderer,
     ModernizationReportInput,
     ModernizationReportValidationError,
@@ -57,6 +59,7 @@ from aimf.reporting import (
     sanitize_display_path,
     write_modernization_html_report,
 )
+from aimf.static_analysis.models import StaticAnalysisResult, StaticAnalysisStatus
 
 
 def _truncation(
@@ -279,9 +282,11 @@ def _report_input(
     assessment: ModernizationAssessmentResult | None = None,
     analysis: AnalysisResult | None = None,
     context: LLMAnalysisContext | None = None,
+    assessment_mode: AssessmentMode = AssessmentMode.AI_ENHANCED,
 ) -> ModernizationReportInput:
     return ModernizationReportInput(
         analysis_result=analysis or _analysis_result(tmp_path),
+        assessment_mode=assessment_mode,
         analysis_context=context or _context(truncated=truncated),
         assessment_result=assessment or _assessment(),
         generated_at_utc=datetime(2026, 7, 21, 15, 30, tzinfo=UTC),
@@ -293,14 +298,15 @@ def _report_input(
 def test_complete_report_rendering(tmp_path: Path) -> None:
     html = ModernizationHTMLReportRenderer().render(_report_input(tmp_path, truncated=True))
     assert "<!DOCTYPE html>" in html
-    assert "Modernization Assessment" in html
+    assert "AI Modernization Factory" in html
     assert "sample-app" in html
     assert "Example Org" in html
     assert "Internal use only" in html
     assert "Executive summary of modernization opportunities." in html
-    assert "Repository Overview" in html
-    assert "Key Risks" in html
-    assert "Recommendations" in html
+    assert "Repository System Intelligence" in html
+    assert "Deterministic Recommendations" in html
+    assert "Key Modernization Risks" in html
+    assert "AI Recommendations" in html
     assert "Modernization Roadmap" in html
     assert "Deterministic Findings" in html
     assert "Evidence Coverage and Limitations" in html
@@ -315,13 +321,50 @@ def test_minimal_valid_report(tmp_path: Path) -> None:
     assessment = _assessment()
     minimal = ModernizationReportInput(
         analysis_result=_analysis_result(tmp_path),
+        assessment_mode=AssessmentMode.AI_ENHANCED,
         analysis_context=_context(),
         assessment_result=assessment,
         generated_at_utc=datetime(2026, 7, 21, 15, 30, tzinfo=UTC),
     )
     html = ModernizationHTMLReportRenderer().render(minimal)
-    assert "Modernization Assessment" in html
+    assert "AI Modernization Factory" in html
     assert "sample-app" in html
+    assert "Assessment mode" in html
+    assert "AI Enhanced" in html
+
+
+def test_deterministic_report_without_ai(tmp_path: Path) -> None:
+    report_input = ModernizationReportInput(
+        analysis_result=_analysis_result(tmp_path),
+        assessment_mode=AssessmentMode.DETERMINISTIC,
+        generated_at_utc=datetime(2026, 7, 21, 15, 30, tzinfo=UTC),
+    )
+    html = ModernizationHTMLReportRenderer().render(report_input)
+    assert "Assessment mode" in html
+    assert "Deterministic" in html
+    assert "AI interpretation was not executed for this assessment" in html
+    assert html.count("AI interpretation was not executed for this assessment") == 1
+    assert html.count('id="ai-interpretation"') == 1
+    assert "Deterministic Findings" in html
+    assert "Deterministic Recommendations" in html
+    assert "Repository System Intelligence" in html
+    assert "Critical finding" in html
+    assert "Java" in html
+    assert "REC-001" not in html
+    assert "Not applicable" in html
+    assert "Agent version" not in html
+    assert "SYSTEM PROMPT" not in html
+    assert str(tmp_path) not in html
+
+
+def test_deterministic_report_rejects_assessment_result(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError, match="must not include assessment_result"):
+        ModernizationReportInput(
+            analysis_result=_analysis_result(tmp_path),
+            assessment_mode=AssessmentMode.DETERMINISTIC,
+            assessment_result=_assessment(),
+            generated_at_utc=datetime(2026, 7, 21, 15, 30, tzinfo=UTC),
+        )
 
 
 def test_deterministic_output(tmp_path: Path) -> None:
@@ -338,10 +381,14 @@ def test_executive_summary_and_ai_label(tmp_path: Path) -> None:
 
 def test_repository_overview_technology_and_metrics(tmp_path: Path) -> None:
     html = ModernizationHTMLReportRenderer().render(_report_input(tmp_path))
+    assert "Repository System Intelligence" in html
     assert "Java" in html
     assert "Maven" in html
     assert "Files analyzed" in html
-    assert "Findings (analysis)" in html
+    assert "Critical/high risk count" in html
+    assert "Structure" in html
+    assert "File count" in html
+    assert "Files analyzed</dt><dd>2</dd>" in html.replace("\n", "")
 
 
 def test_risks_recommendations_and_phases(tmp_path: Path) -> None:
@@ -385,12 +432,74 @@ def test_methodology_toc_print_css_and_csp(tmp_path: Path) -> None:
     html = ModernizationHTMLReportRenderer().render(_report_input(tmp_path))
     assert 'id="contents"' in html
     assert 'href="#executive-summary"' in html
+    assert 'href="#analysis-coverage"' in html
     assert "@media print" in html
     assert "page-break-before: always" in html
     assert "Content-Security-Policy" in html
     assert "default-src &#x27;none&#x27;" in html
     assert "script-src &#x27;none&#x27;" in html
     assert "Deterministic repository analysis" in html
+
+
+def test_analysis_coverage_section_disabled_static_analysis(tmp_path: Path) -> None:
+    html = ModernizationHTMLReportRenderer().render(
+        ModernizationReportInput(
+            analysis_result=_analysis_result(tmp_path),
+            assessment_mode=AssessmentMode.DETERMINISTIC,
+            generated_at_utc=datetime(2026, 7, 21, 15, 30, tzinfo=UTC),
+        )
+    )
+    assert 'id="analysis-coverage"' in html
+    assert "Analysis Coverage" in html
+    assert "Deterministic analysis" in html
+    assert "Static analysis" in html
+    assert "disabled" in html
+    assert "Static analysis was not configured for this assessment." in html
+    assert "AI interpretation" in html
+    assert "not executed" in html
+
+
+def test_analysis_coverage_unavailable_and_timing(tmp_path: Path) -> None:
+    analysis = _analysis_result(tmp_path).model_copy(
+        update={
+            "static_analysis_results": [
+                StaticAnalysisResult(
+                    provider_id="pmd",
+                    provider_name="pmd",
+                    provider_version="7.0.0",
+                    status=StaticAnalysisStatus.UNAVAILABLE,
+                    findings=[],
+                    duration_ms=12.5,
+                    error_message="pmd not found",
+                )
+            ]
+        }
+    )
+    html = ModernizationHTMLReportRenderer().render(
+        ModernizationReportInput(
+            analysis_result=analysis,
+            assessment_mode=AssessmentMode.DETERMINISTIC,
+            generated_at_utc=datetime(2026, 7, 21, 15, 30, tzinfo=UTC),
+            timing=AssessmentTiming(
+                total_ms=250.0,
+                scan_ms=20.0,
+                analysis_ms=100.0,
+                static_analysis_ms=12.5,
+                ai_ms=None,
+                report_ms=15.0,
+            ),
+        )
+    )
+    assert "Analysis Coverage" in html
+    assert "unavailable" in html
+    assert "pmd static analysis was unavailable" in html
+    assert "Execution Timing" in html
+    assert "Total (ms)" in html
+    assert "250.00" in html
+    assert "Scan (ms)" in html
+    assert "Static analysis (ms)" in html
+    assert "Report (ms)" in html
+    assert "15.00" in html
 
 
 def test_html_escaping_and_injection_prevention(tmp_path: Path) -> None:
@@ -517,7 +626,7 @@ def test_file_writing(tmp_path: Path) -> None:
     path = write_modernization_html_report(_report_input(tmp_path), output)
     assert path == output
     content = output.read_text(encoding="utf-8")
-    assert "Modernization Assessment" in content
+    assert "AI Modernization Factory" in content
 
 
 def test_no_external_assets_or_scripts(tmp_path: Path) -> None:
@@ -539,6 +648,7 @@ def test_frozen_input_contract(tmp_path: Path) -> None:
     with pytest.raises(ValidationError):
         ModernizationReportInput(
             analysis_result=_analysis_result(tmp_path),
+            assessment_mode=AssessmentMode.AI_ENHANCED,
             analysis_context=_context(),
             assessment_result=_assessment(),
             generated_at_utc=datetime(2026, 7, 21, 15, 30, tzinfo=UTC),

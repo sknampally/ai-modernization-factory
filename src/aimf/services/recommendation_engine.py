@@ -12,7 +12,13 @@ from aimf.models import (
     RepositoryFacts,
     Technology,
 )
-from aimf.models.enums import Effort, RecommendationCategory, Risk
+from aimf.models.enums import (
+    Effort,
+    FindingSource,
+    RecommendationCategory,
+    Risk,
+    Severity,
+)
 from aimf.models.normalized_facts import StructureFacts
 
 # Recommend expanding coverage when tests are under 10% of source files.
@@ -48,6 +54,7 @@ class ModernizationRecommendationEngine:
                 self._recommend_architecture_separation(facts),
                 self._recommend_multi_application(facts),
                 self._recommend_outdated_dependencies(facts),
+                *self._recommend_pmd_groups(findings),
             )
             if recommendation is not None
         ]
@@ -626,6 +633,76 @@ class ModernizationRecommendationEngine:
                 "outdated_dependencies": outdated,
             },
         )
+
+    def _recommend_pmd_groups(
+        self,
+        findings: Sequence[Finding],
+    ) -> list[Recommendation]:
+        """Create at most one recommendation per high-value PMD finding group."""
+
+        recommendations: list[Recommendation] = []
+        seen_rules: set[str] = set()
+
+        for finding in findings:
+            if finding.source != FindingSource.EXTERNAL_STATIC_ANALYSIS:
+                continue
+            rule_id = finding.rule_id or ""
+            if not rule_id.startswith("PMD.") or rule_id in seen_rules:
+                continue
+            visibility = str(finding.metadata.get("customer_visibility") or "")
+            relevance = str(finding.metadata.get("modernization_relevance") or "")
+            if visibility not in {"primary", "supporting"}:
+                continue
+            if relevance not in {"high", "medium"}:
+                continue
+            if finding.severity not in {Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM}:
+                continue
+
+            seen_rules.add(rule_id)
+            occurrence = int(finding.metadata.get("occurrence_count") or 1)
+            files = int(finding.metadata.get("affected_file_count") or len(finding.evidence))
+            priority = {
+                Severity.CRITICAL: Priority.CRITICAL,
+                Severity.HIGH: Priority.HIGH,
+                Severity.MEDIUM: Priority.MEDIUM,
+            }[finding.severity]
+            category = (
+                RecommendationCategory.SECURITY
+                if finding.category.value == "security"
+                else RecommendationCategory.ARCHITECTURE
+            )
+            recommendations.append(
+                self._recommendation(
+                    rule_id=f"REC.{rule_id}",
+                    title=f"Address PMD pattern: {finding.title}",
+                    description=(
+                        f"Remediate the recurring PMD finding '{finding.title}' "
+                        f"({occurrence} occurrence{'s' if occurrence != 1 else ''} across "
+                        f"{files} file{'s' if files != 1 else ''})."
+                    ),
+                    rationale=(
+                        "Grouped static-analysis evidence indicates a modernization-relevant "
+                        f"pattern ({relevance} relevance, {visibility} visibility)."
+                    ),
+                    priority=priority,
+                    category=category,
+                    effort=Effort.MEDIUM if occurrence > 3 else Effort.SMALL,
+                    risk=(
+                        Risk.HIGH
+                        if finding.severity in {Severity.CRITICAL, Severity.HIGH}
+                        else Risk.MEDIUM
+                    ),
+                    evidence=list(finding.evidence[:5]),
+                    related_finding_ids=[str(finding.id)],
+                    metadata={
+                        "pmd_rule_id": rule_id,
+                        "group_id": finding.metadata.get("group_id"),
+                        "occurrence_count": occurrence,
+                        "affected_file_count": files,
+                    },
+                )
+            )
+        return recommendations
 
     @staticmethod
     def _is_application_repository(structure: StructureFacts | None) -> bool:

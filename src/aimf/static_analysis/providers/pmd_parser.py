@@ -34,11 +34,11 @@ class PmdParser:
             raise ValueError(f"Malformed PMD XML: {exc}") from exc
 
         findings: list[Finding] = []
-        for file_element in root.findall(".//file"):
+        for file_element in root.findall(".//{*}file"):
             absolute_name = file_element.attrib.get("name", "")
             relative_path = self._relativize(absolute_name, repository_path)
 
-            for violation in file_element.findall("violation"):
+            for violation in file_element.findall("{*}violation"):
                 findings.append(
                     self._violation_to_finding(
                         violation=violation,

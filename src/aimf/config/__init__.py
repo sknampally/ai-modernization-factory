@@ -2,6 +2,8 @@
 
 from aimf.config.settings import (
     AimfSettings,
+    AiSettings,
+    BedrockSettings,
     PmdSettings,
     RepositorySettings,
     StaticAnalysisSettings,
@@ -11,7 +13,9 @@ from aimf.config.settings import (
 from aimf.repository_auth.models import RepositoryAuthenticationConfig
 
 __all__ = [
+    "AiSettings",
     "AimfSettings",
+    "BedrockSettings",
     "PmdSettings",
     "RepositoryAuthenticationConfig",
     "RepositorySettings",

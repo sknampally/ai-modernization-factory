@@ -22,6 +22,7 @@ def test_cli_help() -> None:
     assert result.exit_code == 0
     assert "Analyze and modernize legacy enterprise applications" in result.stdout
     assert "version" in result.stdout
+    assert "assess" in result.stdout
 
 
 def test_scan_help_shows_output_option() -> None:

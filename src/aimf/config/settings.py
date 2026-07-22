@@ -41,6 +41,7 @@ class PmdSettings(BaseModel):
 
     enabled: bool = True
     executable: str = "pmd"
+    profile: str = "standard"
     rulesets: list[str] = Field(
         default_factory=lambda: [
             "category/java/bestpractices.xml",
@@ -60,6 +61,13 @@ class PmdSettings(BaseModel):
         if any(character in compact for character in [";", "|", "&", "`", "$", "\n"]):
             raise ValueError("PMD executable must not contain shell metacharacters")
         return compact
+
+    @field_validator("profile")
+    @classmethod
+    def validate_profile(cls, value: str) -> str:
+        from aimf.static_analysis.providers.pmd_profiles import parse_pmd_profile
+
+        return parse_pmd_profile(value).value
 
     @field_validator("rulesets")
     @classmethod
@@ -112,6 +120,27 @@ class StaticAnalysisSettings(BaseModel):
         return value
 
 
+class BedrockSettings(BaseModel):
+    """Optional AWS Bedrock settings for modernization assessment."""
+
+    model_id: str | None = None
+    region: str | None = None
+
+    @field_validator("model_id", "region")
+    @classmethod
+    def validate_optional_nonempty(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        compact = value.strip()
+        return compact or None
+
+
+class AiSettings(BaseModel):
+    """Optional AI subsystem settings."""
+
+    bedrock: BedrockSettings = Field(default_factory=BedrockSettings)
+
+
 class AimfSettings(BaseModel):
     """Top-level AIMF application settings."""
 
@@ -122,6 +151,7 @@ class AimfSettings(BaseModel):
     static_analysis: StaticAnalysisSettings = Field(
         default_factory=StaticAnalysisSettings,
     )
+    ai: AiSettings = Field(default_factory=AiSettings)
 
 
 def load_settings(config_path: Path) -> AimfSettings:

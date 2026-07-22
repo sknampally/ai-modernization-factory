@@ -46,7 +46,7 @@ def configure_logging(
 ) -> None:
     """Configure root application logging."""
 
-    resolved_level = (level or os.getenv("AIMF_LOG_LEVEL") or "INFO").upper()
+    resolved_level = (level or os.getenv("AIMF_LOG_LEVEL") or "WARNING").upper()
 
     resolved_json_logs = (
         json_logs

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import re
-import shutil
 import subprocess
 import tempfile
 from collections.abc import Callable, Sequence
@@ -12,13 +10,29 @@ from time import perf_counter
 
 from aimf.models.repository import Repository
 from aimf.models.technology import Technology
+from aimf.static_analysis.grouping import (
+    group_observations,
+    observations_from_pmd_findings,
+    visibility_counts,
+)
 from aimf.static_analysis.models import (
     StaticAnalysisContext,
     StaticAnalysisResult,
     StaticAnalysisStatus,
 )
 from aimf.static_analysis.providers.pmd_command import PmdCommandBuilder
+from aimf.static_analysis.providers.pmd_discovery import (
+    probe_pmd_version,
+    resolve_pmd_executable,
+    sanitize_pmd_user_message,
+)
 from aimf.static_analysis.providers.pmd_parser import PmdParser
+from aimf.static_analysis.providers.pmd_profiles import (
+    DEFAULT_PMD_PROFILE,
+    PmdProfile,
+    parse_pmd_profile,
+    resolve_pmd_profile_definition,
+)
 
 _JAVA_SOURCE_ROOTS = (
     "src/main/java",
@@ -52,29 +66,35 @@ class PmdProvider:
         *,
         executable: str = "pmd",
         rulesets: Sequence[str] | None = None,
-        minimum_priority: int = 5,
+        minimum_priority: int | None = None,
         timeout_seconds: int = 120,
         enabled: bool = True,
+        profile: str | PmdProfile | None = None,
         command_builder: PmdCommandBuilder | None = None,
         parser: PmdParser | None = None,
         process_runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
     ) -> None:
-        self._executable = executable
-        self._rulesets = list(
-            rulesets
-            or (
-                "category/java/bestpractices.xml",
-                "category/java/errorprone.xml",
-                "category/java/design.xml",
-            )
+        self._configured_executable = executable
+        self._profile = parse_pmd_profile(profile or DEFAULT_PMD_PROFILE)
+        definition = resolve_pmd_profile_definition(
+            self._profile,
+            configured_rulesets=list(rulesets) if rulesets is not None else None,
         )
-        self._minimum_priority = minimum_priority
+        self._rulesets = list(definition.rulesets)
+        self._minimum_priority = (
+            minimum_priority if minimum_priority is not None else definition.minimum_priority
+        )
         self._timeout_seconds = timeout_seconds
         self._enabled = enabled
-        self._command_builder = command_builder or PmdCommandBuilder(executable)
         self._parser = parser or PmdParser()
         self._process_runner = process_runner or subprocess.run
         self._cached_version: str | None | bool = False
+        self._resolved_executable: str | None = None
+        self._discovery_source: str | None = None
+        self._discovery_message: str | None = None
+        # Command builder is refreshed once discovery resolves an executable.
+        self._command_builder = command_builder or PmdCommandBuilder(executable)
+        self._injected_command_builder = command_builder is not None
 
     @property
     def provider_id(self) -> str:
@@ -105,27 +125,45 @@ class PmdProvider:
         started = perf_counter()
         version = self._resolve_version()
         if version is None:
+            message = (
+                self._discovery_message
+                or "PMD executable was not found or could not report a version."
+            )
+            sanitized = sanitize_pmd_user_message(message)
             return StaticAnalysisResult(
                 provider_id=self.provider_id,
                 provider_name=self.display_name,
                 status=StaticAnalysisStatus.UNAVAILABLE,
-                error_message="PMD executable was not found.",
-                warnings=["PMD executable was not found."],
+                error_message=sanitized,
+                warnings=[sanitized],
             )
 
-        repository_path = Path(context.repository_path)
+        repository_path = Path(context.repository_path).resolve()
         source_roots = self._resolve_source_roots(
             repository=context.repository,
             repository_path=repository_path,
         )
-        if not source_roots:
+        eligible_files = self._collect_java_files(source_roots)
+        eligible_count = len(eligible_files)
+        metadata_base: dict[str, object] = {
+            "profile": self._profile.value,
+            "rulesets": list(self._rulesets),
+            "source_roots": [self._relative_root(root, repository_path) for root in source_roots],
+            "eligible_file_count": eligible_count,
+            "minimum_priority": self._minimum_priority,
+        }
+
+        if not source_roots or eligible_count == 0:
             return StaticAnalysisResult(
                 provider_id=self.provider_id,
                 provider_name=self.display_name,
                 provider_version=version,
                 status=StaticAnalysisStatus.SKIPPED,
-                warnings=["No Java source roots were found for PMD analysis."],
+                eligible_file_count=0,
+                files_analyzed=0,
+                warnings=["No Java source files were found for PMD analysis."],
                 duration_ms=round((perf_counter() - started) * 1000, 2),
+                command_metadata=metadata_base,
             )
 
         with tempfile.TemporaryDirectory(prefix="aimf-pmd-") as temp_directory:
@@ -145,8 +183,9 @@ class PmdProvider:
                     provider_name=self.display_name,
                     provider_version=version,
                     status=StaticAnalysisStatus.FAILED,
+                    eligible_file_count=eligible_count,
                     duration_ms=round((perf_counter() - started) * 1000, 2),
-                    command_metadata=self._sanitize_command_metadata(command.metadata),
+                    command_metadata=self._merge_metadata(command.metadata, metadata_base),
                     error_message="PMD analysis timed out.",
                     warnings=["PMD analysis timed out."],
                 )
@@ -167,8 +206,9 @@ class PmdProvider:
                         provider_name=self.display_name,
                         provider_version=version,
                         status=StaticAnalysisStatus.FAILED,
+                        eligible_file_count=eligible_count,
                         duration_ms=round((perf_counter() - started) * 1000, 2),
-                        command_metadata=self._sanitize_command_metadata(legacy.metadata),
+                        command_metadata=self._merge_metadata(legacy.metadata, metadata_base),
                         error_message="PMD analysis timed out.",
                         warnings=["PMD analysis timed out."],
                     )
@@ -180,8 +220,9 @@ class PmdProvider:
                     provider_name=self.display_name,
                     provider_version=version,
                     status=StaticAnalysisStatus.FAILED,
+                    eligible_file_count=eligible_count,
                     duration_ms=round((perf_counter() - started) * 1000, 2),
-                    command_metadata=self._sanitize_command_metadata(command.metadata),
+                    command_metadata=self._merge_metadata(command.metadata, metadata_base),
                     error_message=self._sanitize_error(
                         completed.stderr or completed.stdout or "PMD failed"
                     ),
@@ -193,6 +234,19 @@ class PmdProvider:
                 report_xml = report_file.read_text(encoding="utf-8", errors="replace")
             elif completed.stdout:
                 report_xml = completed.stdout
+
+            if not report_xml.strip():
+                return StaticAnalysisResult(
+                    provider_id=self.provider_id,
+                    provider_name=self.display_name,
+                    provider_version=version,
+                    status=StaticAnalysisStatus.FAILED,
+                    eligible_file_count=eligible_count,
+                    duration_ms=round((perf_counter() - started) * 1000, 2),
+                    command_metadata=self._merge_metadata(command.metadata, metadata_base),
+                    error_message="PMD produced no report output.",
+                    warnings=["PMD produced no report output."],
+                )
 
             try:
                 findings = self._parser.parse(
@@ -206,40 +260,88 @@ class PmdProvider:
                     provider_name=self.display_name,
                     provider_version=version,
                     status=StaticAnalysisStatus.FAILED,
+                    eligible_file_count=eligible_count,
                     duration_ms=round((perf_counter() - started) * 1000, 2),
-                    command_metadata=self._sanitize_command_metadata(command.metadata),
+                    command_metadata=self._merge_metadata(command.metadata, metadata_base),
                     error_message=str(exc),
                     warnings=[str(exc)],
                 )
 
-            files_analyzed = len(
-                {finding.evidence[0].file_path for finding in findings if finding.evidence}
-            )
+            # Successful processing of a non-empty eligible set.
+            files_analyzed = eligible_count
+            status = StaticAnalysisStatus.COMPLETED
+            warnings: list[str] = []
+            error_message = None
+            if files_analyzed <= 0:
+                status = StaticAnalysisStatus.FAILED
+                error_message = (
+                    "PMD unexpectedly processed zero files despite eligible Java sources."
+                )
+                warnings = [error_message]
+                return StaticAnalysisResult(
+                    provider_id=self.provider_id,
+                    provider_name=self.display_name,
+                    provider_version=version,
+                    status=status,
+                    findings=[],
+                    files_analyzed=0,
+                    eligible_file_count=eligible_count,
+                    duration_ms=round((perf_counter() - started) * 1000, 2),
+                    command_metadata=self._merge_metadata(command.metadata, metadata_base),
+                    warnings=warnings,
+                    error_message=error_message,
+                    profile=self._profile.value,
+                )
+
+            observations = observations_from_pmd_findings(findings)
+            groups, customer_findings = group_observations(observations)
+            counts = visibility_counts(observations, groups)
+
             return StaticAnalysisResult(
                 provider_id=self.provider_id,
                 provider_name=self.display_name,
                 provider_version=version,
-                status=StaticAnalysisStatus.COMPLETED,
-                findings=findings,
+                status=status,
+                findings=customer_findings,
                 files_analyzed=files_analyzed,
+                eligible_file_count=eligible_count,
                 duration_ms=round((perf_counter() - started) * 1000, 2),
-                command_metadata=self._sanitize_command_metadata(command.metadata),
+                command_metadata=self._merge_metadata(command.metadata, metadata_base),
+                warnings=warnings,
+                error_message=error_message,
+                profile=self._profile.value,
+                observations=observations,
+                groups=groups,
+                raw_observation_count=counts["raw_observation_count"],
+                grouped_finding_count=counts["grouped_finding_count"],
+                primary_count=counts["primary_count"],
+                supporting_count=counts["supporting_count"],
+                informational_count=counts["informational_count"],
+                suppressed_from_html_count=counts["suppressed_from_html_count"],
             )
 
     def _resolve_version(self) -> str | None:
-        executable = shutil.which(self._executable) or self._executable
-        command = self._command_builder.version_command()
-        command_args = [executable, *command.args[1:]]
-        try:
-            completed = self._run_process(command_args, timeout=30)
-        except (OSError, subprocess.TimeoutExpired):
+        discovery = resolve_pmd_executable(configured=self._configured_executable)
+        self._discovery_source = discovery.source
+        self._discovery_message = discovery.message
+        if discovery.executable is None:
             return None
 
-        output = (completed.stdout or "") + "\n" + (completed.stderr or "")
-        match = re.search(r"(\d+\.\d+(?:\.\d+)?)", output)
-        if match is None:
-            return None if completed.returncode != 0 else "unknown"
-        return match.group(1)
+        self._resolved_executable = discovery.executable
+        if not self._injected_command_builder:
+            self._command_builder = PmdCommandBuilder(discovery.executable)
+
+        version = probe_pmd_version(
+            discovery.executable,
+            process_runner=self._process_runner,
+            timeout_seconds=min(30, self._timeout_seconds),
+        )
+        if version is None:
+            self._discovery_message = (
+                discovery.message or "PMD executable was not found or could not report a version."
+            )
+            return None
+        return version
 
     def _run_process(
         self,
@@ -267,7 +369,7 @@ class PmdProvider:
     ) -> list[Path]:
         roots: list[Path] = []
         for relative in _JAVA_SOURCE_ROOTS:
-            candidate = repository_path / relative
+            candidate = (repository_path / relative).resolve()
             if candidate.is_dir():
                 roots.append(candidate)
 
@@ -280,11 +382,54 @@ class PmdProvider:
             if path.replace("\\", "/").endswith(".java") and not self._is_excluded(path)
         ]
         if not java_files:
-            return []
+            # Last resort: walk repository for .java files outside excluded dirs.
+            discovered = self._discover_java_files_on_disk(repository_path)
+            if not discovered:
+                return []
+            parents = sorted({path.parent for path in discovered})
+            return parents[:20]
 
-        # Fallback: unique parent directories of Java files under the repository.
-        parents = sorted({(repository_path / path).parent for path in java_files})
+        parents = sorted({(repository_path / path).resolve().parent for path in java_files})
         return parents[:20]
+
+    def _collect_java_files(self, source_roots: list[Path]) -> list[Path]:
+        files: list[Path] = []
+        for root in source_roots:
+            if not root.is_dir():
+                continue
+            for path in sorted(root.rglob("*.java")):
+                if not path.is_file():
+                    continue
+                try:
+                    relative = path.relative_to(root)
+                except ValueError:
+                    relative = path
+                if self._is_excluded(relative.as_posix()):
+                    continue
+                files.append(path.resolve())
+        # Unique while preserving order
+        seen: set[Path] = set()
+        unique: list[Path] = []
+        for path in files:
+            if path in seen:
+                continue
+            seen.add(path)
+            unique.append(path)
+        return unique
+
+    def _discover_java_files_on_disk(self, repository_path: Path) -> list[Path]:
+        discovered: list[Path] = []
+        for path in repository_path.rglob("*.java"):
+            if not path.is_file():
+                continue
+            try:
+                relative = path.relative_to(repository_path).as_posix()
+            except ValueError:
+                continue
+            if self._is_excluded(relative):
+                continue
+            discovered.append(path.resolve())
+        return discovered
 
     def _repository_has_java(
         self,
@@ -297,9 +442,25 @@ class PmdProvider:
         return any(path.replace("\\", "/").endswith(".java") for path in repository.files)
 
     @staticmethod
+    def _relative_root(root: Path, repository_path: Path) -> str:
+        try:
+            return root.resolve().relative_to(repository_path.resolve()).as_posix()
+        except ValueError:
+            return root.name
+
+    @staticmethod
     def _is_excluded(relative_path: str) -> bool:
         parts = set(Path(relative_path.replace("\\", "/")).parts)
         return bool(parts & _EXCLUDED_DIRECTORY_NAMES)
+
+    def _merge_metadata(
+        self,
+        command_metadata: dict[str, object],
+        extra: dict[str, object],
+    ) -> dict[str, object]:
+        sanitized = self._sanitize_command_metadata(command_metadata)
+        sanitized.update(extra)
+        return sanitized
 
     @staticmethod
     def _sanitize_command_metadata(metadata: dict[str, object]) -> dict[str, object]:
