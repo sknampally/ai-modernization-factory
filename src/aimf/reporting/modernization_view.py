@@ -18,6 +18,7 @@ from aimf.ai.recommendations.validation import (
 )
 from aimf.models import AnalysisResult, Finding, Severity
 from aimf.reporting.modernization_models import (
+    AIExecutionStatus,
     AssessmentMode,
     ModernizationReportInput,
     ModernizationReportValidationError,
@@ -58,6 +59,13 @@ def validate_modernization_report_input(
         if report_input.assessment_result is not None:
             raise ModernizationReportValidationError(
                 "Deterministic reports must not include an AI assessment result"
+            )
+        return report_input
+
+    if report_input.ai_status == AIExecutionStatus.FAILED:
+        if report_input.assessment_result is not None:
+            raise ModernizationReportValidationError(
+                "Failed AI assessments must not include an AI assessment result"
             )
         return report_input
 
@@ -139,19 +147,27 @@ def finding_anchor_id(rule_id: str | None, *, index: int = 0) -> str:
 
 
 def finding_anchor_map(findings: Iterable[Finding]) -> dict[str, str]:
-    """Map rule_id -> primary fragment id for recommendation links."""
+    """Map rule_id/group_id -> primary fragment id for recommendation links."""
 
     anchors: dict[str, str] = {}
     counts: dict[str, int] = {}
     for finding in sorted_findings(findings):
-        rule_id = finding.rule_id
-        if not rule_id:
-            continue
-        key = rule_id
-        occurrence = counts.get(key, 0)
-        counts[key] = occurrence + 1
-        if key not in anchors:
-            anchors[key] = finding_anchor_id(rule_id, index=occurrence)
+        keys: list[str] = []
+        if finding.rule_id:
+            keys.append(finding.rule_id)
+        group_id = finding.metadata.get("group_id")
+        if isinstance(group_id, str) and group_id.strip():
+            keys.append(group_id.strip())
+        finding_key = str(finding.id)
+        keys.append(finding_key)
+        for key in keys:
+            occurrence = counts.get(key, 0)
+            counts[key] = occurrence + 1
+            if key not in anchors:
+                anchors[key] = finding_anchor_id(
+                    finding.rule_id or key,
+                    index=occurrence if key == finding.rule_id else 0,
+                )
     return anchors
 
 

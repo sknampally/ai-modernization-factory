@@ -122,7 +122,7 @@ def _complete_result(tmp_path: Path) -> AnalysisResult:
 def test_complete_analysis_result_mapping(tmp_path: Path) -> None:
     context = LLMAnalysisContextBuilder().build(_complete_result(tmp_path))
 
-    assert context.schema_version == "1.0.0"
+    assert context.schema_version == "1.1.0"
     assert context.repository.name == "sample-app"
     assert context.repository.source_type == "github"
     assert context.repository.default_branch == "main"

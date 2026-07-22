@@ -19,6 +19,14 @@ class AssessmentMode(StrEnum):
     AI_ENHANCED = "ai-enhanced"
 
 
+class AIExecutionStatus(StrEnum):
+    """Outcome of the optional AI assessment stage."""
+
+    NOT_EXECUTED = "not_executed"
+    EXECUTED = "executed"
+    FAILED = "failed"
+
+
 class AssessmentTiming(BaseModel):
     """Wall-clock timing metadata for an assessment run."""
 
@@ -49,6 +57,8 @@ class ModernizationReportInput(BaseModel):
     assessment_mode: AssessmentMode = AssessmentMode.DETERMINISTIC
     analysis_context: LLMAnalysisContext | None = None
     assessment_result: ModernizationAssessmentResult | None = None
+    ai_status: AIExecutionStatus = AIExecutionStatus.NOT_EXECUTED
+    ai_failure_message: str | None = None
     generated_at_utc: datetime
     report_title: str = "Modernization Assessment"
     organization_name: str | None = None
@@ -84,10 +94,16 @@ class ModernizationReportInput(BaseModel):
     @model_validator(mode="after")
     def validate_mode_payload(self) -> ModernizationReportInput:
         if self.assessment_mode == AssessmentMode.AI_ENHANCED:
-            if self.analysis_context is None:
-                raise ValueError("AI-enhanced reports require analysis_context")
-            if self.assessment_result is None:
-                raise ValueError("AI-enhanced reports require assessment_result")
+            if self.ai_status == AIExecutionStatus.EXECUTED:
+                if self.analysis_context is None:
+                    raise ValueError("AI-enhanced reports require analysis_context")
+                if self.assessment_result is None:
+                    raise ValueError("AI-enhanced reports require assessment_result")
+            elif self.ai_status == AIExecutionStatus.FAILED:
+                if self.assessment_result is not None:
+                    raise ValueError("Failed AI assessments must not include assessment_result")
+            elif self.assessment_result is not None:
+                raise ValueError("AI assessment_result requires ai_status=executed")
         elif self.assessment_result is not None:
             raise ValueError("Deterministic reports must not include assessment_result")
         return self
@@ -96,5 +112,6 @@ class ModernizationReportInput(BaseModel):
     def ai_executed(self) -> bool:
         return (
             self.assessment_mode == AssessmentMode.AI_ENHANCED
+            and self.ai_status == AIExecutionStatus.EXECUTED
             and self.assessment_result is not None
         )

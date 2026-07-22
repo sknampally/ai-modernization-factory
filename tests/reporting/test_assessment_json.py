@@ -48,6 +48,7 @@ from aimf.models import (
 )
 from aimf.reporting import (
     ASSESSMENT_JSON_SCHEMA_VERSION,
+    AIExecutionStatus,
     AssessmentMode,
     AssessmentTiming,
     ModernizationReportInput,
@@ -243,6 +244,7 @@ def _ai_input(tmp_path: Path) -> ModernizationReportInput:
         assessment_mode=AssessmentMode.AI_ENHANCED,
         analysis_context=_context(),
         assessment_result=_assessment(),
+        ai_status=AIExecutionStatus.EXECUTED,
         generated_at_utc=datetime(2026, 7, 21, 15, 30, tzinfo=UTC),
         repository_reference="example/sample-app",
     )

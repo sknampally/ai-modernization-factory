@@ -1,5 +1,6 @@
 """Provider-neutral LLM evidence contracts."""
 
+from aimf.ai.contracts.budget import AIContextBudgetError
 from aimf.ai.contracts.builder import LLMAnalysisContextBuilder
 from aimf.ai.contracts.limits import LLMContractLimits
 from aimf.ai.contracts.models import (
@@ -19,6 +20,7 @@ from aimf.ai.contracts.serialization import (
 )
 
 __all__ = [
+    "AIContextBudgetError",
     "LLM_CONTRACT_SCHEMA_VERSION",
     "LLMAnalysisContext",
     "LLMAnalysisContextBuilder",

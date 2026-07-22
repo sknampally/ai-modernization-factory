@@ -49,6 +49,7 @@ from aimf.models import (
     TechnologyCategory,
 )
 from aimf.reporting import (
+    AIExecutionStatus,
     AssessmentMode,
     AssessmentTiming,
     ModernizationHTMLReportRenderer,
@@ -289,6 +290,11 @@ def _report_input(
         assessment_mode=assessment_mode,
         analysis_context=context or _context(truncated=truncated),
         assessment_result=assessment or _assessment(),
+        ai_status=(
+            AIExecutionStatus.EXECUTED
+            if assessment_mode == AssessmentMode.AI_ENHANCED
+            else AIExecutionStatus.NOT_EXECUTED
+        ),
         generated_at_utc=datetime(2026, 7, 21, 15, 30, tzinfo=UTC),
         organization_name=organization_name,
         confidentiality_notice=confidentiality_notice,
@@ -324,6 +330,7 @@ def test_minimal_valid_report(tmp_path: Path) -> None:
         assessment_mode=AssessmentMode.AI_ENHANCED,
         analysis_context=_context(),
         assessment_result=assessment,
+        ai_status=AIExecutionStatus.EXECUTED,
         generated_at_utc=datetime(2026, 7, 21, 15, 30, tzinfo=UTC),
     )
     html = ModernizationHTMLReportRenderer().render(minimal)

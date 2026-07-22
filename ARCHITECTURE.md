@@ -4,7 +4,7 @@
 
 AI Modernization Factory (AIMF) analyzes enterprise application repositories and produces evidence-based modernization assessments.
 
-AIMF first performs deterministic analysis to discover technologies, build systems, dependencies, CI/CD configuration, and related repository characteristics. Structured facts and findings are the primary output today. AI interpretation of those facts is a planned later layer.
+AIMF first performs deterministic analysis to discover technologies, build systems, dependencies, CI/CD configuration, architecture, security, and cloud-readiness characteristics. Structured facts, findings, and deterministic recommendations are the primary product. Optional AI interpretation runs over a budgeted, normalized evidence contract and augments the same HTML/JSON assessment report.
 
 ## Engineering Philosophy
 
@@ -12,7 +12,7 @@ AIMF first performs deterministic analysis to discover technologies, build syste
 
 Large language models are useful for reasoning over structured information, but less reliable at inventing facts from large codebases.
 
-Instead of asking an LLM to “analyze this repository,” AIMF aims to ask:
+Instead of asking an LLM to “analyze this repository,” AIMF asks:
 
 > Here is everything we discovered about this application. Based on these facts, what modernization strategy would you recommend?
 
@@ -21,9 +21,10 @@ Benefits:
 * Repeatable analysis
 * Explainable findings
 * Lower hallucination risk
-* Lower token cost when AI is added
+* Lower token cost (budgeted normalized context, not raw repositories or all PMD observations)
 * Easier unit testing
 * Clear separation between facts and interpretation
+* Deterministic usefulness when AI is unavailable or fails
 
 ## Design Principles
 
@@ -35,29 +36,34 @@ Benefits:
 | Detectors | Identify languages, frameworks, and tools |
 | Analyzers | Produce facts and findings |
 | CompositeAnalyzer | Run analyzers sequentially and merge facts |
-| StaticAnalysisService | Orchestrate external providers (for example PMD) |
-| AnalysisService | Orchestrate detection + native analysis + providers |
-| Reporters | Present `AnalysisResult` |
+| StaticAnalysisService | Orchestrate external providers (PMD today) |
+| RecommendationEngine | Deterministic recommendations from findings |
+| AnalysisService | Orchestrate detection + native analysis + providers + recommendations |
+| AI contracts / prompts / providers / agents | Build budgeted context, invoke model once, validate output |
+| Reporters (`reporters/`) | Present `AnalysisResult` for `aimf scan` |
+| Reporting (`reporting/`) | Customer assess HTML/JSON modernization reports |
 | CLI | Load config, invoke pipeline, write output |
 
 ### Composable components
 
-New scanners, detectors, analyzers, and reporters can be added without rewriting the orchestration layer. Analyzers implement a shared protocol and return deltas; the composite merges them.
+New scanners, detectors, analyzers, providers, and reporters can be added without rewriting the orchestration layer. Analyzers implement a shared protocol and return deltas; the composite merges them.
 
 ### Evidence-based findings
 
-Findings include title, description, category, severity, source, and structured evidence (file paths and supporting details). Recommendations, when added, must remain traceable to findings.
+Findings include title, description, category, severity, source, and structured evidence (file paths and supporting details). Deterministic and AI recommendations remain traceable to finding and group IDs.
 
-## Runtime Pipeline
+## Runtime Pipelines
+
+### Shared analysis
 
 ```text
-                    aimf.toml
+                    aimf.toml / CLI flags
                         │
                         ▼
                       CLI
                         │
                         ▼
-             GitHubRepositoryScanner
+             Local or GitHub scanner
                         │
                         ▼
                    Repository
@@ -68,28 +74,65 @@ Findings include title, description, category, severity, source, and structured 
           ┌─────────────┼─────────────────────┐
           ▼             ▼                     ▼
  Technology      CompositeAnalyzer   StaticAnalysisService
- detection              │              ├── PMD
-          │             ▼              └── Future providers
-          │      facts + findings             │
-          │             │                     ▼
-          │             │            normalized findings
+ detection              │              └── PMD (profiles)
+          │             ▼                     │
+          │      facts + findings             ▼
+          │             │            normalize → group → visibility
           └─────────────┴─────────────┬───────┘
                                       ▼
                            Recommendation engine
                                       ▼
                               AnalysisResult
-                                      │
-                        ┌─────────────┼─────────────┐
-                        ▼             ▼             ▼
-                   report.txt    report.json   report.html
 ```
+
+### `aimf scan` reporting
+
+```text
+AnalysisResult
+    │
+    ├─ report.txt
+    ├─ report.json
+    └─ report.html
+         │
+         ▼
+ retain latest 3 runs (delete older)
+```
+
+### `aimf assess` reporting
+
+```text
+AnalysisResult
+    │
+    ├─ (deterministic mode) skip AI
+    └─ (AI mode)
+         ├─ LLMAnalysisContextBuilder + token budget
+         ├─ exactly one Bedrock invocation
+         └─ AIRecommendationResult validation
+    │
+    ▼
+ModernizationReportInput
+    │
+    ├─ report.html   (deterministic sections first; AI section appended)
+    └─ report.json   (schema/report version 1.2)
+         │
+         ▼
+ archive excess active runs (keep 3; move older to archive/)
+```
+
+AI failure behavior:
+
+* Deterministic HTML and JSON are still written
+* `assessment.ai.status = failed` with a sanitized warning
+* No fabricated AI sections; prompts and raw responses are not exposed
+* Retention still runs after successful artifact generation
 
 ### Provider boundary
 
 AIMF owns:
 
 * provider orchestration and availability checks
-* normalization into `Finding` / `Evidence`
+* PMD profile selection and command construction isolation
+* normalization into observations, groups, and customer `Finding` objects
 * modernization interpretation and recommendations
 * reporting and baseline comparison
 
@@ -98,11 +141,43 @@ PMD owns:
 * Java language rules
 * source-level issue detection
 
+### PMD normalization pipeline
+
+```text
+PMD XML report
+    │
+    ▼
+parser (namespace-aware)
+    │
+    ▼
+observations (raw; retained in JSON)
+    │
+    ▼
+rule mapping + visibility + modernization relevance
+    │
+    ▼
+grouping by remediation pattern
+    │
+    ▼
+customer Finding cards (HTML) + grouped evidence
+```
+
+Profiles:
+
+| Profile | Role |
+| ------- | ---- |
+| `focused` | Executive/customer assessment with lower stylistic noise |
+| `standard` | Default modernization assessment |
+| `comprehensive` | Broader evidence including lower-priority conventions |
+
+Visibility: `primary` · `supporting` · `informational` · `suppressed_from_html`  
+Critical/high findings are never suppressed from HTML.
+
 ### Adding a future provider
 
 1. Implement `StaticAnalysisProvider` (`provider_id`, applicability, availability, `analyze`)
-2. Normalize tool output into AIMF `Finding` objects with `FindingSource.EXTERNAL_STATIC_ANALYSIS`
-3. Register the provider in the CLI when its config section is enabled
+2. Normalize tool output into AIMF observations/groups/`Finding` objects with `FindingSource.EXTERNAL_STATIC_ANALYSIS`
+3. Register the provider in the default pipeline when its config section is enabled
 4. Keep command construction and parsing isolated from `AnalysisService`
 
 ### Repository authentication trust boundary
@@ -146,9 +221,7 @@ Authentication applies only to remote GitHub cloning. Local repository scanning 
 3. Merge the delta into the accumulated facts
 4. Pass the merged facts to the next analyzer
 
-This allows later analyzers (for example dependency health) to consume earlier discovery/metadata facts.
-
-Default analyzer order in the CLI:
+Default analyzer order:
 
 1. `RepositoryMetricsAnalyzer`
 2. `BuildDiscoveryAnalyzer`
@@ -157,26 +230,99 @@ Default analyzer order in the CLI:
 5. `DependencyMetadataAnalyzer`
 6. `DependencyHealthAnalyzer`
 7. `CicdDiscoveryAnalyzer`
+8. `SecurityAnalyzer`
+9. `ArchitectureAnalyzer`
+10. `CloudReadinessAnalyzer`
+
+### AI assessment architecture
+
+```text
+AnalysisResult
+    │
+    ▼
+LLMAnalysisContextBuilder
+    ├─ facts summary (compact; no full dependency lists)
+    ├─ static-analysis profile + counts
+    ├─ deterministic recommendations
+    └─ prioritized finding selection (budget.py)
+         │
+         ▼
+ModernizationPromptBuilder
+         │
+         ▼
+BedrockAIModelProvider  (exactly one call)
+         │
+         ▼
+AIRecommendationResult
+         │
+         ▼
+validate_recommendation_result
+    ├─ known finding / group / recommendation IDs only
+    ├─ reject empty material evidence
+    ├─ reject unsupported severity escalation
+    └─ reject invented / absolute paths
+         │
+         ▼
+ModernizationAssessmentResult → reporting layer
+```
+
+AI context budget priority:
+
+1. Critical/high native AIMF findings
+2. Critical/high primary PMD groups
+3. Medium primary PMD groups
+4. Medium supporting PMD groups
+5. Deterministic recommendations / architecture-security-cloud-build facts
+6. Low/informational findings only when space remains
+
+Never truncate finding IDs, severity, category, or critical/high evidence. If critical/high evidence cannot fit, fail clearly (`AIContextBudgetError`) rather than silently dropping it.
+
+Budget metadata recorded on the context and mirrored into JSON:
+
+* `candidate_finding_count`
+* `included_finding_count`
+* `omitted_informational_count`
+* `estimated_input_tokens`
+* `static_analysis_profile`
+
+Provider token usage and latency are recorded when the model returns them.
 
 ## Package Layout
 
 ```text
 src/aimf/
-├── cli.py
+├── cli/
+│   ├── __init__.py          # Typer app: version, scan, assess
+│   └── assess.py            # assess command + AI orchestration
 ├── config/
 │   └── settings.py
 ├── repository_auth/
-│   ├── models.py
-│   ├── service.py
-│   ├── providers/
-│   └── ...
 ├── security/
 │   └── redaction.py
 ├── models/
-├── reporters/
+├── reporters/               # scan reporters + shared HTML helpers
+├── reporting/               # assess modernization HTML/JSON
+│   ├── assessment_json.py
+│   ├── modernization_html.py
+│   ├── modernization_models.py
+│   └── ...
+├── ai/
+│   ├── contracts/           # LLMAnalysisContext + budgeted builder
+│   ├── prompts/
+│   ├── providers/           # Bedrock + parsing
+│   ├── agents/              # modernization assessment agent
+│   ├── recommendations/     # typed AI result + validation
+│   └── tools/               # optional analysis tools for agents
 ├── static_analysis/
+│   ├── service.py
+│   ├── grouping.py
+│   ├── visibility.py
+│   └── providers/           # PMD command/parser/profiles/normalization
 └── services/
     ├── analysis_service.py
+    ├── default_pipeline.py
+    ├── recommendation_engine.py
+    ├── scan_comparison_service.py
     ├── analyzers/
     ├── detectors/
     └── scanners/
@@ -193,6 +339,9 @@ src/aimf/
 * `repository.authentication` — optional credential reference (`github_token` or `ssh_agent`)
 * `workspace.directory` — clone workspace
 * `workspace.clean_before_clone` — whether to replace an existing clone
+* `static_analysis.enabled` / `fail_on_provider_error`
+* `static_analysis.pmd.*` — executable, profile, rulesets, priority, timeout
+* `ai.bedrock.model_id` / `ai.bedrock.region` — optional defaults for `--with-ai`
 
 ### Scanners
 
@@ -218,37 +367,64 @@ src/aimf/
 | `DependencyMetadataAnalyzer` | Parsed direct dependencies and categories |
 | `DependencyHealthAnalyzer` | Findings such as unmanaged/dynamic versions and missing lockfiles |
 | `CicdDiscoveryAnalyzer` | `CicdFacts` for detected pipeline files |
+| `SecurityAnalyzer` | Security-oriented facts and findings |
+| `ArchitectureAnalyzer` | Architecture facts and layering/design findings |
+| `CloudReadinessAnalyzer` | Cloud-readiness facts and findings |
 
 Supporting parsers:
 
 * `maven_dependency_parser.py` / `maven_version_resolver.py`
-* `github_actions_parser.py` (GitHub Actions YAML parsing; available for deeper CI metadata)
+* `github_actions_parser.py` / `yaml_pipeline_loader.py`
 
 ### Domain models
 
-`RepositoryFacts` aggregates:
+`RepositoryFacts` aggregates structure, technology, build, dependencies, CI/CD, security, architecture, and cloud facts.
 
-* `build: BuildFacts | None`
-* `dependencies: DependencyFacts | None`
-* `cicd: CicdFacts | None`
+`AnalysisResult` includes repository, technologies, facts, findings, deterministic recommendations, static-analysis results (observations + groups + counts), optional comparison metadata, and run metadata.
 
-`AnalysisResult` includes repository, technologies, facts, findings, recommendations (currently empty), and run metadata.
+`StaticAnalysisResult` retains:
 
-`AnalyzerResult` is the per-analyzer return value: findings plus newly produced facts.
+* raw `observations` (JSON)
+* `groups` and customer-facing `findings`
+* profile, files analyzed, visibility counts
 
-### Reporters
+### Deterministic recommendations
 
-* `TextFileReporter` / `JsonFileReporter` — write `report.txt` and `report.json`
-* `ConsoleReporter` — summary or detailed terminal output
-* Reports land in `reports/<repo>/<YYYYMMDD-HHMMSS>/` by default
-* Only the latest 3 timestamped run directories are retained per repository
+`RecommendationEngine` derives modernization recommendations from findings (including at most one deterministic recommendation per high-value PMD group). Recommendations remain in JSON unchanged when AI runs. HTML groups related deterministic recommendations by category for executive readability and keeps them separate from AI recommendations.
+
+### Reporters vs reporting
+
+| Path | Used by | Artifacts | Retention |
+| ---- | ------- | --------- | --------- |
+| `reporters/` | `aimf scan` | `report.txt`, `report.json`, `report.html` | Keep latest 3 (delete older) |
+| `reporting/` | `aimf assess` | `report.html`, `report.json` only | Keep latest 3 active; archive older |
+
+Assess HTML structure (high level):
+
+1. Executive summary and repository system intelligence
+2. Static analysis summary
+3. Deterministic findings
+4. Deterministic recommendations
+5. Optional comparison section
+6. AI interpretation (executed, failed, or not executed)
+7. Coverage, execution metadata, methodology
+
+### AI contracts
+
+* `LLMAnalysisContext` schema version **1.1.0**
+* `AIRecommendationResult` schema version **1.0.0**
+* Assessment JSON schema/report version **1.2**
+
+Assess JSON AI block includes execution status, provider/model, executive summary, key risks, recommendations, phases, limitations, evidence coverage, token usage, latency, and budget metadata. HTML and JSON must agree on AI status, counts, provider/model, tokens, latency, and evidence references.
 
 ## Contracts
 
-Key protocols in `services/contracts.py`:
+Key protocols:
 
 * `TechnologyDetector.detect(repository) -> list[Technology]`
 * `Analyzer.analyze(repository, technologies, facts=None) -> AnalyzerResult`
+* `StaticAnalysisProvider.analyze(context) -> StaticAnalysisResult`
+* `AIModelProvider.invoke(...) -> ModelInvocationResult`
 
 Analyzers should return only facts they produce. They must not echo the full accumulated facts; merging is the composite’s job.
 
@@ -256,24 +432,27 @@ Analyzers should return only facts they produce. They must not echo the full acc
 
 ### Completed
 
-* Project packaging and CLI (`aimf version`, `aimf scan`)
-* Config loading
+* Project packaging and CLI (`aimf version`, `aimf scan`, `aimf assess`)
+* Config loading and private GitHub authentication boundary
 * Local and GitHub scanning
 * Technology detection (Java / JS / PHP)
-* Analysis orchestration
-* Build, dependency, metrics, and CI/CD discovery analyzers
-* Dependency health findings
-* Fact-merging composite pipeline
-* Console and file reporters
-* Automated tests and static analysis
+* Analysis orchestration with fact-merging composite pipeline
+* Build, dependency, metrics, CI/CD, security, architecture, and cloud analyzers
+* Deterministic recommendation engine
+* PMD provider with profiles, namespace-aware parsing, normalization, grouping, and visibility
+* Scan reporters (text/JSON/HTML) and assess modernization reports (HTML/JSON)
+* Assess archive retention (3 active runs)
+* Baseline scan comparison
+* AI evidence contract, token budgeting, Bedrock provider, prompt builder, assessment agent, and output validation
+* Failure-safe AI mode that retains deterministic reports
+* Automated tests and static analysis (pytest / Ruff / MyPy)
 
 ### Next milestones
 
-* Wire deeper CI/CD metadata parsing into the main pipeline
-* Expand deterministic rule packs (security, quality, testing)
-* Recommendation engine over findings
-* AI interpretation of structured facts/findings
+* Additional static-analysis providers (SonarQube / Semgrep / CodeQL)
+* Richer structured AI risk objects (beyond string titles + high-priority recommendation cards)
 * Broader language and repository-source support
+* Assisted refactoring and continuous modernization workflows
 
 ## Long-Term Vision
 
@@ -285,4 +464,4 @@ AIMF is intended to grow into a modular enterprise modernization platform coveri
 * Modernization roadmaps and executive reporting
 * Assisted refactoring and continuous monitoring
 
-New capabilities should plug into the existing scan → detect → analyze → report flow without breaking deterministic guarantees.
+New capabilities should plug into the existing scan → detect → analyze → (optional AI) → report flow without breaking deterministic guarantees.

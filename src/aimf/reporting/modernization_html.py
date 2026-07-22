@@ -232,6 +232,18 @@ class ModernizationHTMLReportRenderer:
         )
 
     def _render_ai_interpretation(self, report_input: ModernizationReportInput) -> str:
+        if report_input.ai_status.value == "failed":
+            detail = report_input.ai_failure_message or "AI assessment failed."
+            return (
+                '<section id="ai-interpretation" class="section ai-section page-break">\n'
+                "<h2>AI Interpretation</h2>\n"
+                '<p class="ai-label">AI interpretation</p>\n'
+                '<p class="warning" role="status">'
+                "<strong>AI status:</strong> failed. Deterministic evidence above remains valid. "
+                f"{escape_and_wrap(detail)}"
+                "</p>\n"
+                "</section>\n"
+            )
         if not report_input.ai_executed:
             return (
                 '<section id="ai-interpretation" class="section ai-section page-break">\n'
@@ -249,6 +261,8 @@ class ModernizationHTMLReportRenderer:
             f"{self._render_key_risks_body(report_input)}"
             f"{self._render_ai_recommendations_body(report_input)}"
             f"{self._render_ai_roadmap_body(report_input)}"
+            f"{self._render_ai_limitations_body(report_input)}"
+            f"{self._render_ai_metadata_body(report_input)}"
             "</section>\n"
         )
 
@@ -289,7 +303,7 @@ class ModernizationHTMLReportRenderer:
             item
             for item in recommendation.recommendations
             if item.priority in {AIRecommendationPriority.CRITICAL, AIRecommendationPriority.HIGH}
-        ]
+        ][:5]
         anchors = finding_anchor_map(report_input.analysis_result.findings)
 
         cards: list[str] = []
@@ -297,7 +311,7 @@ class ModernizationHTMLReportRenderer:
             for item in priority_risks:
                 cards.append(self._risk_card_from_recommendation(item, anchors))
         elif risks:
-            for index, risk in enumerate(risks, start=1):
+            for index, risk in enumerate(risks[:5], start=1):
                 cards.append(
                     '<article class="card risk-card ai-card">\n'
                     '<div class="card-header">\n'
@@ -388,6 +402,60 @@ class ModernizationHTMLReportRenderer:
         else:
             body = "".join(self._phase_card(phase) for phase in phases)
         return f"<h3>Modernization Roadmap</h3>\n{body}"
+
+    def _render_ai_limitations_body(self, report_input: ModernizationReportInput) -> str:
+        assert report_input.assessment_result is not None
+        limitations = report_input.assessment_result.recommendation_result.limitations
+        if not limitations:
+            body = '<p class="empty">No AI limitations were recorded.</p>\n'
+        else:
+            body = (
+                "<ul>"
+                + "".join(f"<li>{escape_and_wrap(item)}</li>" for item in limitations)
+                + "</ul>\n"
+            )
+        return "<h3>AI Limitations</h3>\n" + body
+
+    def _render_ai_metadata_body(self, report_input: ModernizationReportInput) -> str:
+        assert report_input.assessment_result is not None
+        metadata = report_input.assessment_result.model_metadata
+        usage = metadata.usage
+        budget = (
+            report_input.analysis_context.budget
+            if report_input.analysis_context is not None
+            else None
+        )
+        rows = [
+            ("Provider", metadata.provider or "—"),
+            ("Model", metadata.model_id or "—"),
+            (
+                "Input tokens",
+                str(usage.input_tokens) if usage.input_tokens is not None else "—",
+            ),
+            (
+                "Output tokens",
+                str(usage.output_tokens) if usage.output_tokens is not None else "—",
+            ),
+            (
+                "Latency (ms)",
+                f"{metadata.latency_ms:.2f}" if metadata.latency_ms is not None else "—",
+            ),
+        ]
+        if budget is not None:
+            rows.extend(
+                [
+                    ("Candidate findings", str(budget.candidate_finding_count)),
+                    ("Included findings", str(budget.included_finding_count)),
+                    ("Omitted informational", str(budget.omitted_informational_count)),
+                    ("Estimated input tokens", str(budget.estimated_input_tokens)),
+                    ("Static-analysis profile", budget.static_analysis_profile or "—"),
+                ]
+            )
+        details = "".join(
+            f"<dt>{escape_html(label)}</dt><dd>{escape_and_wrap(value)}</dd>\n"
+            for label, value in rows
+        )
+        return f'<h3>AI Execution Metadata</h3>\n<dl class="meta-grid">\n{details}</dl>\n'
 
     def _phase_card(self, phase: ModernizationPhase) -> str:
         recommendations = (
@@ -642,7 +710,12 @@ class ModernizationHTMLReportRenderer:
                 "</dl>\n"
             )
 
-        ai_status = "executed" if report_input.ai_executed else "not executed"
+        if report_input.ai_status.value == "failed":
+            ai_status = "failed"
+        elif report_input.ai_executed:
+            ai_status = "executed"
+        else:
+            ai_status = "not_executed"
         timing_rows = ""
         if report_input.timing is not None:
             timing = report_input.timing

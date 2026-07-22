@@ -262,7 +262,7 @@ def test_recommendation_id_instructions() -> None:
 def test_dependency_and_phase_instructions() -> None:
     content = ModernizationPromptBuilder().build(_minimal_context()).messages[1].content
     assert "dependencies may reference only recommendation IDs" in content
-    assert "modernization_phases must be ordered starting at phase 1" in content
+    assert "modernization_phases must contain 3 or 4 phases ordered from phase 1" in content
 
 
 def test_evidence_coverage_instructions() -> None:

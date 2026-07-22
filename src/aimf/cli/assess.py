@@ -33,6 +33,7 @@ from aimf.reporting import (
     ModernizationReportValidationError,
     write_modernization_assessment_reports,
 )
+from aimf.reporting.modernization_models import AIExecutionStatus
 from aimf.repository_auth.exceptions import (
     RepositoryAccessError,
     UnsupportedRepositoryUrlError,
@@ -222,6 +223,8 @@ def run_assessment(
     analysis_context: LLMAnalysisContext | None = None
     assessment_result: ModernizationAssessmentResult | None = None
     ai_ms: float | None = None
+    ai_status = "not_executed"
+    ai_failure_message: str | None = None
 
     if mode == AssessmentMode.AI_ENHANCED:
         from aimf.ai.prompts.models import DEFAULT_MAX_CONTEXT_CHARACTERS
@@ -236,20 +239,39 @@ def run_assessment(
             else DEFAULT_MAX_CONTEXT_CHARACTERS
         )
         ai_started = perf_counter()
-        analysis_context, assessment_result = _run_ai_assessment(
-            analysis_result=analysis_result,
-            settings=loaded_settings,
-            resolved_model_id=resolved_model_id,
-            temperature=temperature,
-            max_output_tokens=max_output_tokens,
-            context_limit=context_limit,
-            include_raw_model_response=include_raw_model_response,
-            provider=provider,
-            prompt_builder=prompt_builder,
-            agent=agent,
-            context_builder=context_builder,
-            stage=stage,
-        )
+        try:
+            analysis_context, assessment_result = _run_ai_assessment(
+                analysis_result=analysis_result,
+                settings=loaded_settings,
+                resolved_model_id=resolved_model_id,
+                temperature=temperature,
+                max_output_tokens=max_output_tokens,
+                context_limit=context_limit,
+                include_raw_model_response=include_raw_model_response,
+                provider=provider,
+                prompt_builder=prompt_builder,
+                agent=agent,
+                context_builder=context_builder,
+                stage=stage,
+            )
+            ai_status = AIExecutionStatus.EXECUTED.value
+        except AssessmentCommandError as error:
+            ai_status = AIExecutionStatus.FAILED.value
+            ai_failure_message = str(error)
+            warnings.append(
+                "AI assessment failed; deterministic HTML and JSON reports were still written. "
+                f"Details: {sanitize_provider_text(str(error))}"
+            )
+            warn(warnings[-1])
+            if analysis_context is None:
+                try:
+                    from aimf.ai.contracts import LLMAnalysisContextBuilder
+
+                    analysis_context = (context_builder or LLMAnalysisContextBuilder()).build(
+                        analysis_result
+                    )
+                except Exception:  # noqa: BLE001 - best effort only
+                    analysis_context = None
         ai_ms = round((perf_counter() - ai_started) * 1000, 2)
 
     stage("Generating HTML and JSON reports")
@@ -262,11 +284,14 @@ def run_assessment(
         create_directory=False,
     )
     provisional_total = round((perf_counter() - total_started) * 1000, 2)
+    report_ai_status = AIExecutionStatus(ai_status)
     report_input = ModernizationReportInput(
         analysis_result=analysis_result,
         assessment_mode=mode,
         analysis_context=analysis_context,
         assessment_result=assessment_result,
+        ai_status=report_ai_status,
+        ai_failure_message=ai_failure_message,
         generated_at_utc=generated_at,
         report_title=report_title.strip() or DEFAULT_ASSESS_REPORT_TITLE,
         organization_name=organization_name,
@@ -319,6 +344,7 @@ def run_assessment(
         mode=mode,
         analysis_result=analysis_result,
         assessment_result=assessment_result,
+        ai_status=report_ai_status,
         duration_ms=total_ms,
     )
     _print_success_summary(active_console, result)
@@ -427,6 +453,7 @@ def _run_ai_assessment(
         ModernizationAssessmentAgent,
     )
     from aimf.ai.contracts import LLMAnalysisContextBuilder
+    from aimf.ai.contracts.budget import AIContextBudgetError
     from aimf.ai.prompts import ModernizationPromptBuilder, PromptBuildOptions
     from aimf.ai.providers.exceptions import (
         AIProviderError,
@@ -440,6 +467,10 @@ def _run_ai_assessment(
     builder = context_builder or LLMAnalysisContextBuilder()
     try:
         analysis_context = builder.build(analysis_result)
+    except AIContextBudgetError as error:
+        raise AssessmentCommandError(
+            f"AI context budget failure: {sanitize_provider_text(str(error))}"
+        ) from error
     except Exception as error:  # noqa: BLE001 - CLI boundary
         raise AssessmentCommandError(
             f"Failed to build AI context: {sanitize_provider_text(str(error))}"
@@ -569,10 +600,15 @@ def _build_command_result(
     mode: AssessmentMode,
     analysis_result: AnalysisResult,
     assessment_result: ModernizationAssessmentResult | None,
+    ai_status: AIExecutionStatus,
     duration_ms: float | None,
 ) -> AssessmentCommandResult:
     deterministic_recommendation_count = len(analysis_result.recommendations)
-    if mode == AssessmentMode.AI_ENHANCED and assessment_result is not None:
+    if (
+        mode == AssessmentMode.AI_ENHANCED
+        and ai_status == AIExecutionStatus.EXECUTED
+        and assessment_result is not None
+    ):
         recommendation = assessment_result.recommendation_result
         metadata = assessment_result.model_metadata
         return AssessmentCommandResult(
@@ -600,7 +636,7 @@ def _build_command_result(
         html_report_path=report_paths.html_report_path,
         json_report_path=report_paths.json_report_path,
         report_path=report_paths.html_report_path,
-        mode=AssessmentMode.DETERMINISTIC,
+        mode=mode,
         findings_count=len(analysis_result.findings),
         technologies_count=len(analysis_result.technologies),
         recommendations_count=deterministic_recommendation_count,
@@ -683,7 +719,10 @@ def _print_success_summary(console: Console, result: AssessmentCommandResult) ->
     console.print(f"Findings: {result.findings_count}")
     console.print(f"Technologies: {result.technologies_count}")
     console.print(f"Deterministic recommendations: {result.recommendations_count}")
+    if result.mode == AssessmentMode.AI_ENHANCED and not result.ai_executed:
+        console.print("AI status: failed")
     if result.ai_executed:
+        console.print("AI status: executed")
         console.print(f"Modernization phases: {result.phases_count}")
         console.print(
             f"Input tokens: {result.input_tokens if result.input_tokens is not None else '—'}"

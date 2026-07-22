@@ -597,27 +597,57 @@ def test_model_id_without_with_ai_is_usage_error(tmp_path: Path) -> None:
 
 def test_provider_timeout(tmp_path: Path) -> None:
     provider = FakeProvider(error=AIProviderTimeoutError("timed out"))
-    with pytest.raises(AssessmentCommandError, match="timeout or throttling"):
-        _run(tmp_path, provider=provider)
+    result, active_provider, _ = _run(tmp_path, provider=provider)
+    assert result.html_report_path.is_file()
+    assert result.json_report_path.is_file()
+    assert result.ai_executed is False
+    assert result.mode == AssessmentMode.AI_ENHANCED
+    html = result.html_report_path.read_text(encoding="utf-8")
+    assert "failed" in html.lower()
+    document = json.loads(result.json_report_path.read_text(encoding="utf-8"))
+    assert document["assessment"]["ai"]["status"] == "failed"
+    assert document["assessment"]["ai"]["executed"] is False
+    assert active_provider.calls
 
 
 def test_provider_authentication_failure(tmp_path: Path) -> None:
     provider = FakeProvider(error=AIProviderInvocationError("Bedrock authentication error: denied"))
-    with pytest.raises(AssessmentCommandError, match="authentication or access denied"):
-        _run(tmp_path, provider=provider)
+    result, _, _ = _run(tmp_path, provider=provider)
+    assert result.html_report_path.is_file()
+    assert result.ai_executed is False
+    document = json.loads(result.json_report_path.read_text(encoding="utf-8"))
+    assert document["assessment"]["ai"]["status"] == "failed"
+    assert "authentication or access denied" in (
+        document["assessment"]["ai"].get("failure_message") or ""
+    )
 
 
-def test_ai_provider_failure_does_not_fallback(tmp_path: Path) -> None:
+def test_ai_provider_failure_retains_deterministic_report(tmp_path: Path) -> None:
     provider = FakeProvider(error=AIProviderInvocationError("provider exploded"))
-    with pytest.raises(AssessmentCommandError, match="Model provider failure"):
-        _run(tmp_path, mode=AssessmentMode.AI_ENHANCED, provider=provider)
-    assert provider.calls  # invoked once before failing
+    result, active_provider, _ = _run(tmp_path, mode=AssessmentMode.AI_ENHANCED, provider=provider)
+    assert active_provider.calls  # invoked once before failing
+    assert len(active_provider.calls) == 1
+    assert result.html_report_path.is_file()
+    assert result.json_report_path.is_file()
+    assert result.ai_executed is False
+    document = json.loads(result.json_report_path.read_text(encoding="utf-8"))
+    assert document["assessment"]["summary"]["finding_count"] >= 1
+    assert document["assessment"]["ai"]["status"] == "failed"
+    assert document["assessment"]["ai"]["recommendations"] == []
+    html = result.html_report_path.read_text(encoding="utf-8")
+    assert "Repository System Intelligence" in html
+    assert "Deterministic Findings" in html
+    assert "raw_response" not in html.lower()
 
 
 def test_invalid_model_response(tmp_path: Path) -> None:
     provider = FakeProvider(error=AIResponseValidationError("bad schema"))
-    with pytest.raises(AssessmentCommandError, match="Invalid model response"):
-        _run(tmp_path, provider=provider)
+    result, _, _ = _run(tmp_path, provider=provider)
+    assert result.html_report_path.is_file()
+    assert result.ai_executed is False
+    document = json.loads(result.json_report_path.read_text(encoding="utf-8"))
+    assert document["assessment"]["ai"]["status"] == "failed"
+    assert "Invalid model response" in (document["assessment"]["ai"].get("failure_message") or "")
 
 
 def test_report_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

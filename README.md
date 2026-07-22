@@ -2,7 +2,7 @@
 
 AI Modernization Factory (`aimf`) is a deterministic analysis platform for enterprise application modernization.
 
-It clones a public GitHub repository, extracts structured facts about the codebase, detects technologies and engineering risks, and writes evidence-based reports. Use `aimf assess` for a customer-facing HTML report: deterministic by default (no cloud account required), or AI-enhanced with `--with-ai`.
+It clones a public GitHub repository, extracts structured facts about the codebase, detects technologies and engineering risks, and writes evidence-based reports. Use `aimf assess` for a customer-facing HTML + JSON assessment: deterministic by default (no cloud account required), or AI-enhanced with `--with-ai`.
 
 ## Vision
 
@@ -10,8 +10,8 @@ Legacy enterprise applications are often difficult to understand, expensive to m
 
 1. Collects repository facts deterministically
 2. Detects technologies and engineering issues
-3. Produces evidence-backed findings
-4. (Future) Uses small language models to interpret findings and generate modernization guidance
+3. Produces evidence-backed findings and deterministic recommendations
+4. Optionally runs AI reasoning over a budgeted, normalized evidence contract (not the raw repository)
 
 The goal is not to send an entire repository to a large language model for generic advice.
 
@@ -27,17 +27,20 @@ Implemented today:
 * Build system discovery and metadata extraction
 * Dependency discovery, metadata parsing, and health checks
 * CI/CD pipeline discovery
-* Architecture and cloud-readiness signals
-* Optional external static-analysis providers (PMD for Java)
+* Architecture, security, and cloud-readiness analyzers
+* Deterministic recommendation engine over findings
+* Optional external static analysis (PMD for Java) with profiles, normalization, and grouping
 * Baseline comparison between scans
-* Console summary plus text/JSON/HTML report files
-* `aimf assess` with deterministic (default) and AI-enhanced HTML modernization reports
+* `aimf scan` — console summary plus text/JSON/HTML scan reports
+* `aimf assess` — customer HTML + machine-readable JSON assessments (deterministic or AI-enhanced)
+* AI assessment over normalized evidence (Amazon Bedrock), with validation and failure-safe deterministic reports
 * Typed domain models, tests, Ruff, and MyPy
 
 Not implemented yet:
 
 * SonarQube / Semgrep / CodeQL providers
 * Markdown modernization assessment reports
+* Assisted refactoring / continuous modernization workflows
 
 ## Quick Start
 
@@ -78,6 +81,11 @@ rulesets = [
 ]
 minimum_priority = 5
 timeout_seconds = 120
+
+# Optional — only required for --with-ai
+# [ai.bedrock]
+# model_id = "amazon.nova-lite-v1:0"
+# region = "us-east-1"
 ```
 
 ### Private GitHub repositories
@@ -156,6 +164,23 @@ PMD is optional: deterministic assessment succeeds without it.
 * When `fail_on_provider_error = true`, an enabled but unavailable/failed
   provider fails the scan before reports are written.
 
+#### PMD profiles
+
+| Profile | Default | Intent |
+| ------- | ------- | ------ |
+| `focused` | no | Correctness, security, and significant design risks; lower stylistic noise |
+| `standard` | **yes** | Normal modernization assessment (error-prone, design, selected best practices) |
+| `comprehensive` | no | Broader evidence including lower-priority convention/style findings |
+
+Override per run with `--pmd-profile`, or set `static_analysis.pmd.profile` in `aimf.toml`.
+
+#### Normalization and customer visibility
+
+* Raw PMD observations remain in `report.json`
+* Customer HTML uses **normalized, grouped, prioritized** findings (not one card per raw observation)
+* Visibility classes: `primary`, `supporting`, `informational`, `suppressed_from_html`
+* Critical/high findings are never suppressed from customer HTML
+
 #### PMD discovery order
 
 1. `--pmd-path` on `aimf assess`
@@ -176,21 +201,15 @@ Optional environment override:
 export AIMF_PMD_PATH=/path/to/pmd
 ```
 
-Optional config:
+## CLI
 
-```toml
-[static_analysis.pmd]
-enabled = true
-executable = "pmd"  # or an absolute path to the executable
-```
+| Command | Description |
+| ------- | ----------- |
+| `aimf version` | Print the package version |
+| `aimf scan` | Clone the configured GitHub repo, analyze it, write scan reports |
+| `aimf assess` | Assess a local path or GitHub URL; write HTML and JSON assessment reports |
 
-Example:
-
-```bash
-aimf scan --config aimf.toml
-```
-
-Run analysis:
+### `aimf scan`
 
 ```bash
 aimf version
@@ -209,9 +228,20 @@ reports/<repository-name>/<timestamp>/
 └── report.html
 ```
 
-Only the latest 3 timestamped run directories are kept for each repository.
+Only the latest 3 timestamped run directories are kept for each repository (older runs are deleted).
 
-`aimf assess` writes immutable timestamped assessment runs:
+`scan` options:
+
+| Option | Default | Description |
+| ------ | ------- | ----------- |
+| `--config` / `-c` | `aimf.toml` | TOML configuration path |
+| `--output` / `-o` | `text` | Terminal output format (`text` or `json`) |
+| `--report-directory` | `reports` | Where report files are written |
+| `--verbose` / `-v` | off | Print the full console report |
+
+### `aimf assess`
+
+`aimf assess` writes immutable timestamped assessment runs with **HTML + JSON only** (no `report.txt`):
 
 ```text
 reports/
@@ -226,39 +256,27 @@ reports/
 ```
 
 * HTML is the customer-facing assessment
-* JSON is the machine-readable assessment record for APIs, MCP, CI/CD, comparison, and knowledge-graph ingestion
+* JSON is the machine-readable assessment record (schema/report version **1.2**) for APIs, MCP, CI/CD, comparison, and knowledge-graph ingestion
 * Each successful execution creates a new timestamped run directory
-* Only the latest three active runs are kept under the repository directory; older runs are moved to `archive/`
+* Only the latest three **active** runs are kept; older runs are moved to `archive/`
+* Retention runs only after successful artifact generation
 * Both artifacts are produced from the same validated assessment input
 
-### HTML report usability
+```bash
+# Deterministic (default) — no AWS required
+aimf assess \
+  --repo .aimf/workspace/spring-petclinic \
+  --output reports \
+  --pmd-profile standard
 
-The HTML report is self-contained (embedded CSS, no JavaScript) and is designed for desktop, mobile, and print:
-
-* Long technical values wrap safely at path, package, coordinate, and URL delimiters
-* Long repository-fact collections collapse behind native `<details>` controls (threshold: 8), with all values still present in the HTML and fully expanded in print
-* Tables sit in local wrappers so any needed horizontal scrolling stays inside the component
-* Evidence locations use repository-relative `path`, `path:line`, or `path:line:column` formatting consistently across HTML, console, and text reports
-* Repository-derived and provider-derived text is HTML-escaped; absolute workspace, executable, and temporary provider paths are not shown
-* PMD findings are normalized, grouped by rule/remediation pattern, and classified for customer visibility; raw observations remain in JSON
-* Low-value or repetitive static-analysis observations may be summarized or omitted from HTML while remaining in `report.json`
-
-## CLI
-
-| Command | Description |
-| ------- | ----------- |
-| `aimf version` | Print the package version |
-| `aimf scan` | Clone the configured GitHub repo, analyze it, write reports |
-| `aimf assess` | Assess a local path or GitHub URL; write HTML and JSON assessment reports |
-
-`scan` options:
-
-| Option | Default | Description |
-| ------ | ------- | ----------- |
-| `--config` / `-c` | `aimf.toml` | TOML configuration path |
-| `--output` / `-o` | `text` | Terminal output format (`text` or `json`) |
-| `--report-directory` | `reports` | Where report files are written |
-| `--verbose` / `-v` | off | Print the full console report |
+# AI-enhanced — one Bedrock invocation over normalized evidence
+aimf assess \
+  --repo .aimf/workspace/spring-petclinic \
+  --output reports \
+  --with-ai \
+  --pmd-profile standard \
+  --model-id <bedrock-model-id>
+```
 
 `assess` options (selected):
 
@@ -273,15 +291,15 @@ The HTML report is self-contained (embedded CSS, no JavaScript) and is designed 
 | `--static-analysis` / `--no-static-analysis` | follow config | Enable or disable external static analysis for this run |
 | `--verbose` / `-v` | off | Diagnostic logging and failure stack traces |
 
-### Assessment Execution Levels
+Model ID resolution for `--with-ai`: CLI `--model-id` → `AIMF_BEDROCK_MODEL_ID` → `ai.bedrock.model_id` in config.
+
+### Assessment execution levels
 
 AIMF supports three clearly separated assessment levels. Deterministic mode is the default and does **not** require AWS credentials, a Bedrock model ID, or any AI provider.
 
-#### 1. Deterministic CLI Integration Test
+#### 1. Deterministic CLI integration test
 
 Purpose: validate scanning, technology detection, deterministic analysis, serialization, HTML generation, file output, and CLI experience.
-
-Requirements: no AWS, no model ID, no provider initialization, no prompt creation, no model invocation.
 
 ```bash
 aimf assess \
@@ -289,11 +307,11 @@ aimf assess \
   --output reports
 ```
 
-#### 2. AI Integration Test
+#### 2. AI integration test
 
 Purpose: validate prompt builder, provider integration, authentication, model response parsing, recommendation validation, and AI report sections.
 
-Requirements: explicit `--with-ai`, a resolvable model ID (CLI → `AIMF_BEDROCK_MODEL_ID` → `ai.bedrock.model_id`), valid provider credentials, and exactly one model invocation.
+Requirements: explicit `--with-ai`, a resolvable model ID, valid provider credentials, and exactly one model invocation.
 
 ```bash
 aimf assess \
@@ -303,11 +321,9 @@ aimf assess \
   --model-id <model-id>
 ```
 
-#### 3. Customer Acceptance Test
+#### 3. Customer acceptance test
 
-Purpose: run the complete product flow on a real repository and review the quality and usability of the generated report.
-
-This uses the same AI-enhanced command as Level 2, treated as a manual acceptance workflow rather than only an integration check.
+Purpose: run the complete product flow on a real repository and review report quality.
 
 ```bash
 aimf assess \
@@ -317,34 +333,75 @@ aimf assess \
   --model-id <model-id>
 ```
 
+### AI-enhanced assessment
+
+When `--with-ai` is set:
+
+1. Deterministic analysis and PMD run first (PMD at most once)
+2. AIMF builds a budgeted `LLMAnalysisContext` from **normalized** intelligence (not all raw PMD observations)
+3. Exactly one Bedrock model call produces a typed `AIRecommendationResult`
+4. Evidence validation rejects unknown finding/group IDs, empty material evidence, unsupported severity escalation, and invented paths
+5. HTML and JSON are written from the same report input; AI content is appended to the same report (not a separate artifact)
+
+If AI provider execution or validation fails:
+
+* Deterministic HTML and JSON are still written
+* AI status is recorded as `failed` with a sanitized warning
+* Raw model responses and prompts are never exposed in reports
+* No fabricated AI sections are inserted
+
+AI input includes repository identity, technology inventory, architecture/build/dependency/CI/CD/security/cloud facts, static-analysis profile summary, AIMF-native findings, grouped PMD findings, deterministic recommendations, and coverage warnings.
+
+AI output (when successful) includes executive interpretation, key modernization risks (≤5), consolidated AI recommendations (typically 5–8), modernization phases (3–4), limitations, evidence coverage, and token/latency metadata.
+
+### HTML report usability
+
+The HTML report is self-contained (embedded CSS, no JavaScript) and is designed for desktop, mobile, and print:
+
+* Long technical values wrap safely at path, package, coordinate, and URL delimiters
+* Long repository-fact collections collapse behind native `<details>` controls (threshold: 8), with all values still present in the HTML and fully expanded in print
+* Tables sit in local wrappers so any needed horizontal scrolling stays inside the component
+* Evidence locations use repository-relative `path`, `path:line`, or `path:line:column` formatting
+* Repository-derived and provider-derived text is HTML-escaped; absolute workspace, executable, and temporary provider paths are not shown
+* PMD findings are normalized, grouped by rule/remediation pattern, and classified for customer visibility; raw observations remain in JSON
+* Deterministic recommendations appear first (grouped by category for readability); AI recommendations appear later and are clearly labeled
+* AI evidence references link to deterministic finding/group anchors
+
+### Spring Petclinic reference (standard PMD profile)
+
+Approximate validated counts for the bundled Spring Petclinic workspace:
+
+| Signal | Approx. count |
+| ------ | ------------- |
+| Java files analyzed by PMD | 49 |
+| Raw PMD observations | ~159 |
+| Grouped PMD findings | ~27 |
+| Total customer findings | ~34 |
+| HTML finding cards | ~25 |
+| Deterministic recommendations | ~12 |
+
 ## Analysis Pipeline
 
 ```text
-aimf.toml
+aimf.toml / CLI
     │
     ▼
-GitHubRepositoryScanner  ──►  Repository
+Repository scanner (local or GitHub)
     │
     ▼
-CompositeTechnologyDetector
+AnalysisService
+    ├─ Technology detection
+    ├─ CompositeAnalyzer (metrics → build → deps → CI/CD → security → architecture → cloud)
+    ├─ StaticAnalysisService (PMD profiles → normalize → group → visibility)
+    └─ Deterministic recommendation engine
     │
     ▼
-CompositeAnalyzer
+AnalysisResult
     │
-    ├─ RepositoryMetricsAnalyzer
-    ├─ BuildDiscoveryAnalyzer
-    ├─ BuildMetadataAnalyzer
-    ├─ DependencyDiscoveryAnalyzer
-    ├─ DependencyMetadataAnalyzer
-    ├─ DependencyHealthAnalyzer
-    └─ CicdDiscoveryAnalyzer
-    │
-    ▼
-AnalysisResult (facts + findings)
-    │
-    ├─ report.txt
-    ├─ report.json
-    └─ console summary / JSON stdout
+    ├─ aimf scan  → report.txt + report.json + report.html
+    └─ aimf assess
+           ├─ (optional) budgeted AI context → one Bedrock call → validated AI result
+           └─ report.html + report.json  (archive retention)
 ```
 
 Each analyzer receives facts accumulated so far, returns new findings and newly produced facts, and `CompositeAnalyzer` merges those facts before calling the next analyzer.
@@ -358,12 +415,18 @@ ai-modernization-factory/
 ├── aimf.toml
 ├── pyproject.toml
 ├── src/aimf/
-│   ├── cli.py
+│   ├── cli/                 # version, scan, assess
 │   ├── config/
 │   ├── models/
-│   ├── reporters/
+│   ├── reporters/           # scan-oriented text/JSON/HTML reporters
+│   ├── reporting/           # assess HTML/JSON modernization reports
+│   ├── ai/                  # contracts, prompts, providers, agents, validation
+│   ├── static_analysis/     # PMD provider, profiles, normalization, grouping
+│   ├── repository_auth/
+│   ├── security/
 │   └── services/
 │       ├── analysis_service.py
+│       ├── recommendation_engine.py
 │       ├── analyzers/
 │       ├── detectors/
 │       └── scanners/
@@ -377,6 +440,7 @@ ai-modernization-factory/
 * Pydantic
 * Rich
 * PyYAML
+* Amazon Bedrock (optional, `--with-ai` only)
 * pytest / Ruff / MyPy / setuptools
 
 ## Development
@@ -394,6 +458,7 @@ mypy src
 * Every finding must include evidence
 * Analyzers are modular and replaceable
 * The platform must remain useful without AI
+* AI augments the same report; it does not replace deterministic evidence
 * Prefer explicit, typed, tested code
 
 ## Roadmap
@@ -401,10 +466,13 @@ mypy src
 | Phase | Focus | Status |
 | ----- | ----- | ------ |
 | 1 | Repository intelligence, scanning, technology detection | Done |
-| 2 | Deterministic analyzers (build, dependencies, CI/CD, metrics) | In progress |
-| 3 | Recommendation engine | Planned |
-| 4 | Richer reports and AI interpretation | Planned |
-| 5 | Assisted refactoring and continuous modernization | Future |
+| 2 | Deterministic analyzers (build, dependencies, CI/CD, security, architecture, cloud) | Done |
+| 3 | Deterministic recommendation engine | Done |
+| 4 | PMD static analysis with profiles, normalization, and grouping | Done |
+| 5 | Customer assess reports (HTML + JSON) with archive retention | Done |
+| 6 | AI interpretation over normalized evidence (Bedrock) | Done (first release) |
+| 7 | Additional static-analysis providers (SonarQube / Semgrep / CodeQL) | Planned |
+| 8 | Assisted refactoring and continuous modernization | Future |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for component details and design rationale.
 

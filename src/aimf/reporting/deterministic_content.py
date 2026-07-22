@@ -233,20 +233,35 @@ def _static_analysis_summary_rows(results: list[Any]) -> list[str]:
 
 
 def render_deterministic_recommendations(result: AnalysisResult) -> str:
-    """Render recommendation cards and a priority plan."""
+    """Render recommendation cards and a priority plan.
+
+    Related recommendations are grouped by category for executive readability
+    while preserving every deterministic recommendation in JSON.
+    """
 
     if not result.recommendations:
         cards = '<p class="empty">No deterministic recommendations were generated.</p>\n'
     else:
-        cards = "".join(
-            _recommendation_card(recommendation) for recommendation in result.recommendations
-        )
+        by_category: dict[str, list[Recommendation]] = {}
+        for recommendation in result.recommendations:
+            category = str(getattr(recommendation.category, "value", recommendation.category))
+            by_category.setdefault(category, []).append(recommendation)
+        sections: list[str] = []
+        for category in sorted(by_category.keys(), key=str.lower):
+            group = by_category[category]
+            label = escape_and_wrap(category.replace("_", " ").title())
+            heading = f'<h3 class="recommendation-group">{label} ({len(group)})</h3>\n'
+            group_cards = "".join(_recommendation_card(item) for item in group)
+            sections.append(heading + group_cards)
+        cards = "".join(sections)
 
     return (
         '<section id="deterministic-recommendations" '
         'class="section deterministic-section">\n'
         f"<h2>Deterministic Recommendations ({len(result.recommendations)})</h2>\n"
         '<p class="deterministic-label">Deterministic analysis evidence</p>\n'
+        '<p class="hint">Grouped by category for readability. AI recommendations appear later '
+        "and synthesize across these items.</p>\n"
         f"{cards}"
         f"{_priority_plan(result)}"
         "</section>\n"

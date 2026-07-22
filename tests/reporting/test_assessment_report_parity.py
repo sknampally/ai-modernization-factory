@@ -56,6 +56,7 @@ from aimf.models.enums import Effort, RecommendationCategory, Risk
 from aimf.models.scan_comparison import ComparisonSummary, ScanComparison
 from aimf.reporting import (
     CONTENT_SECURITY_POLICY,
+    AIExecutionStatus,
     AssessmentMode,
     AssessmentTiming,
     ModernizationHTMLReportRenderer,
@@ -391,6 +392,7 @@ def _report_input(
         assessment_mode=AssessmentMode.AI_ENHANCED,
         analysis_context=_context(),
         assessment_result=_ai_assessment(),
+        ai_status=AIExecutionStatus.EXECUTED,
         generated_at_utc=datetime(2026, 7, 21, 15, 30, tzinfo=UTC),
         timing=AssessmentTiming(
             total_ms=250.0,

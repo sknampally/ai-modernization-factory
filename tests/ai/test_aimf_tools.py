@@ -292,6 +292,7 @@ def test_get_repository_metrics() -> None:
             "test_file_count": 2,
             "finding_count": 4,
             "technology_count": 2,
+            "recommendation_count": 0,
         }
     }
 
