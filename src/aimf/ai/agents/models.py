@@ -46,7 +46,6 @@ class AgentExecutionOptions(BaseModel):
     prompt_options: PromptBuildOptions = Field(default_factory=PromptBuildOptions)
     enabled_tool_names: tuple[str, ...] | None = None
     max_tool_calls: int = Field(default=DEFAULT_MAX_TOOL_CALLS, gt=0)
-    include_raw_model_response: bool = False
 
     @field_validator("enabled_tool_names")
     @classmethod

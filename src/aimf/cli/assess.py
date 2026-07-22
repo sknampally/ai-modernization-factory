@@ -87,7 +87,6 @@ class AssessmentCommandError(Exception):
         exit_code: int = 1,
         ai_status: AIExecutionStatus | None = None,
         ai_attempt: AIAttemptInfo | None = None,
-        diagnostic_document: dict[str, object] | None = None,
         execution_document: dict[str, object] | None = None,
         customer_message: str | None = None,
     ) -> None:
@@ -95,9 +94,7 @@ class AssessmentCommandError(Exception):
         self.exit_code = exit_code
         self.ai_status = ai_status
         self.ai_attempt = ai_attempt
-        # Prefer execution_document; diagnostic_document kept as a temporary alias.
-        self.execution_document = execution_document or diagnostic_document
-        self.diagnostic_document = self.execution_document
+        self.execution_document = execution_document
         self.customer_message = customer_message
 
 
@@ -147,7 +144,6 @@ def run_assessment(
     max_output_tokens: int = DEFAULT_ASSESS_MAX_OUTPUT_TOKENS,
     temperature: float = DEFAULT_ASSESS_TEMPERATURE,
     max_context_characters: int | None = None,
-    include_raw_model_response: bool = False,
     pmd_path: str | None = None,
     pmd_profile: str | None = None,
     static_analysis_enabled: bool | None = None,
@@ -275,7 +271,6 @@ def run_assessment(
                 temperature=temperature,
                 max_output_tokens=max_output_tokens,
                 context_limit=context_limit,
-                include_raw_model_response=include_raw_model_response,
                 provider=provider,
                 prompt_builder=prompt_builder,
                 agent=agent,
@@ -509,7 +504,6 @@ def _run_ai_assessment(
     temperature: float,
     max_output_tokens: int,
     context_limit: int,
-    include_raw_model_response: bool,
     provider: AIModelProvider | None,
     prompt_builder: ModernizationPromptBuilder | None,
     agent: ModernizationAssessmentAgent | None,
@@ -583,7 +577,6 @@ def _run_ai_assessment(
         prompt_options=PromptBuildOptions(
             max_context_characters=context_limit,
         ),
-        include_raw_model_response=include_raw_model_response,
     )
 
     try:
@@ -1129,13 +1122,6 @@ def register_assess_command(app: typer.Typer) -> None:
                 help="Maximum LLM analysis context JSON size in characters.",
             ),
         ] = None,
-        include_raw_model_response: Annotated[
-            bool,
-            typer.Option(
-                "--include-raw-model-response",
-                help="Include raw model response in the assessment result payload.",
-            ),
-        ] = False,
         config: Annotated[
             Path,
             typer.Option(
@@ -1183,7 +1169,6 @@ def register_assess_command(app: typer.Typer) -> None:
                 max_output_tokens=max_output_tokens,
                 temperature=temperature,
                 max_context_characters=max_context_characters,
-                include_raw_model_response=include_raw_model_response,
                 pmd_path=pmd_path,
                 pmd_profile=pmd_profile,
                 static_analysis_enabled=static_override,

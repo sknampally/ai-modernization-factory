@@ -310,7 +310,7 @@ reports/
     ├── 20260721-153045/
     │   ├── report.html
     │   ├── report.json
-    │   └── ai-execution.json   # only when an AI provider was invoked
+    │   └── ai-execution.json   # AI-enhanced attempts (success or failure)
     ├── 20260721-160000/
     │   ├── report.html
     │   └── report.json
@@ -322,7 +322,7 @@ reports/
 
 * `report.html` is the customer-readable assessment
 * `report.json` is the machine-readable assessment record (schema/report version **1.2**) for APIs, MCP, CI/CD, comparison, and knowledge-graph ingestion
-* `ai-execution.json` is an internal AI observability / evaluation artifact created only when an AI provider is invoked (success or failure). It is not a customer deliverable, is never linked from HTML, and should be treated as potentially sensitive repository-derived data. It is future-compatible evaluation data for model comparison, prompt evaluation, regression analysis, and benchmarking — not a fine-tuning pipeline
+* `ai-execution.json` is an internal AI observability / evaluation artifact created for every AI-enhanced assessment attempt, including successes and failures that may occur before the provider is invoked (for example authentication or context-build failures). It is not a customer deliverable, is never linked from HTML, and should be treated as potentially sensitive repository-derived data. It is future-compatible evaluation data for model comparison, prompt evaluation, regression analysis, and benchmarking — not a fine-tuning pipeline
 * Each successful execution creates a new timestamped run directory
 * MVP retention keeps only the latest **three completed** runs per repository; older completed runs are deleted automatically (including any `ai-execution.json` in that run)
 * Completed-run detection depends only on `report.html` and `report.json`
@@ -494,7 +494,7 @@ AnalysisResult
     ├─ aimf scan  → report.txt + report.json + report.html
     └─ aimf assess
            ├─ (optional) budgeted AI context → one Bedrock call → validated AI result
-           └─ report.html + report.json (+ ai-execution.json when AI invoked; keep latest 3 completed runs)
+           └─ report.html + report.json (+ ai-execution.json for AI-enhanced attempts; keep latest 3 completed runs)
 ```
 
 Each analyzer receives facts accumulated so far, returns new findings and newly produced facts, and `CompositeAnalyzer` merges those facts before calling the next analyzer.

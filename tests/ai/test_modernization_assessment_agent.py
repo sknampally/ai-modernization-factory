@@ -178,7 +178,6 @@ def _options(**overrides: object) -> AgentExecutionOptions:
         "model_options": ModelInvocationOptions(model_id="test-model"),
         "prompt_options": PromptBuildOptions(),
         "max_tool_calls": 20,
-        "include_raw_model_response": False,
     }
     payload.update(overrides)
     return AgentExecutionOptions.model_validate(payload)
@@ -296,17 +295,10 @@ def test_complete_successful_trace_shape() -> None:
     assert model_step.output_summary["limitation_count"] == 1
 
 
-def test_optional_raw_response_inclusion_and_default_exclusion() -> None:
+def test_raw_model_response_always_retained_for_execution_artifact() -> None:
     provider = FakeProvider(raw_response_text='{"raw":true}')
-    # Raw response is always retained for the internal AI execution artifact.
-    always = ModernizationAssessmentAgent(provider).run(_context(), _options())
-    assert always.raw_model_response == '{"raw":true}'
-
-    included = ModernizationAssessmentAgent(provider).run(
-        _context(),
-        _options(include_raw_model_response=True),
-    )
-    assert included.raw_model_response == '{"raw":true}'
+    result = ModernizationAssessmentAgent(provider).run(_context(), _options())
+    assert result.raw_model_response == '{"raw":true}'
 
 
 def test_unknown_enabled_tool() -> None:
@@ -481,7 +473,7 @@ def test_frozen_contracts_and_extra_field_rejection() -> None:
 def test_deterministic_json_serialization_and_round_trip() -> None:
     result = ModernizationAssessmentAgent(FakeProvider()).run(
         _context(),
-        _options(include_raw_model_response=True),
+        _options(),
     )
     # Trace ID/timestamps differ across runs; serialize the same object twice.
     first = modernization_assessment_result_to_json(result)
