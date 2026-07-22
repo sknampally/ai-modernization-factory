@@ -3,11 +3,25 @@
 Canonical node types (`RepositoryNodeType`) are storage- and language-neutral.
 Language-specific distinctions (for example Java class vs interface) belong in
 typed property fields such as ``type_kind``, not in separate node types.
+
+``RepositoryFileKind`` is owned by ``aimf.domain.repository`` and re-exported
+here for Repository Graph compatibility.
 """
 
 from __future__ import annotations
 
 from enum import StrEnum
+
+from aimf.domain.repository.enums import RepositoryFileKind
+
+__all__ = [
+    "DependencyScope",
+    "RepositoryCallableKind",
+    "RepositoryFileKind",
+    "RepositoryNodeType",
+    "RepositoryRelationshipType",
+    "RepositoryTypeKind",
+]
 
 
 class RepositoryNodeType(StrEnum):
@@ -29,20 +43,6 @@ class RepositoryRelationshipType(StrEnum):
     DECLARES = "declares"
     DEPENDS_ON = "depends_on"
     CALLS = "calls"
-
-
-class RepositoryFileKind(StrEnum):
-    """Coarse classification for repository files."""
-
-    SOURCE = "source"
-    TEST = "test"
-    CONFIGURATION = "configuration"
-    BUILD = "build"
-    DEPENDENCY_MANIFEST = "dependency_manifest"
-    INFRASTRUCTURE = "infrastructure"
-    DOCUMENTATION = "documentation"
-    GENERATED = "generated"
-    UNKNOWN = "unknown"
 
 
 class RepositoryTypeKind(StrEnum):

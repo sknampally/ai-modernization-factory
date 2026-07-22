@@ -13,13 +13,13 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from aimf.domain.graph.validation import optional_nonblank, require_nonblank
+from aimf.domain.repository.enums import RepositoryFileKind
+from aimf.domain.repository.paths import normalize_repository_relative_path
 from aimf.domain.repository_graph.enums import (
     DependencyScope,
     RepositoryCallableKind,
-    RepositoryFileKind,
     RepositoryTypeKind,
 )
-from aimf.domain.repository_graph.ids import normalize_repository_relative_path
 
 
 class _RepositoryPropertyModel(BaseModel):

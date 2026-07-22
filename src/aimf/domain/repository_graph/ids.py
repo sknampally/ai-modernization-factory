@@ -10,50 +10,25 @@ Identity rules (language-neutral, storage-independent):
 - Callable identities include owner plus signature so overloads stay distinct.
 - Dependency identities include ecosystem and coordinates but omit version so
   version upgrades preserve logical identity.
+
+Path and repository-key normalization live in ``aimf.domain.repository`` so
+inventory and graph identities share one implementation.
 """
 
 from __future__ import annotations
 
-import re
-from pathlib import PurePosixPath
-
 from aimf.domain.graph.ids import NodeId
 from aimf.domain.graph.validation import require_nonblank
+from aimf.domain.repository.identities import normalize_repository_key
+from aimf.domain.repository.paths import normalize_repository_relative_path
 
-_ABSOLUTE_WINDOWS = re.compile(r"^[A-Za-z]:[/\\]")
-
-
-def normalize_repository_key(value: str) -> str:
-    """Normalize and validate a stable repository identity key."""
-
-    key = require_nonblank(value, label="repository_key")
-    # Reject URL/credential shapes so IDs never embed access material.
-    if "://" in key or "@" in key:
-        raise ValueError("repository_key must not contain URLs or credential material")
-    if any(ch in key for ch in ("/", "\\", ":")):
-        raise ValueError("repository_key must not contain path separators or ':' characters")
-    return key
-
-
-def normalize_repository_relative_path(value: str) -> str:
-    """Return a repository-relative POSIX path suitable for file identities."""
-
-    raw = require_nonblank(value, label="path")
-    normalized = raw.replace("\\", "/")
-    if normalized.startswith("/") or _ABSOLUTE_WINDOWS.match(normalized):
-        raise ValueError("path must be repository-relative, not absolute")
-
-    path = PurePosixPath(normalized)
-    parts = path.parts
-    if not parts or parts == (".",):
-        raise ValueError("path must not be blank after normalization")
-    if any(part == ".." for part in parts):
-        raise ValueError("path must not contain '..' traversal segments")
-
-    cleaned_parts = [part for part in parts if part not in ("", ".")]
-    if not cleaned_parts:
-        raise ValueError("path must not be blank after normalization")
-    return "/".join(cleaned_parts)
+__all__ = [
+    "RepositoryNodeIdFactory",
+    "normalize_dependency_namespace",
+    "normalize_qualified_name",
+    "normalize_repository_key",
+    "normalize_repository_relative_path",
+]
 
 
 def normalize_qualified_name(value: str, *, label: str) -> str:
