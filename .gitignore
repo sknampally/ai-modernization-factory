@@ -111,7 +111,7 @@ embeddings/
 cache/
 chroma/
 faiss_index/
-models/
+artifacts/models/
 
 # ==========================================
 # Secrets
