@@ -62,10 +62,15 @@ class RepositoryNodeIdFactory:
         return NodeId(f"repo:{self._repository_key}")
 
     def module(self, module_key: str) -> NodeId:
-        key = require_nonblank(module_key, label="module_key")
-        if any(ch in key for ch in ("/", "\\")):
-            raise ValueError("module_key must not contain path separators")
-        return NodeId(f"repo:{self._repository_key}:module:{key}")
+        """Build a module ID from a normalized repository-relative module path.
+
+        Module identity uses the full module root path (for example
+        ``services/orders``), not only the final directory segment, so sibling
+        directories with the same basename remain distinct.
+        """
+
+        path = normalize_repository_relative_path(module_key)
+        return NodeId(f"repo:{self._repository_key}:module:{path}")
 
     def file(self, relative_path: str) -> NodeId:
         path = normalize_repository_relative_path(relative_path)

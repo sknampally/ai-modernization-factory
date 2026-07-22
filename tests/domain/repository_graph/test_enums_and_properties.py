@@ -51,6 +51,7 @@ def test_property_models_valid_construction_and_serialization() -> None:
         "source_type": None,
         "branch": "main",
         "revision": None,
+        "source_location": None,
     }
 
     module = ModuleProperties(name="app", path="modules/app", build_system="maven")

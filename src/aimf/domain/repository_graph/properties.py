@@ -38,13 +38,14 @@ class RepositoryProperties(_RepositoryPropertyModel):
     source_type: str | None = None
     branch: str | None = None
     revision: str | None = None
+    source_location: str | None = None
 
     @field_validator("name", mode="before")
     @classmethod
     def normalize_name(cls, value: object) -> str:
         return require_nonblank(str(value), label="name")
 
-    @field_validator("source_type", "branch", "revision", mode="before")
+    @field_validator("source_type", "branch", "revision", "source_location", mode="before")
     @classmethod
     def normalize_optional_strings(cls, value: object) -> str | None:
         if value is None:
@@ -86,15 +87,18 @@ class FileProperties(_RepositoryPropertyModel):
     file_kind: RepositoryFileKind
     language: str | None = None
     content_hash: str | None = None
+    hash_algorithm: str | None = None
     size_bytes: int | None = Field(default=None, ge=0)
     generated: bool = False
+    executable: bool = False
+    media_type: str | None = None
 
     @field_validator("path", mode="before")
     @classmethod
     def normalize_path(cls, value: object) -> str:
         return normalize_repository_relative_path(str(value))
 
-    @field_validator("language", "content_hash", mode="before")
+    @field_validator("language", "content_hash", "hash_algorithm", "media_type", mode="before")
     @classmethod
     def normalize_optional_strings(cls, value: object) -> str | None:
         if value is None:

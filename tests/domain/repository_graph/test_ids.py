@@ -14,6 +14,7 @@ def test_identity_factory_deterministic_outputs() -> None:
     assert first.repository() == second.repository()
     assert str(first.repository()) == "repo:petclinic"
     assert str(first.module("app")) == "repo:petclinic:module:app"
+    assert str(first.module("services/orders")) == "repo:petclinic:module:services/orders"
     assert str(first.file("src/App.java")) == "repo:petclinic:file:src/App.java"
     assert str(first.namespace("com.example")) == "repo:petclinic:namespace:com.example"
     assert str(first.type("com.example.App")) == "repo:petclinic:type:com.example.App"

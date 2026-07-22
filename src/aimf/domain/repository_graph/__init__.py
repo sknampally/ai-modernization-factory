@@ -27,6 +27,8 @@ from aimf.domain.repository_graph.properties import (
     RepositoryProperties,
     TypeProperties,
 )
+from aimf.domain.repository_graph.relationship_factory import RepositoryRelationshipFactory
+from aimf.domain.repository_graph.relationship_ids import RelationshipIdFactory
 from aimf.domain.repository_graph.schema import (
     RepositoryGraphSchema,
     RepositoryGraphSchemaError,
@@ -40,6 +42,7 @@ __all__ = [
     "FileProperties",
     "ModuleProperties",
     "NamespaceProperties",
+    "RelationshipIdFactory",
     "RepositoryCallableKind",
     "RepositoryFileKind",
     "RepositoryGraph",
@@ -49,6 +52,7 @@ __all__ = [
     "RepositoryNodeIdFactory",
     "RepositoryNodeType",
     "RepositoryProperties",
+    "RepositoryRelationshipFactory",
     "RepositoryRelationshipType",
     "RepositoryTypeKind",
     "TypeProperties",

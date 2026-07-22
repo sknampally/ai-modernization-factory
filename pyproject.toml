@@ -73,6 +73,10 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 
+[tool.setuptools.package-data]
+aimf = ["resources/**/*.yaml", "resources/**/*.yml", "resources/**/*.json"]
+
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "."]
