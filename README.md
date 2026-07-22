@@ -310,17 +310,22 @@ reports/
     ├── 20260721-153045/
     │   ├── report.html
     │   └── report.json
-    └── archive/
-        └── 20260721-120000/
-            ├── report.html
-            └── report.json
+    ├── 20260721-160000/
+    │   ├── report.html
+    │   └── report.json
+    └── 20260721-170000/
+        ├── report.html
+        └── report.json
 ```
 
 * HTML is the customer-facing assessment
 * JSON is the machine-readable assessment record (schema/report version **1.2**) for APIs, MCP, CI/CD, comparison, and knowledge-graph ingestion
 * Each successful execution creates a new timestamped run directory
-* Only the latest three **active** runs are kept; older runs are moved to `archive/`
+* MVP retention keeps only the latest **three completed** runs per repository; older completed runs are deleted automatically
+* No local `archive/` directory is created
+* Developer diagnostics such as `ai-response-diagnostic.json` live inside a run directory and are removed when that run ages out
 * Retention runs only after successful artifact generation
+* Longer retention / cloud archival is deferred and is expected to use customer-owned storage when required later — not local AIMF archive folders
 * Both artifacts are produced from the same validated assessment input
 
 ```bash
@@ -486,7 +491,7 @@ AnalysisResult
     ├─ aimf scan  → report.txt + report.json + report.html
     └─ aimf assess
            ├─ (optional) budgeted AI context → one Bedrock call → validated AI result
-           └─ report.html + report.json  (archive retention)
+           └─ report.html + report.json  (keep latest 3 completed runs)
 ```
 
 Each analyzer receives facts accumulated so far, returns new findings and newly produced facts, and `CompositeAnalyzer` merges those facts before calling the next analyzer.
@@ -554,7 +559,7 @@ mypy src
 | 2 | Deterministic analyzers (build, dependencies, CI/CD, security, architecture, cloud) | Done |
 | 3 | Deterministic recommendation engine | Done |
 | 4 | PMD static analysis with profiles, normalization, and grouping | Done |
-| 5 | Customer assess reports (HTML + JSON) with archive retention | Done |
+| 5 | Customer assess reports (HTML + JSON) with latest-3 retention | Done |
 | 6 | AI interpretation over normalized evidence (Bedrock) | Done (first release) |
 | 7 | Additional static-analysis providers (SonarQube / Semgrep / CodeQL) | Planned |
 | 8 | Assisted refactoring and continuous modernization | Future |

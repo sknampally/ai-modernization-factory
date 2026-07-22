@@ -37,7 +37,7 @@ from aimf.ai.providers.parsing import sanitize_provider_text
 from aimf.ai.recommendations.models import AIRecommendationResult
 from aimf.ai.recommendations.validation import (
     AIRecommendationValidationError,
-    validate_recommendation_result,
+    validate_recommendation_result_outcome,
 )
 from aimf.ai.tools import AIMFToolRegistry, build_analysis_tool_registry
 from aimf.ai.tools.models import AIMFToolResult
@@ -407,7 +407,8 @@ class ModernizationAssessmentAgent:
             "finding_count": len(context.findings),
         }
         try:
-            validated = validate_recommendation_result(recommendation_result, context)
+            outcome = validate_recommendation_result_outcome(recommendation_result, context)
+            validated = outcome.result
         except AIRecommendationValidationError as error:
             recorder.record_step(
                 step_type=AgentStepType.VALIDATION,
@@ -437,6 +438,16 @@ class ModernizationAssessmentAgent:
                 trace=recorder.finalize(AgentExecutionStatus.FAILED),
             ) from error
 
+        output_summary: dict[str, JSONValue] = {
+            "recommendation_count": len(validated.recommendations),
+            "phase_count": len(validated.modernization_phases),
+            "limitation_count": len(validated.limitations),
+            "schema_version": validated.schema_version,
+        }
+        if outcome.removed_unknown_deterministic_recommendation_ids:
+            output_summary["removed_unknown_deterministic_recommendation_ids"] = list(
+                outcome.removed_unknown_deterministic_recommendation_ids
+            )
         recorder.record_step(
             step_type=AgentStepType.VALIDATION,
             name="validate_recommendation_result",
@@ -444,12 +455,7 @@ class ModernizationAssessmentAgent:
             started_perf=started_perf,
             success=True,
             input_summary=input_summary,
-            output_summary={
-                "recommendation_count": len(validated.recommendations),
-                "phase_count": len(validated.modernization_phases),
-                "limitation_count": len(validated.limitations),
-                "schema_version": validated.schema_version,
-            },
+            output_summary=output_summary,
         )
         return validated
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
@@ -19,6 +20,8 @@ from aimf.ai.recommendations.validation import (
     validate_recommendation_result,
 )
 from aimf.security.redaction import redact_secrets
+
+logger = logging.getLogger(__name__)
 
 _FENCED_JSON_PATTERN = re.compile(
     r"^\s*```(?:json)?\s*\r?\n(?P<body>.*?)\r?\n```\s*$",
@@ -51,6 +54,9 @@ def parse_recommendation_response(
 
     Accepts a single JSON object, optionally wrapped as one fenced code block.
     Rejects surrounding prose, multiple JSON values, and repairs nothing.
+
+    Model-supplied ``evidence_coverage`` numbers are treated as untrusted and are
+    replaced by AIMF after structural and referential validation.
     """
 
     try:
@@ -76,6 +82,10 @@ def parse_recommendation_response(
             f"Model response must be a single JSON object, got {type(data).__name__}",
             raw_response_text=raw_text,
         )
+
+    model_reported_coverage = data.get("evidence_coverage")
+    if isinstance(model_reported_coverage, dict):
+        logger.debug("model_reported_coverage=%s", model_reported_coverage)
 
     try:
         result = AIRecommendationResult.model_validate(data)

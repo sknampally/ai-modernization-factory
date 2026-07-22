@@ -20,10 +20,13 @@ from aimf.ai.recommendations.serialization import (
 )
 from aimf.ai.recommendations.validation import (
     AIRecommendationValidationError,
+    RecommendationValidationOutcome,
     compute_evidence_coverage,
     deterministic_recommendation_ids_from_context,
     finding_ids_from_context,
+    normalize_related_deterministic_recommendation_ids,
     validate_recommendation_result,
+    validate_recommendation_result_outcome,
 )
 
 __all__ = [
@@ -37,11 +40,14 @@ __all__ = [
     "AIRecommendationValidationError",
     "EvidenceCoverage",
     "ModernizationPhase",
+    "RecommendationValidationOutcome",
     "ai_recommendation_result_from_json",
     "ai_recommendation_result_to_dict",
     "ai_recommendation_result_to_json",
     "compute_evidence_coverage",
     "deterministic_recommendation_ids_from_context",
     "finding_ids_from_context",
+    "normalize_related_deterministic_recommendation_ids",
     "validate_recommendation_result",
+    "validate_recommendation_result_outcome",
 ]

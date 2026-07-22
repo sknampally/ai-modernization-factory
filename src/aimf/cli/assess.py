@@ -20,11 +20,10 @@ from aimf.config import AimfSettings, load_settings
 from aimf.logging_config import configure_logging
 from aimf.models import AnalysisResult, Repository
 from aimf.reporters.report_paths import (
-    ReportArchiveError,
     ReportPaths,
-    archive_excess_report_runs,
     create_report_paths,
     format_report_run_timestamp,
+    prune_excess_report_runs,
 )
 from aimf.reporting import (
     AssessmentMode,
@@ -368,15 +367,15 @@ def run_assessment(
         ) from error
 
     try:
-        archive_excess_report_runs(written_paths.run_directory.parent)
-    except ReportArchiveError as error:
-        raise AssessmentCommandError(
-            f"Report retention failure: {sanitize_provider_text(str(error))}"
-        ) from error
-    except OSError as error:
-        raise AssessmentCommandError(
-            f"Report retention failure: {sanitize_provider_text(str(error))}"
-        ) from error
+        deleted = prune_excess_report_runs(written_paths.run_directory.parent)
+        if deleted:
+            for path in deleted:
+                active_console.print(f"Removed aged report run: {path.name}")
+    except Exception as error:  # noqa: BLE001 - retention must not fail assessment
+        warn(
+            "Report retention cleanup failed; the current assessment reports were kept. "
+            f"Details: {sanitize_provider_text(str(error))}"
+        )
 
     total_ms = round((perf_counter() - total_started) * 1000, 2)
 

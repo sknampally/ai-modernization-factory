@@ -233,21 +233,21 @@ def test_invalid_phase_recommendation_references_rejected() -> None:
         )
 
 
-def test_invalid_evidence_coverage_rejected() -> None:
-    with pytest.raises(ValidationError, match="coverage_percentage"):
+def test_invalid_evidence_coverage_bounds_rejected() -> None:
+    with pytest.raises(ValidationError):
         EvidenceCoverage(
-            total_findings=10,
-            findings_considered=5,
-            findings_referenced=2,
-            coverage_percentage=50.0,  # expected 40.0 against findings_considered
+            total_findings=-1,
+            findings_considered=0,
+            findings_referenced=0,
+            coverage_percentage=0.0,
         )
 
-    with pytest.raises(ValidationError, match="findings_considered"):
+    with pytest.raises(ValidationError):
         EvidenceCoverage(
             total_findings=2,
-            findings_considered=3,
-            findings_referenced=1,
-            coverage_percentage=50.0,
+            findings_considered=1,
+            findings_referenced=0,
+            coverage_percentage=150.0,
         )
 
 

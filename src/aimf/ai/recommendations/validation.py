@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import re
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from aimf.ai.contracts.models import LLMAnalysisContext, LLMFindingEvidence
@@ -13,6 +16,8 @@ from aimf.ai.recommendations.models import (
     AIRecommendationResult,
     EvidenceCoverage,
 )
+
+logger = logging.getLogger(__name__)
 
 _SEVERITY_RANK = {
     "info": 0,
@@ -41,6 +46,14 @@ class AIRecommendationValidationError(ValueError):
     def __init__(self, message: str, *, issues: list[str] | None = None) -> None:
         self.issues = list(issues) if issues is not None else [message]
         super().__init__(message if issues is None else "; ".join(self.issues))
+
+
+@dataclass(frozen=True)
+class RecommendationValidationOutcome:
+    """Accepted recommendation result plus developer-only normalization metadata."""
+
+    result: AIRecommendationResult
+    removed_unknown_deterministic_recommendation_ids: tuple[str, ...] = ()
 
 
 def finding_ids_from_context(context: LLMAnalysisContext) -> set[str]:
@@ -73,11 +86,54 @@ def deterministic_recommendation_ids_from_context(context: LLMAnalysisContext) -
     return available
 
 
+def normalize_related_deterministic_recommendation_ids(
+    ids: Sequence[str],
+    *,
+    available: set[str],
+) -> tuple[list[str], list[str]]:
+    """Keep exact context deterministic IDs; drop unknowns; preserve order.
+
+    Returns ``(kept, removed_unknown)``. Duplicates of kept IDs are dropped
+    deterministically while preserving first-seen order. Unknown IDs are listed
+    once in removal order.
+    """
+
+    kept: list[str] = []
+    removed: list[str] = []
+    seen_kept: set[str] = set()
+    seen_removed: set[str] = set()
+    for raw in ids:
+        item = str(raw).strip()
+        if not item:
+            continue
+        if item not in available:
+            if item not in seen_removed:
+                seen_removed.add(item)
+                removed.append(item)
+            continue
+        if item in seen_kept:
+            continue
+        seen_kept.add(item)
+        kept.append(item)
+    return kept, removed
+
+
 def compute_evidence_coverage(
     result: AIRecommendationResult,
     analysis_context: LLMAnalysisContext,
 ) -> EvidenceCoverage:
-    """Compute authoritative coverage from unique valid related_finding_ids."""
+    """Compute authoritative coverage from unique valid related_finding_ids.
+
+    Model-supplied coverage numbers are ignored. AIMF owns:
+
+    - ``findings_referenced``: unique valid related_finding_ids
+    - ``findings_considered``: findings included in the AI context
+    - ``total_findings``: deterministic assessment finding count
+    - ``coverage_percentage``: referenced / considered
+    - ``input_truncated``: from context truncation metadata
+
+    Deterministic recommendation IDs are never counted as findings.
+    """
 
     available_finding_ids = finding_ids_from_context(analysis_context)
     referenced: set[str] = set()
@@ -88,9 +144,9 @@ def compute_evidence_coverage(
 
     included = analysis_context.findings_truncation.included_count
     total = max(
+        analysis_context.metrics.finding_count,
         analysis_context.findings_truncation.original_count,
         included,
-        len(analysis_context.findings),
     )
     referenced_count = len(referenced)
     if included == 0:
@@ -114,9 +170,25 @@ def validate_recommendation_result(
 ) -> AIRecommendationResult:
     """Validate recommendation references against an LLMAnalysisContext.
 
-    Returns a result with deterministically recomputed evidence_coverage when
-    validation succeeds. Aggregates independent contract issues when practical.
+    Processing order:
+
+    1. Normalize optional deterministic recommendation references
+    2. Validate AI-REC IDs, finding references, grounding, roadmap
+    3. Compute authoritative evidence coverage in AIMF
+    4. Return the accepted result with overwritten coverage
+
+    Model-supplied evidence_coverage arithmetic is never validated and cannot
+    cause rejection.
     """
+
+    return validate_recommendation_result_outcome(result, analysis_context).result
+
+
+def validate_recommendation_result_outcome(
+    result: AIRecommendationResult,
+    analysis_context: LLMAnalysisContext,
+) -> RecommendationValidationOutcome:
+    """Validate recommendations and return developer normalization metadata."""
 
     issues: list[str] = []
     available_finding_ids = finding_ids_from_context(analysis_context)
@@ -169,14 +241,31 @@ def validate_recommendation_result(
         if missing:
             issues.append("modernization phases omit recommendation IDs: " + ", ".join(missing))
 
+    normalized_recommendations: list[AIRecommendation] = []
+    removed_unknown: list[str] = []
     unknown_finding_ids: set[str] = set()
-    unknown_deterministic_ids: set[str] = set()
+
     for recommendation in result.recommendations:
-        if not recommendation.related_finding_ids:
-            issues.append(
-                f"recommendation {recommendation.recommendation_id} requires "
-                "related_finding_ids evidence references"
+        kept_det_ids, removed = normalize_related_deterministic_recommendation_ids(
+            recommendation.related_deterministic_recommendation_ids,
+            available=available_deterministic_ids,
+        )
+        removed_unknown.extend(removed)
+        if kept_det_ids != list(recommendation.related_deterministic_recommendation_ids):
+            recommendation = recommendation.model_copy(
+                update={"related_deterministic_recommendation_ids": kept_det_ids}
             )
+        normalized_recommendations.append(recommendation)
+
+        has_findings = bool(recommendation.related_finding_ids)
+        has_deterministic = bool(recommendation.related_deterministic_recommendation_ids)
+        if not has_findings and not has_deterministic:
+            issues.append(
+                f"recommendation {recommendation.recommendation_id} is ungrounded: "
+                "requires at least one valid related_finding_ids entry or one valid "
+                "related_deterministic_recommendation_ids entry"
+            )
+
         for finding_id in recommendation.related_finding_ids:
             det_as_finding = (
                 finding_id in available_deterministic_ids
@@ -190,10 +279,6 @@ def validate_recommendation_result(
                 )
             elif finding_id not in available_finding_ids:
                 unknown_finding_ids.add(finding_id)
-
-        for det_id in recommendation.related_deterministic_recommendation_ids:
-            if det_id not in available_deterministic_ids:
-                unknown_deterministic_ids.add(det_id)
 
         unknown_dependencies = sorted(set(recommendation.dependencies) - recommendation_ids)
         if unknown_dependencies:
@@ -217,20 +302,23 @@ def validate_recommendation_result(
             "related_finding_ids reference findings not present in "
             "LLMAnalysisContext: " + ", ".join(sorted(unknown_finding_ids))
         )
-    if unknown_deterministic_ids:
-        issues.append(
-            "related_deterministic_recommendation_ids reference IDs not present in "
-            "LLMAnalysisContext: " + ", ".join(sorted(unknown_deterministic_ids))
-        )
-
-    computed_coverage = compute_evidence_coverage(result, analysis_context)
-    if result.evidence_coverage.findings_considered > computed_coverage.total_findings:
-        issues.append("findings_considered exceeds findings available in LLMAnalysisContext")
 
     if issues:
         raise AIRecommendationValidationError("; ".join(issues), issues=issues)
 
-    return result.model_copy(update={"evidence_coverage": computed_coverage})
+    if removed_unknown:
+        logger.debug(
+            "removed_unknown_deterministic_recommendation_ids=%s",
+            removed_unknown,
+        )
+
+    normalized_result = result.model_copy(update={"recommendations": normalized_recommendations})
+    computed_coverage = compute_evidence_coverage(normalized_result, analysis_context)
+    accepted = normalized_result.model_copy(update={"evidence_coverage": computed_coverage})
+    return RecommendationValidationOutcome(
+        result=accepted,
+        removed_unknown_deterministic_recommendation_ids=tuple(removed_unknown),
+    )
 
 
 def _findings_by_id(context: LLMAnalysisContext) -> dict[str, LLMFindingEvidence]:
@@ -266,6 +354,10 @@ def _validate_severity_escalation(
         if finding_id in findings_by_id
     ]
     if not related:
+        # Repository-fact / deterministic-only grounding is adequate; finding
+        # severity cannot be compared when related_finding_ids is empty.
+        if recommendation.related_deterministic_recommendation_ids:
+            return
         raise AIRecommendationValidationError(
             f"recommendation {recommendation.recommendation_id} has no grounded "
             "finding evidence for its priority"

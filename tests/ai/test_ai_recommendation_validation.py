@@ -136,7 +136,7 @@ def test_unknown_references_rejected() -> None:
 
 
 def test_empty_evidence_rejected() -> None:
-    with pytest.raises(AIRecommendationValidationError, match="requires related_finding_ids"):
+    with pytest.raises(AIRecommendationValidationError, match="ungrounded"):
         validate_recommendation_result(_result(related=[]), _context())
 
 

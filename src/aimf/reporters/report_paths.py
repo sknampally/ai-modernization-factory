@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 from collections.abc import Callable
@@ -11,15 +12,17 @@ from pathlib import Path
 
 from aimf.models import AnalysisResult
 
+logger = logging.getLogger(__name__)
+
 _REPORT_RUN_DIRECTORY_PATTERN = re.compile(r"^\d{8}-\d{6}$")
-DEFAULT_ACTIVE_REPORT_RUNS_TO_KEEP = 3
-_DEFAULT_REPORTS_TO_KEEP = DEFAULT_ACTIVE_REPORT_RUNS_TO_KEEP
+DEFAULT_RETAINED_RUN_COUNT = 3
+DEFAULT_ACTIVE_REPORT_RUNS_TO_KEEP = DEFAULT_RETAINED_RUN_COUNT
+_DEFAULT_REPORTS_TO_KEEP = DEFAULT_RETAINED_RUN_COUNT
 _UNSAFE_REPOSITORY_CHARS = re.compile(r"[^a-z0-9._-]+")
-ARCHIVE_DIRECTORY_NAME = "archive"
 
 
-class ReportArchiveError(RuntimeError):
-    """Raised when an older report run cannot be archived safely."""
+class ReportRetentionError(RuntimeError):
+    """Raised when an older report run cannot be pruned safely."""
 
 
 @dataclass(frozen=True)
@@ -123,85 +126,107 @@ def create_report_paths(
     )
 
 
+def is_completed_report_run(run_directory: Path) -> bool:
+    """Return True when a run directory contains required report artifacts.
+
+    Completed runs for both ``aimf assess`` and ``aimf scan`` include
+    ``report.html`` and ``report.json``. Incomplete or abandoned directories are
+    ignored by retention pruning.
+    """
+
+    if run_directory.is_symlink() or not run_directory.is_dir():
+        return False
+    return (run_directory / "report.html").is_file() and (run_directory / "report.json").is_file()
+
+
 def list_active_report_run_directories(repository_directory: Path) -> list[Path]:
-    """Return active timestamped run directories, newest first.
+    """Return timestamped run directories, newest first.
 
-    Ignores ``archive`` and any non-matching names.
+    Ignores non-matching names, files, and symlink entries.
     """
 
     if not repository_directory.exists():
         return []
 
-    return sorted(
-        (
-            path
-            for path in repository_directory.iterdir()
-            if path.is_dir() and _REPORT_RUN_DIRECTORY_PATTERN.match(path.name)
-        ),
-        key=lambda path: path.name,
-        reverse=True,
-    )
+    candidates: list[Path] = []
+    for path in repository_directory.iterdir():
+        if path.is_symlink():
+            continue
+        if path.is_dir() and _REPORT_RUN_DIRECTORY_PATTERN.match(path.name):
+            candidates.append(path)
+    return sorted(candidates, key=lambda path: path.name, reverse=True)
 
 
-def archive_excess_report_runs(
-    repository_directory: Path,
-    *,
-    keep: int = DEFAULT_ACTIVE_REPORT_RUNS_TO_KEEP,
-) -> list[Path]:
-    """Move older active runs under ``archive/``; keep the newest ``keep`` active.
+def list_completed_report_run_directories(repository_directory: Path) -> list[Path]:
+    """Return completed timestamped run directories, newest first."""
 
-    Historical directories are moved intact (including any legacy ``report.txt``).
-    Already-archived runs are never re-archived. Destination collisions raise
-    ``ReportArchiveError`` instead of overwriting.
-    """
+    return [
+        path
+        for path in list_active_report_run_directories(repository_directory)
+        if is_completed_report_run(path)
+    ]
 
-    if keep < 1:
-        raise ValueError("keep must be at least 1")
 
-    if not repository_directory.exists():
-        return []
+def _is_safe_run_directory(repository_directory: Path, run_directory: Path) -> bool:
+    """Return True when ``run_directory`` is a direct child of the repository root."""
 
-    run_directories = list_active_report_run_directories(repository_directory)
-    to_archive = run_directories[keep:]
-    if not to_archive:
-        return []
-
-    archive_root = repository_directory / ARCHIVE_DIRECTORY_NAME
-    archive_root.mkdir(parents=True, exist_ok=True)
-
-    archived: list[Path] = []
-    for outdated_directory in to_archive:
-        destination = archive_root / outdated_directory.name
-        if destination.exists():
-            raise ReportArchiveError(
-                f"Cannot archive report run {outdated_directory.name!r}: "
-                f"destination already exists at {destination}"
-            )
-        shutil.move(str(outdated_directory), str(destination))
-        archived.append(destination)
-    return archived
+    try:
+        repository_root = repository_directory.resolve(strict=False)
+        candidate = run_directory.resolve(strict=False)
+    except OSError:
+        return False
+    if candidate == repository_root:
+        return False
+    if candidate.parent != repository_root:
+        return False
+    if run_directory.is_symlink():
+        return False
+    return bool(_REPORT_RUN_DIRECTORY_PATTERN.match(run_directory.name))
 
 
 def retain_recent_reports(
     repository_directory: Path,
-    keep: int = _DEFAULT_REPORTS_TO_KEEP,
-) -> None:
-    """Keep only the newest timestamped report-run directories for one repository.
+    keep: int = DEFAULT_RETAINED_RUN_COUNT,
+) -> list[Path]:
+    """Keep only the newest completed report-run directories for one repository.
 
-    Cleanup considers only direct child directories whose names match
-    ``YYYYMMDD-HHMMSS``. Non-directory files and unrelated directories are ignored.
-
-    This delete-based retention is used by ``aimf scan``. Assessment runs use
-    ``archive_excess_report_runs`` instead.
+    Older completed runs are deleted in place. No archive directory is created.
+    Invalid names, unrelated files, incomplete directories, and symlink escapes are
+    ignored. Returns the list of deleted run directories.
     """
 
     if keep < 1:
         raise ValueError("keep must be at least 1")
 
     if not repository_directory.exists():
-        return
+        return []
 
-    run_directories = list_active_report_run_directories(repository_directory)
+    completed = list_completed_report_run_directories(repository_directory)
+    to_delete = completed[keep:]
+    deleted: list[Path] = []
+    for outdated_directory in to_delete:
+        if not _is_safe_run_directory(repository_directory, outdated_directory):
+            logger.warning(
+                "Skipping unsafe report run path during retention: %s",
+                outdated_directory,
+            )
+            continue
+        try:
+            shutil.rmtree(outdated_directory)
+        except OSError as error:
+            raise ReportRetentionError(
+                f"Failed to delete aged report run {outdated_directory.name!r}: {error}"
+            ) from error
+        logger.info("Removed aged report run %s", outdated_directory.name)
+        deleted.append(outdated_directory)
+    return deleted
 
-    for outdated_directory in run_directories[keep:]:
-        shutil.rmtree(outdated_directory)
+
+def prune_excess_report_runs(
+    repository_directory: Path,
+    *,
+    keep: int = DEFAULT_RETAINED_RUN_COUNT,
+) -> list[Path]:
+    """Alias for :func:`retain_recent_reports` used by assessment cleanup."""
+
+    return retain_recent_reports(repository_directory, keep=keep)

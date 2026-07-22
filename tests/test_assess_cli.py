@@ -935,7 +935,7 @@ def test_second_assessment_preserves_previous_run(tmp_path: Path) -> None:
     assert flat == []
 
 
-def test_fourth_assessment_archives_oldest_run(tmp_path: Path) -> None:
+def test_fourth_assessment_deletes_oldest_run(tmp_path: Path) -> None:
     clocks = [
         datetime(2026, 7, 21, 10, 0, 0, tzinfo=UTC),
         datetime(2026, 7, 21, 11, 0, 0, tzinfo=UTC),
@@ -953,18 +953,15 @@ def test_fourth_assessment_archives_oldest_run(tmp_path: Path) -> None:
         results.append(result)
 
     repo_dir = results[-1].run_directory.parent
-    active = sorted(
-        path.name for path in repo_dir.iterdir() if path.is_dir() and path.name != "archive"
-    )
+    active = sorted(path.name for path in repo_dir.iterdir() if path.is_dir())
     assert active == ["20260721-110000", "20260721-120000", "20260721-130000"]
-    archived = repo_dir / "archive" / "20260721-100000"
-    assert archived.is_dir()
-    assert (archived / "report.html").exists()
-    assert (archived / "report.json").exists()
-    assert not (archived / "report.txt").exists()
+    assert not (repo_dir / "20260721-100000").exists()
+    assert not (repo_dir / "archive").exists()
+    assert results[-1].html_report_path.is_file()
+    assert results[-1].json_report_path.is_file()
 
 
-def test_fifth_assessment_still_keeps_three_active_runs(tmp_path: Path) -> None:
+def test_fifth_assessment_still_keeps_three_runs(tmp_path: Path) -> None:
     clocks = [
         datetime(2026, 7, 21, 10, 0, 0, tzinfo=UTC),
         datetime(2026, 7, 21, 11, 0, 0, tzinfo=UTC),
@@ -981,21 +978,20 @@ def test_fifth_assessment_still_keeps_three_active_runs(tmp_path: Path) -> None:
         )
 
     repo_dir = tmp_path / "reports" / "sample-app"
-    active = sorted(
-        path.name for path in repo_dir.iterdir() if path.is_dir() and path.name != "archive"
-    )
+    active = sorted(path.name for path in repo_dir.iterdir() if path.is_dir())
     assert active == ["20260721-120000", "20260721-130000", "20260721-140000"]
-    archived = sorted(path.name for path in (repo_dir / "archive").iterdir())
-    assert archived == ["20260721-100000", "20260721-110000"]
+    assert not (repo_dir / "archive").exists()
+    assert not (repo_dir / "20260721-100000").exists()
+    assert not (repo_dir / "20260721-110000").exists()
 
 
-def test_archiving_preserves_historical_report_txt(tmp_path: Path) -> None:
+def test_aged_out_run_deletes_diagnostic_artifact(tmp_path: Path) -> None:
     repo_dir = tmp_path / "reports" / "sample-app"
     historical = repo_dir / "20260721-090000"
     historical.mkdir(parents=True)
     (historical / "report.html").write_text("<html>old</html>", encoding="utf-8")
     (historical / "report.json").write_text("{}", encoding="utf-8")
-    (historical / "report.txt").write_text("legacy text", encoding="utf-8")
+    (historical / "ai-response-diagnostic.json").write_text("{}", encoding="utf-8")
 
     for moment in [
         datetime(2026, 7, 21, 10, 0, 0, tzinfo=UTC),
@@ -1009,10 +1005,21 @@ def test_archiving_preserves_historical_report_txt(tmp_path: Path) -> None:
             clock=lambda moment=moment: moment,
         )
 
-    archived = repo_dir / "archive" / "20260721-090000"
-    assert archived.is_dir()
-    assert (archived / "report.txt").read_text(encoding="utf-8") == "legacy text"
-    assert (archived / "report.html").read_text(encoding="utf-8") == "<html>old</html>"
+    assert not historical.exists()
+    assert not (repo_dir / "archive").exists()
+
+
+def test_retention_cleanup_failure_does_not_fail_assessment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _boom(*_args: Any, **_kwargs: Any) -> list[Path]:
+        raise OSError("cannot delete")
+
+    monkeypatch.setattr("aimf.cli.assess.prune_excess_report_runs", _boom)
+    result, _, _ = _run(tmp_path, mode=AssessmentMode.DETERMINISTIC, model_id=None)
+    assert result.html_report_path.is_file()
+    assert result.json_report_path.is_file()
 
 
 def test_failed_report_write_does_not_trigger_retention(
@@ -1050,9 +1057,7 @@ def test_failed_report_write_does_not_trigger_retention(
             clock=lambda: datetime(2026, 7, 21, 14, 0, 0, tzinfo=UTC),
         )
 
-    active = sorted(
-        path.name for path in repo_dir.iterdir() if path.is_dir() and path.name != "archive"
-    )
+    active = sorted(path.name for path in repo_dir.iterdir() if path.is_dir())
     assert "archive" not in {path.name for path in repo_dir.iterdir()}
     assert "20260721-100000" in active
     assert len([name for name in active if name.startswith("20260721-")]) == 4

@@ -28,8 +28,26 @@ def _sorted_unique_strings(values: list[str], *, label: str) -> list[str]:
     return sorted(dict.fromkeys(cleaned), key=str.lower)
 
 
+def _unique_strings_preserve_order(values: list[str], *, label: str) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        compact = item.strip()
+        if not compact:
+            raise ValueError(f"{label} must not contain blank values")
+        if compact in seen:
+            continue
+        seen.add(compact)
+        cleaned.append(compact)
+    return cleaned
+
+
 class EvidenceCoverage(BaseModel):
-    """How completely the recommendations cover analyzed findings."""
+    """How completely the recommendations cover analyzed findings.
+
+    Numeric fields are owned by AIMF. Model-supplied values may be accepted as
+    untrusted schema placeholders and are overwritten after validation.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -38,29 +56,6 @@ class EvidenceCoverage(BaseModel):
     findings_referenced: int = Field(ge=0)
     coverage_percentage: float = Field(ge=0.0, le=100.0)
     input_truncated: bool = False
-
-    @model_validator(mode="after")
-    def validate_consistency(self) -> EvidenceCoverage:
-        if self.findings_considered > self.total_findings:
-            raise ValueError("findings_considered must be less than or equal to total_findings")
-        if self.findings_referenced > self.findings_considered:
-            raise ValueError(
-                "findings_referenced must be less than or equal to findings_considered"
-            )
-        if self.findings_considered == 0:
-            expected = 0.0
-        else:
-            expected = round(
-                100.0 * self.findings_referenced / self.findings_considered,
-                2,
-            )
-        if round(self.coverage_percentage, 2) != expected:
-            raise ValueError(
-                "coverage_percentage must equal "
-                "round(100 * findings_referenced / findings_considered, 2) "
-                f"(expected {expected})"
-            )
-        return self
 
 
 class AIRecommendation(BaseModel):
@@ -97,7 +92,6 @@ class AIRecommendation(BaseModel):
 
     @field_validator(
         "related_finding_ids",
-        "related_deterministic_recommendation_ids",
         "suggested_actions",
         "dependencies",
         mode="before",
@@ -107,6 +101,16 @@ class AIRecommendation(BaseModel):
         if not isinstance(value, list):
             return value
         return _sorted_unique_strings([str(item) for item in value], label="list")
+
+    @field_validator("related_deterministic_recommendation_ids", mode="before")
+    @classmethod
+    def normalize_deterministic_recommendation_ids(cls, value: object) -> object:
+        if not isinstance(value, list):
+            return value
+        return _unique_strings_preserve_order(
+            [str(item) for item in value],
+            label="related_deterministic_recommendation_ids",
+        )
 
 
 class ModernizationPhase(BaseModel):

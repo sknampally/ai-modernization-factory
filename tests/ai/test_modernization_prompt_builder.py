@@ -253,6 +253,17 @@ def test_known_finding_reference_instructions() -> None:
     assert "Never invent finding IDs" in content
 
 
+def test_deterministic_recommendation_traceability_instructions() -> None:
+    content = ModernizationPromptBuilder().build(_minimal_context()).messages[1].content
+    assert "Do not construct deterministic recommendation IDs from PMD rule IDs" in content
+    assert "related_deterministic_recommendation_ids may be empty" in content
+    assert "even when related_finding_ids is empty" in content
+    assert '"recommendation_id": "AI-REC-005"' in content
+    assert '"related_deterministic_recommendation_ids": ["REC.CLOUD.003"]' in content
+    assert '"related_deterministic_recommendation_ids": []' in content
+    assert "pmd-group-" in content
+
+
 def test_recommendation_id_instructions() -> None:
     content = ModernizationPromptBuilder().build(_minimal_context()).messages[1].content
     assert "AI-REC-001" in content

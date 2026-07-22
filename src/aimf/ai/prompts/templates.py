@@ -7,7 +7,7 @@ from aimf.ai.prompts.models import DEFAULT_PROMPT_TEMPLATE_VERSION
 SUPPORTED_PROMPT_TEMPLATE_VERSIONS = frozenset({DEFAULT_PROMPT_TEMPLATE_VERSION})
 
 _CONTRACT_EXAMPLE = """\
-Compact contract example (shape only; use real evidence IDs from context):
+Compact contract examples (shape only; use real evidence IDs from context):
 {
   "recommendations": [
     {
@@ -19,6 +19,16 @@ Compact contract example (shape only; use real evidence IDs from context):
         "Replace raw throws with typed application exceptions",
         "Ensure try-with-resources / equivalent closure for IO handles"
       ]
+    },
+    {
+      "recommendation_id": "AI-REC-005",
+      "related_finding_ids": [],
+      "related_deterministic_recommendation_ids": ["REC.CLOUD.003"]
+    },
+    {
+      "recommendation_id": "AI-REC-003",
+      "related_finding_ids": ["pmd-group-..."],
+      "related_deterministic_recommendation_ids": []
     }
   ],
   "modernization_phases": [
@@ -73,10 +83,21 @@ def developer_message_content(*, template_version: str) -> str:
         "3. related_finding_ids may reference only known finding identifiers "
         "from the supplied LLMAnalysisContext: rule_id, group_id, or finding_id. "
         "Never invent finding IDs or absolute file paths. Do not place "
-        "deterministic recommendation IDs in related_finding_ids.\n"
-        "4. related_deterministic_recommendation_ids may reference only "
-        "deterministic recommendation_id values from the supplied context. "
-        "Use this field for traceability to deterministic recommendations.\n"
+        "deterministic recommendation IDs in related_finding_ids. Finding "
+        "references are primary evidence and remain required when no valid "
+        "deterministic recommendation ID is available.\n"
+        "4. related_deterministic_recommendation_ids is optional secondary "
+        "traceability. It may contain only recommendation_id values listed in "
+        "the supplied deterministic recommendations section of the context. "
+        "Do not construct deterministic recommendation IDs from PMD rule IDs "
+        "or finding names. Do not assume every finding has a corresponding "
+        "deterministic recommendation. When no deterministic recommendation ID "
+        "is supplied for a finding, use only related_finding_ids and leave "
+        "related_deterministic_recommendation_ids empty. "
+        "related_deterministic_recommendation_ids may be empty. "
+        "Repository-fact recommendations (for example cloud or deployment "
+        "facts) may use a deterministic recommendation ID even when "
+        "related_finding_ids is empty.\n"
         "5. recommendation dependencies may reference only AI recommendation IDs "
         "that appear in the returned recommendations list (AI-REC-*).\n"
         "6. modernization_phases must contain 2 to 4 non-empty phases ordered "

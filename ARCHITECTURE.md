@@ -116,7 +116,7 @@ ModernizationReportInput
     └─ report.json   (schema/report version 1.2)
          │
          ▼
- archive excess active runs (keep 3; move older to archive/)
+ prune older completed runs (keep latest 3 per repository; delete older)
 ```
 
 AI failure behavior:
@@ -266,6 +266,7 @@ validate_recommendation_result
     ├─ 2–4 non-empty phases; every AI-REC in exactly one phase
     ├─ reject unsupported severity escalation and invented paths
     └─ recompute evidence_coverage from unique related_finding_ids
+       (model-supplied coverage arithmetic is untrusted and overwritten)
          │
          ▼
 ModernizationAssessmentResult → reporting layer
@@ -405,8 +406,8 @@ Supporting parsers:
 
 | Path | Used by | Artifacts | Retention |
 | ---- | ------- | --------- | --------- |
-| `reporters/` | `aimf scan` | `report.txt`, `report.json`, `report.html` | Keep latest 3 (delete older) |
-| `reporting/` | `aimf assess` | `report.html`, `report.json` only | Keep latest 3 active; archive older |
+| `reporters/` | `aimf scan` | `report.txt`, `report.json`, `report.html` | Keep latest 3 completed runs (delete older) |
+| `reporting/` | `aimf assess` | `report.html`, `report.json` only | Keep latest 3 completed runs (delete older; no archive/) |
 
 Assess HTML structure (high level):
 
@@ -452,7 +453,7 @@ Analyzers should return only facts they produce. They must not echo the full acc
 * Deterministic recommendation engine
 * PMD provider with profiles, namespace-aware parsing, normalization, grouping, and visibility
 * Scan reporters (text/JSON/HTML) and assess modernization reports (HTML/JSON)
-* Assess archive retention (3 active runs)
+* Assess report retention (latest 3 completed runs per repository; no local archive)
 * Baseline scan comparison
 * AI evidence contract, token budgeting, Bedrock provider, prompt builder, assessment agent, and output validation
 * Failure-safe AI mode that retains deterministic reports

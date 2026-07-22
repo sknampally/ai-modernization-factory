@@ -313,6 +313,117 @@ def test_evidence_coverage_recomputed_from_unique_related_finding_ids() -> None:
     assert validated.evidence_coverage == computed
 
 
+def test_incorrect_model_coverage_arithmetic_is_ignored_and_overwritten() -> None:
+    context = _context("F001", "F002", "F003")
+    # Mirrors the live Nova failure shape: inconsistent percentage, wrong counts.
+    result = AIRecommendationResult(
+        executive_summary="Summary",
+        overall_assessment="Assessment",
+        recommendations=[
+            _recommendation("AI-REC-001", related=["F001", "F002", "F001"]),
+        ],
+        modernization_phases=[
+            ModernizationPhase(
+                phase=1,
+                name="Stabilize",
+                objective="Consolidate reliability",
+                recommendations=["AI-REC-001"],
+            )
+        ],
+        evidence_coverage=EvidenceCoverage(
+            total_findings=34,
+            findings_considered=15,
+            findings_referenced=15,
+            coverage_percentage=44.12,
+            input_truncated=True,
+        ),
+    )
+    validated = validate_recommendation_result(result, context)
+    assert validated.evidence_coverage.total_findings == 3
+    assert validated.evidence_coverage.findings_considered == 3
+    assert validated.evidence_coverage.findings_referenced == 2
+    assert validated.evidence_coverage.coverage_percentage == 66.67
+    assert validated.evidence_coverage.input_truncated is False
+
+
+def test_zero_findings_considered_coverage_is_safe() -> None:
+    context = LLMAnalysisContext(
+        repository=LLMRepositoryContext(name="empty", source_type="local", file_count=0),
+        metrics=LLMMetricsContext(finding_count=0, technology_count=0),
+        findings=[],
+        findings_truncation=LLMSectionTruncation(
+            truncated=False,
+            original_count=0,
+            included_count=0,
+        ),
+    )
+    result = AIRecommendationResult(
+        executive_summary="Minimal",
+        overall_assessment="Minimal",
+        evidence_coverage=EvidenceCoverage(
+            total_findings=99,
+            findings_considered=12,
+            findings_referenced=4,
+            coverage_percentage=10.0,
+        ),
+    )
+    validated = validate_recommendation_result(result, context)
+    assert validated.evidence_coverage.findings_considered == 0
+    assert validated.evidence_coverage.findings_referenced == 0
+    assert validated.evidence_coverage.coverage_percentage == 0.0
+
+
+def test_parse_accepts_inconsistent_model_coverage_without_fallback() -> None:
+    import json
+
+    from aimf.ai.providers.parsing import parse_recommendation_response
+
+    context = _context("F001", "F002")
+    payload = {
+        "schema_version": "1.0.0",
+        "executive_summary": "Summary",
+        "overall_assessment": "Assessment",
+        "key_risks": [],
+        "recommendations": [
+            {
+                "recommendation_id": "AI-REC-001",
+                "title": "Consolidate reliability",
+                "description": "Outcome initiative",
+                "rationale": "Grounded evidence",
+                "priority": "medium",
+                "effort": "medium",
+                "impact": "medium",
+                "confidence": "medium",
+                "related_finding_ids": ["F001", "F002"],
+                "related_deterministic_recommendation_ids": [],
+                "suggested_actions": ["Act"],
+                "dependencies": [],
+            }
+        ],
+        "modernization_phases": [
+            {
+                "phase": 1,
+                "name": "Stabilize",
+                "objective": "Reduce risk",
+                "recommendations": ["AI-REC-001"],
+                "expected_outcomes": ["Safer baseline"],
+            }
+        ],
+        "evidence_coverage": {
+            "total_findings": 34,
+            "findings_considered": 15,
+            "findings_referenced": 15,
+            "coverage_percentage": 44.12,
+            "input_truncated": False,
+        },
+        "limitations": [],
+    }
+    parsed = parse_recommendation_response(json.dumps(payload), context)
+    assert parsed.evidence_coverage.findings_considered == 2
+    assert parsed.evidence_coverage.findings_referenced == 2
+    assert parsed.evidence_coverage.coverage_percentage == 100.0
+
+
 def test_aggregated_validation_issues_include_count_and_unknown_findings() -> None:
     context = _context(*[f"F{i:03d}" for i in range(1, 9)])
     result = _result_with_count(9, context)
