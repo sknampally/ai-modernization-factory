@@ -120,6 +120,25 @@ class StaticAnalysisSettings(BaseModel):
         return value
 
 
+class AwsSettings(BaseModel):
+    """Optional AWS session settings for Bedrock and related services.
+
+    Prefer configuring profile/region here so users do not need to export
+    ``AWS_PROFILE`` or ``AWS_REGION`` before running ``aimf assess --with-ai``.
+    """
+
+    profile: str | None = None
+    region: str | None = None
+
+    @field_validator("profile", "region")
+    @classmethod
+    def validate_optional_nonempty(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        compact = value.strip()
+        return compact or None
+
+
 class BedrockSettings(BaseModel):
     """Optional AWS Bedrock settings for modernization assessment."""
 
@@ -135,10 +154,23 @@ class BedrockSettings(BaseModel):
         return compact or None
 
 
+DEFAULT_BEDROCK_MODEL_ID = "amazon.nova-lite-v1:0"
+DEFAULT_BEDROCK_PROVIDER = "bedrock"
+
+
 class AiSettings(BaseModel):
     """Optional AI subsystem settings."""
 
+    provider: str = "bedrock"
     bedrock: BedrockSettings = Field(default_factory=BedrockSettings)
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value: str) -> str:
+        compact = value.strip().lower()
+        if not compact:
+            raise ValueError("ai.provider must be a nonempty string")
+        return compact
 
 
 class AimfSettings(BaseModel):
@@ -151,6 +183,7 @@ class AimfSettings(BaseModel):
     static_analysis: StaticAnalysisSettings = Field(
         default_factory=StaticAnalysisSettings,
     )
+    aws: AwsSettings = Field(default_factory=AwsSettings)
     ai: AiSettings = Field(default_factory=AiSettings)
 
 

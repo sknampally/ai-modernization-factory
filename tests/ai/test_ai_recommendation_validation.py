@@ -91,7 +91,7 @@ def _result(
         key_risks=["Secret exposure"],
         recommendations=[
             AIRecommendation(
-                recommendation_id="REC-001",
+                recommendation_id="AI-REC-001",
                 title="Rotate secrets",
                 description=description,
                 rationale="Grounded in SEC001",
@@ -109,7 +109,7 @@ def _result(
                 phase=1,
                 name="Stabilize",
                 objective="Reduce risk",
-                recommendations=["REC-001"],
+                recommendations=["AI-REC-001"],
                 expected_outcomes=["Safer baseline"],
             )
         ],
@@ -165,7 +165,7 @@ def test_unsupported_severity_escalation_rejected() -> None:
                 key_risks=[],
                 recommendations=[
                     AIRecommendation(
-                        recommendation_id="REC-001",
+                        recommendation_id="AI-REC-001",
                         title="Critical style rewrite",
                         description="Escalate",
                         rationale="Unsupported",

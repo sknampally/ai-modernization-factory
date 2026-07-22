@@ -164,7 +164,7 @@ def _assessment() -> ModernizationAssessmentResult:
         key_risks=["Secret exposure"],
         recommendations=[
             AIRecommendation(
-                recommendation_id="REC-001",
+                recommendation_id="AI-REC-001",
                 title="Rotate secrets",
                 description="Remove secrets",
                 rationale="Finding SEC001",
@@ -182,7 +182,7 @@ def _assessment() -> ModernizationAssessmentResult:
                 phase=1,
                 name="Stabilize",
                 objective="Reduce risk",
-                recommendations=["REC-001"],
+                recommendations=["AI-REC-001"],
                 expected_outcomes=["Safer baseline"],
             )
         ],
@@ -244,7 +244,7 @@ def _ai_input(tmp_path: Path) -> ModernizationReportInput:
         assessment_mode=AssessmentMode.AI_ENHANCED,
         analysis_context=_context(),
         assessment_result=_assessment(),
-        ai_status=AIExecutionStatus.EXECUTED,
+        ai_status=AIExecutionStatus.SUCCEEDED,
         generated_at_utc=datetime(2026, 7, 21, 15, 30, tzinfo=UTC),
         repository_reference="example/sample-app",
     )
@@ -276,7 +276,7 @@ def test_build_assessment_json_document_deterministic_shape(tmp_path: Path) -> N
     assert ai["total_tokens"] is None
     assert ai["recommendations"] == []
     assert ai["phases"] == []
-    assert assessment["coverage"]["ai_interpretation"] == "not_executed"
+    assert assessment["coverage"]["ai_interpretation"] == "not_requested"
     assert assessment["timing"]["total_ms"] == 100.0
     assert "path" not in assessment["repository"]
 
@@ -289,11 +289,11 @@ def test_ai_mode_includes_recommendations(tmp_path: Path) -> None:
     assert ai["input_tokens"] == 9
     assert ai["output_tokens"] == 11
     assert len(ai["recommendations"]) == 1
-    assert ai["recommendations"][0]["recommendation_id"] == "REC-001"
+    assert ai["recommendations"][0]["recommendation_id"] == "AI-REC-001"
     assert len(ai["phases"]) == 1
     assert document["assessment"]["summary"]["recommendation_count"] == 0
     assert document["assessment"]["summary"]["ai_recommendation_count"] == 1
-    assert document["assessment"]["coverage"]["ai_interpretation"] == "executed"
+    assert document["assessment"]["coverage"]["ai_interpretation"] == "succeeded"
 
 
 def test_no_absolute_paths_in_json(tmp_path: Path) -> None:

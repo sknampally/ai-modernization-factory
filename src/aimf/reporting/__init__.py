@@ -9,6 +9,8 @@ from aimf.reporting.modernization_html import (
     ModernizationHTMLReportRenderer,
 )
 from aimf.reporting.modernization_models import (
+    AIAttemptInfo,
+    AIExecutionStage,
     AIExecutionStatus,
     AssessmentMode,
     AssessmentTiming,
@@ -31,6 +33,8 @@ from aimf.reporting.modernization_view import (
 __all__ = [
     "ASSESSMENT_JSON_SCHEMA_VERSION",
     "CONTENT_SECURITY_POLICY",
+    "AIAttemptInfo",
+    "AIExecutionStage",
     "AIExecutionStatus",
     "AssessmentMode",
     "AssessmentTiming",

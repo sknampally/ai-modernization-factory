@@ -21,8 +21,8 @@ from aimf.ai.recommendations.validation import (
 from aimf.security.redaction import redact_secrets
 
 _FENCED_JSON_PATTERN = re.compile(
-    r"^\s*```(?:json)?\s*\n(?P<body>.*)\n```\s*$",
-    re.DOTALL,
+    r"^\s*```(?:json)?\s*\r?\n(?P<body>.*?)\r?\n```\s*$",
+    re.DOTALL | re.IGNORECASE,
 )
 _MAX_ERROR_EXCERPT = 240
 _AWS_KEY_PATTERN = re.compile(r"AKIA[0-9A-Z]{16}")
@@ -53,17 +53,28 @@ def parse_recommendation_response(
     Rejects surrounding prose, multiple JSON values, and repairs nothing.
     """
 
-    payload = _extract_json_object_text(raw_text)
+    try:
+        payload = _extract_json_object_text(raw_text)
+    except AIResponseParsingError as error:
+        raise AIResponseParsingError(
+            str(error),
+            raw_response_text=raw_text,
+            validation_details=error.validation_details,
+        ) from error
+
     try:
         data = json.loads(payload)
     except json.JSONDecodeError as error:
         raise AIResponseParsingError(
-            "Model response is not valid JSON: " + sanitize_provider_text(str(error))
+            "Model response is not valid JSON: " + sanitize_provider_text(str(error)),
+            raw_response_text=raw_text,
+            validation_details=str(error),
         ) from error
 
     if not isinstance(data, dict):
         raise AIResponseParsingError(
-            f"Model response must be a single JSON object, got {type(data).__name__}"
+            f"Model response must be a single JSON object, got {type(data).__name__}",
+            raw_response_text=raw_text,
         )
 
     try:
@@ -71,7 +82,10 @@ def parse_recommendation_response(
     except ValidationError as error:
         raise AIResponseValidationError(
             "Model response failed AIRecommendationResult validation: "
-            + sanitize_provider_text(str(error))
+            + sanitize_provider_text(str(error)),
+            raw_response_text=raw_text,
+            parsed_payload=data,
+            validation_details=str(error),
         ) from error
 
     try:
@@ -79,7 +93,10 @@ def parse_recommendation_response(
     except AIRecommendationValidationError as error:
         raise AIResponseValidationError(
             "Model response failed context-aware recommendation validation: "
-            + sanitize_provider_text(str(error))
+            + sanitize_provider_text(str(error)),
+            raw_response_text=raw_text,
+            parsed_payload=data,
+            validation_details=str(error),
         ) from error
 
 
@@ -91,12 +108,12 @@ def _extract_json_object_text(raw_text: str) -> str:
     if not text:
         raise AIResponseParsingError("Model response is empty")
 
-    fenced = _FENCED_JSON_PATTERN.fullmatch(raw_text)
+    fenced = _FENCED_JSON_PATTERN.fullmatch(text)
     if fenced is not None:
         text = fenced.group("body").strip()
         if not text:
             raise AIResponseParsingError("Fenced model response is empty")
-    elif "```" in raw_text:
+    elif "```" in text:
         raise AIResponseParsingError(
             "Model response contains a code fence but is not exactly one fenced JSON block"
         )

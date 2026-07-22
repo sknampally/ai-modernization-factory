@@ -97,7 +97,7 @@ def _coverage(
     referenced: int,
     truncated: bool = False,
 ) -> EvidenceCoverage:
-    percentage = 0.0 if total == 0 else round(100.0 * referenced / total, 2)
+    percentage = 0.0 if considered == 0 else round(100.0 * referenced / considered, 2)
     return EvidenceCoverage(
         total_findings=total,
         findings_considered=considered,
@@ -114,14 +114,14 @@ def _complete_result() -> AIRecommendationResult:
         key_risks=["Secret exposure", "Missing tests"],
         recommendations=[
             _recommendation(
-                "rec-security-001",
+                "AI-REC-001",
                 related=["SEC001"],
                 actions=["Rotate credentials", "Add scanning"],
             ),
             _recommendation(
-                "rec-testing-001",
+                "AI-REC-002",
                 related=["TEST001"],
-                dependencies=["rec-security-001"],
+                dependencies=["AI-REC-001"],
                 priority=AIRecommendationPriority.MEDIUM,
                 actions=["Add unit tests"],
             ),
@@ -131,14 +131,14 @@ def _complete_result() -> AIRecommendationResult:
                 phase=1,
                 name="Stabilize",
                 objective="Address critical security gaps",
-                recommendations=["rec-security-001"],
+                recommendations=["AI-REC-001"],
                 expected_outcomes=["Reduced secret risk"],
             ),
             ModernizationPhase(
                 phase=2,
                 name="Harden quality",
                 objective="Improve test coverage",
-                recommendations=["rec-testing-001"],
+                recommendations=["AI-REC-002"],
                 expected_outcomes=["Safer refactors"],
             ),
         ],
@@ -197,8 +197,8 @@ def test_duplicate_recommendation_ids_rejected() -> None:
             executive_summary="Summary",
             overall_assessment="Assessment",
             recommendations=[
-                _recommendation("dup"),
-                _recommendation("dup"),
+                _recommendation("AI-REC-001"),
+                _recommendation("AI-REC-001"),
             ],
             evidence_coverage=_coverage(total=0, considered=0, referenced=0),
         )
@@ -208,7 +208,7 @@ def test_invalid_finding_references_rejected() -> None:
     result = AIRecommendationResult(
         executive_summary="Summary",
         overall_assessment="Assessment",
-        recommendations=[_recommendation("rec-1", related=["MISSING"])],
+        recommendations=[_recommendation("AI-REC-001", related=["MISSING"])],
         evidence_coverage=_coverage(total=1, considered=1, referenced=1),
     )
     with pytest.raises(AIRecommendationValidationError, match="related_finding_ids"):
@@ -220,13 +220,13 @@ def test_invalid_phase_recommendation_references_rejected() -> None:
         AIRecommendationResult(
             executive_summary="Summary",
             overall_assessment="Assessment",
-            recommendations=[_recommendation("rec-1")],
+            recommendations=[_recommendation("AI-REC-001")],
             modernization_phases=[
                 ModernizationPhase(
                     phase=1,
                     name="Phase",
                     objective="Objective",
-                    recommendations=["missing-rec"],
+                    recommendations=["AI-REC-999"],
                 )
             ],
             evidence_coverage=_coverage(total=0, considered=0, referenced=0),
@@ -239,7 +239,7 @@ def test_invalid_evidence_coverage_rejected() -> None:
             total_findings=10,
             findings_considered=5,
             findings_referenced=2,
-            coverage_percentage=50.0,
+            coverage_percentage=50.0,  # expected 40.0 against findings_considered
         )
 
     with pytest.raises(ValidationError, match="findings_considered"):
@@ -273,34 +273,34 @@ def test_stable_ordering() -> None:
         limitations=["late", "early"],
         recommendations=[
             _recommendation(
-                "rec-b",
+                "AI-REC-002",
                 related=["B001", "A001"],
                 actions=["zeta", "alpha"],
-                dependencies=["rec-a"],
+                dependencies=["AI-REC-001"],
             ),
-            _recommendation("rec-a", related=["A001"]),
+            _recommendation("AI-REC-001", related=["A001"]),
         ],
         modernization_phases=[
             ModernizationPhase(
                 phase=2,
                 name="Second",
                 objective="Two",
-                recommendations=["rec-b"],
+                recommendations=["AI-REC-002"],
                 expected_outcomes=["z", "a"],
             ),
             ModernizationPhase(
                 phase=1,
                 name="First",
                 objective="One",
-                recommendations=["rec-a"],
+                recommendations=["AI-REC-001"],
             ),
         ],
         evidence_coverage=_coverage(total=2, considered=2, referenced=2),
     )
 
     assert [item.recommendation_id for item in result.recommendations] == [
-        "rec-a",
-        "rec-b",
+        "AI-REC-001",
+        "AI-REC-002",
     ]
     assert [item.phase for item in result.modernization_phases] == [1, 2]
     assert result.key_risks == ["alpha", "zeta"]
@@ -333,7 +333,7 @@ def test_unknown_dependency_rejected() -> None:
         AIRecommendationResult(
             executive_summary="Summary",
             overall_assessment="Assessment",
-            recommendations=[_recommendation("rec-1", dependencies=["missing"])],
+            recommendations=[_recommendation("AI-REC-001", dependencies=["AI-REC-999"])],
             evidence_coverage=_coverage(total=0, considered=0, referenced=0),
         )
 
@@ -343,20 +343,29 @@ def test_duplicate_phase_numbers_rejected() -> None:
         AIRecommendationResult(
             executive_summary="Summary",
             overall_assessment="Assessment",
-            recommendations=[_recommendation("rec-1")],
+            recommendations=[_recommendation("AI-REC-001")],
             modernization_phases=[
                 ModernizationPhase(
                     phase=1,
                     name="One",
                     objective="A",
-                    recommendations=["rec-1"],
+                    recommendations=["AI-REC-001"],
                 ),
                 ModernizationPhase(
                     phase=1,
                     name="Also one",
                     objective="B",
-                    recommendations=["rec-1"],
+                    recommendations=["AI-REC-001"],
                 ),
             ],
             evidence_coverage=_coverage(total=0, considered=0, referenced=0),
         )
+
+
+def test_invalid_ai_recommendation_id_format_rejected() -> None:
+    with pytest.raises(ValidationError, match="AI-REC-NNN"):
+        _recommendation("BestPractices.GuardLogStatement", related=["SEC001"])
+    with pytest.raises(ValidationError, match="AI-REC-NNN"):
+        _recommendation("DET-REC-001", related=["SEC001"])
+    with pytest.raises(ValidationError, match="AI-REC-NNN"):
+        _recommendation("REC-001", related=["SEC001"])

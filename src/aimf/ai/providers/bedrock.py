@@ -1,11 +1,17 @@
-"""AWS Bedrock Runtime provider for modernization assessment."""
+"""AWS Bedrock Runtime provider using the Converse API."""
 
 from __future__ import annotations
 
-import json
+import logging
 import time
-from typing import Any, Protocol, cast
+from typing import Any
 
+from aimf.ai.aws_config import (
+    AwsAuthenticationError,
+    BedrockRuntimeClient,
+    create_bedrock_runtime_client,
+    format_aws_authentication_error,
+)
 from aimf.ai.prompts.models import PromptMessage, PromptRequest
 from aimf.ai.providers.base import AIModelProvider
 from aimf.ai.providers.exceptions import (
@@ -25,264 +31,286 @@ from aimf.ai.providers.models import (
     ModernizationModelRequest,
 )
 from aimf.ai.providers.parsing import parse_recommendation_response, sanitize_provider_text
+from aimf.config.settings import AimfSettings
+
+logger = logging.getLogger(__name__)
 
 BEDROCK_PROVIDER_NAME = "bedrock"
-ANTHROPIC_BEDROCK_VERSION = "bedrock-2023-05-31"
-
-
-class BedrockRuntimeClient(Protocol):
-    """Minimal Bedrock Runtime client protocol for dependency injection."""
-
-    def invoke_model(self, **kwargs: Any) -> Any:
-        """Invoke a Bedrock model and return a response object."""
 
 
 class BedrockAIModelProvider(AIModelProvider):
-    """Invoke Anthropic Claude Messages API models hosted on AWS Bedrock."""
+    """Invoke Bedrock text models through the standardized Converse API."""
 
     def __init__(
         self,
         *,
         client: BedrockRuntimeClient | None = None,
         region_name: str | None = None,
+        profile_name: str | None = None,
+        settings: AimfSettings | None = None,
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
         if timeout_seconds <= 0:
             raise AIProviderConfigurationError("timeout_seconds must be positive")
         self._region_name = region_name
-        self._client = (
-            client
-            if client is not None
-            else _create_default_client(region_name, timeout_seconds=timeout_seconds)
-        )
+        self._profile_name = profile_name
+        self._settings = settings
+        self._timeout_seconds = timeout_seconds
+        if client is not None:
+            self._client = client
+        else:
+            try:
+                self._client = create_bedrock_runtime_client(
+                    settings=settings,
+                    profile=profile_name,
+                    region=region_name,
+                    timeout_seconds=timeout_seconds,
+                )
+            except AwsAuthenticationError as error:
+                raise AIProviderConfigurationError(str(error)) from error
+            except RuntimeError as error:
+                raise AIProviderConfigurationError(sanitize_provider_text(str(error))) from error
 
     def invoke(
         self,
         request: ModernizationModelRequest,
         options: ModelInvocationOptions,
     ) -> ModelInvocationResult:
-        """Invoke Bedrock and return a validated recommendation result."""
+        """Invoke Bedrock Converse and return a validated recommendation result."""
 
         model_id = options.model_id.strip()
         if not model_id:
             raise AIProviderConfigurationError("model_id must be a nonempty string")
 
-        body = build_anthropic_bedrock_payload(request.prompt_request, options)
+        resolved_profile = (
+            self._profile_name
+            or (self._settings.aws.profile if self._settings is not None else None)
+            or "(default)"
+        )
+        resolved_region = (
+            self._region_name
+            or (self._settings.aws.region if self._settings is not None else None)
+            or "(default)"
+        )
+        logger.info(
+            "Invoking Bedrock Converse model_id=%s profile=%s region=%s",
+            model_id,
+            resolved_profile,
+            resolved_region,
+        )
+
+        converse_kwargs = build_converse_request(request.prompt_request, options)
         started = time.perf_counter()
         try:
-            response = self._client.invoke_model(
-                modelId=model_id,
-                contentType="application/json",
-                accept="application/json",
-                body=json.dumps(body, sort_keys=True, ensure_ascii=False),
-            )
+            response = self._client.converse(**converse_kwargs)
+        except AwsAuthenticationError as error:
+            raise AIProviderInvocationError(str(error)) from error
         except Exception as error:  # noqa: BLE001 - provider boundary
-            raise _map_bedrock_exception(error) from error
+            raise _map_bedrock_exception(
+                error,
+                profile=self._profile_name
+                or (self._settings.aws.profile if self._settings is not None else None),
+            ) from error
 
-        latency_ms = (time.perf_counter() - started) * 1000.0
+        measured_latency_ms = (time.perf_counter() - started) * 1000.0
         try:
-            raw_response_text, usage, stop_reason, response_request_id = (
-                _extract_anthropic_response(response)
+            raw_response_text, usage, stop_reason, response_request_id, reported_latency = (
+                extract_converse_response(response)
             )
         except AIProviderError:
             raise
         except Exception as error:  # noqa: BLE001 - provider boundary
             raise AIProviderInvocationError(
-                "Failed to read Bedrock response: " + sanitize_provider_text(str(error))
+                "Failed to read Bedrock Converse response: " + sanitize_provider_text(str(error))
             ) from error
 
+        latency_ms = (
+            float(reported_latency) if reported_latency is not None else measured_latency_ms
+        )
+        request_id = options.request_id or response_request_id
+        metadata = ModelInvocationMetadata(
+            provider=BEDROCK_PROVIDER_NAME,
+            model_id=model_id,
+            request_id=request_id,
+            latency_ms=latency_ms,
+            usage=usage,
+            stop_reason=stop_reason,
+        )
         try:
             recommendation_result = parse_recommendation_response(
                 raw_response_text,
                 request.analysis_context,
             )
-        except (AIResponseParsingError, AIResponseValidationError):
-            raise
+        except AIResponseParsingError as error:
+            raise AIResponseParsingError(
+                str(error),
+                metadata=metadata,
+                raw_response_text=raw_response_text,
+                parsed_payload=error.parsed_payload,
+                validation_details=error.validation_details,
+            ) from error
+        except AIResponseValidationError as error:
+            raise AIResponseValidationError(
+                str(error),
+                metadata=metadata,
+                raw_response_text=raw_response_text,
+                parsed_payload=error.parsed_payload,
+                validation_details=error.validation_details,
+            ) from error
         except Exception as error:  # noqa: BLE001 - provider boundary
             raise AIResponseParsingError(
                 "Unexpected failure while parsing Bedrock response: "
-                + sanitize_provider_text(str(error))
+                + sanitize_provider_text(str(error)),
+                metadata=metadata,
+                raw_response_text=raw_response_text,
+                validation_details=str(error),
             ) from error
 
-        request_id = options.request_id or response_request_id
         return ModelInvocationResult(
             recommendation_result=recommendation_result,
-            metadata=ModelInvocationMetadata(
-                provider=BEDROCK_PROVIDER_NAME,
-                model_id=model_id,
-                request_id=request_id,
-                latency_ms=latency_ms,
-                usage=usage,
-                stop_reason=stop_reason,
-            ),
+            metadata=metadata,
             raw_response_text=raw_response_text,
         )
 
 
-def build_anthropic_bedrock_payload(
+def build_converse_request(
     prompt_request: PromptRequest,
     options: ModelInvocationOptions,
 ) -> dict[str, Any]:
-    """Deterministically convert PromptRequest into an Anthropic Bedrock body."""
+    """Build a model-family-neutral Bedrock Converse request."""
 
-    system_text, messages = _split_prompt_messages(prompt_request.messages)
-    payload: dict[str, Any] = {
-        "anthropic_version": ANTHROPIC_BEDROCK_VERSION,
-        "max_tokens": options.max_output_tokens,
-        "temperature": options.temperature,
-        "messages": messages,
+    system_text, user_text = split_prompt_for_converse(prompt_request.messages)
+    request: dict[str, Any] = {
+        "modelId": options.model_id.strip(),
+        "messages": [
+            {
+                "role": "user",
+                "content": [{"text": user_text}],
+            }
+        ],
+        "inferenceConfig": {
+            "maxTokens": options.max_output_tokens,
+            "temperature": options.temperature,
+        },
     }
     if system_text:
-        payload["system"] = system_text
-    return payload
+        request["system"] = [{"text": system_text}]
+    return request
 
 
-def _split_prompt_messages(
+def split_prompt_for_converse(
     messages: list[PromptMessage],
-) -> tuple[str | None, list[dict[str, str]]]:
+) -> tuple[str, str]:
+    """Separate system/developer instructions from the user context payload."""
+
     system_parts: list[str] = []
-    conversation_parts: list[str] = []
+    user_parts: list[str] = []
 
     for message in messages:
         if message.role == "system":
             system_parts.append(message.content)
         elif message.role == "developer":
-            conversation_parts.append(f"Developer instructions:\n{message.content}")
+            system_parts.append(f"Developer instructions:\n{message.content}")
         elif message.role == "user":
-            conversation_parts.append(message.content)
+            user_parts.append(message.content)
         else:  # pragma: no cover - Literal-protected
             raise AIProviderConfigurationError(f"Unsupported prompt role: {message.role}")
 
-    system_text = "\n\n".join(system_parts) if system_parts else None
-    if not conversation_parts:
+    if not user_parts:
         raise AIProviderConfigurationError(
-            "PromptRequest must include at least one developer or user message"
+            "PromptRequest must include at least one user message with analysis context"
         )
 
-    # Anthropic Messages API requires alternating user/assistant turns.
-    # Map developer + user into one deterministic user message.
-    user_content = "\n\n".join(conversation_parts)
-    user_content = (
-        f"{user_content}\n\n"
-        "Respond with a single JSON object only. Do not include markdown or prose."
+    system_parts.append(
+        "Respond with a single JSON object only. Do not include markdown fences or prose."
     )
-    return system_text, [{"role": "user", "content": user_content}]
+    system_text = "\n\n".join(part for part in system_parts if part.strip())
+    user_text = "\n\n".join(part for part in user_parts if part.strip())
+    if not user_text.strip():
+        raise AIProviderConfigurationError("PromptRequest user message must be nonempty")
+    return system_text, user_text
 
 
-def _create_default_client(
-    region_name: str | None,
-    *,
-    timeout_seconds: float,
-) -> BedrockRuntimeClient:
-    try:
-        import boto3
-        from botocore.config import Config
-    except ImportError as error:  # pragma: no cover - exercised when boto3 missing
-        raise AIProviderConfigurationError(
-            "boto3 is required to create a default Bedrock Runtime client"
-        ) from error
-
-    read_timeout = max(1, int(timeout_seconds))
-    connect_timeout = min(10, read_timeout)
-    config = Config(
-        connect_timeout=connect_timeout,
-        read_timeout=read_timeout,
-        retries={"max_attempts": 1, "mode": "standard"},
-    )
-    kwargs: dict[str, Any] = {
-        "service_name": "bedrock-runtime",
-        "config": config,
-    }
-    if region_name:
-        kwargs["region_name"] = region_name
-    return cast(BedrockRuntimeClient, boto3.client(**kwargs))
-
-
-def _extract_anthropic_response(
+def extract_converse_response(
     response: Any,
-) -> tuple[str, ModelUsage, str | None, str | None]:
-    body = _read_response_body(response)
-    try:
-        payload = json.loads(body)
-    except json.JSONDecodeError as error:
-        raise AIProviderInvocationError(
-            "Bedrock returned a non-JSON response envelope: " + sanitize_provider_text(str(error))
-        ) from error
+) -> tuple[str, ModelUsage, str | None, str | None, float | None]:
+    """Extract assistant text, usage, stop reason, request id, and reported latency."""
 
-    if not isinstance(payload, dict):
-        raise AIProviderInvocationError("Bedrock response envelope must be a JSON object")
+    if not isinstance(response, dict):
+        raise AIProviderInvocationError("Bedrock Converse response must be a mapping")
 
-    raw_text = _extract_text_content(payload)
-    usage_payload = payload.get("usage")
-    usage = ModelUsage()
-    if isinstance(usage_payload, dict):
-        input_tokens = _optional_non_negative_int(usage_payload.get("input_tokens"))
-        output_tokens = _optional_non_negative_int(usage_payload.get("output_tokens"))
-        total_tokens: int | None = None
-        if input_tokens is not None and output_tokens is not None:
-            total_tokens = input_tokens + output_tokens
-        usage = ModelUsage(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-        )
+    output = response.get("output")
+    if not isinstance(output, dict):
+        raise AIProviderInvocationError("Bedrock Converse response is missing output")
 
-    stop_reason = payload.get("stop_reason")
-    stop_reason_text = str(stop_reason) if stop_reason is not None else None
+    message = output.get("message")
+    if not isinstance(message, dict):
+        raise AIProviderInvocationError("Bedrock Converse response is missing output.message")
 
-    request_id = None
-    headers = getattr(response, "get", None)
-    if callable(headers):
-        # botocore ResponseMetadata lives on the response mapping.
-        metadata = response.get("ResponseMetadata")
-        if isinstance(metadata, dict):
-            request_id_value = metadata.get("RequestId")
-            if request_id_value is not None:
-                request_id = str(request_id_value)
-
-    return raw_text, usage, stop_reason_text, request_id
-
-
-def _read_response_body(response: Any) -> str:
-    if isinstance(response, dict):
-        body = response.get("body")
-    else:
-        body = getattr(response, "body", None)
-
-    if body is None:
-        raise AIProviderInvocationError("Bedrock response is missing a body")
-
-    if hasattr(body, "read"):
-        raw = body.read()
-    else:
-        raw = body
-
-    if isinstance(raw, bytes):
-        return raw.decode("utf-8")
-    if isinstance(raw, str):
-        return raw
-    raise AIProviderInvocationError(
-        f"Bedrock response body must be bytes or text, got {type(raw).__name__}"
-    )
-
-
-def _extract_text_content(payload: dict[str, Any]) -> str:
-    content = payload.get("content")
-    if isinstance(content, str):
-        return content
+    content = message.get("content")
     if not isinstance(content, list):
-        raise AIProviderInvocationError("Bedrock Anthropic response is missing content blocks")
+        raise AIProviderInvocationError(
+            "Bedrock Converse response is missing output.message.content"
+        )
 
     text_parts: list[str] = []
     for block in content:
         if not isinstance(block, dict):
             continue
-        if block.get("type") == "text" and isinstance(block.get("text"), str):
-            text_parts.append(block["text"])
+        text = block.get("text")
+        if isinstance(text, str) and text:
+            text_parts.append(text)
 
     if not text_parts:
-        raise AIProviderInvocationError("Bedrock Anthropic response did not include text content")
-    return "".join(text_parts)
+        raise AIProviderInvocationError(
+            "Bedrock Converse response did not include assistant text content"
+        )
+
+    raw_text = "".join(text_parts)
+    usage = _extract_usage(response.get("usage"))
+    stop_reason_value = response.get("stopReason")
+    stop_reason = str(stop_reason_value) if stop_reason_value is not None else None
+    request_id = _extract_request_id(response)
+    reported_latency = _extract_reported_latency(response.get("metrics"))
+    return raw_text, usage, stop_reason, request_id, reported_latency
+
+
+def _extract_usage(usage_payload: Any) -> ModelUsage:
+    if not isinstance(usage_payload, dict):
+        return ModelUsage()
+    input_tokens = _optional_non_negative_int(usage_payload.get("inputTokens"))
+    output_tokens = _optional_non_negative_int(usage_payload.get("outputTokens"))
+    total_tokens = _optional_non_negative_int(usage_payload.get("totalTokens"))
+    if total_tokens is None and input_tokens is not None and output_tokens is not None:
+        total_tokens = input_tokens + output_tokens
+    return ModelUsage(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+    )
+
+
+def _extract_reported_latency(metrics: Any) -> float | None:
+    if not isinstance(metrics, dict):
+        return None
+    value = metrics.get("latencyMs")
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number < 0:
+        return None
+    return number
+
+
+def _extract_request_id(response: dict[str, Any]) -> str | None:
+    metadata = response.get("ResponseMetadata")
+    if not isinstance(metadata, dict):
+        return None
+    request_id = metadata.get("RequestId")
+    return str(request_id) if request_id is not None else None
 
 
 def _optional_non_negative_int(value: Any) -> int | None:
@@ -297,20 +325,27 @@ def _optional_non_negative_int(value: Any) -> int | None:
     return number
 
 
-def _map_bedrock_exception(error: Exception) -> AIProviderError:
+def _map_bedrock_exception(
+    error: Exception,
+    *,
+    profile: str | None = None,
+) -> AIProviderError:
     message = sanitize_provider_text(str(error))
     error_name = type(error).__name__
     error_code = _client_error_code(error)
 
+    if error_name in {
+        "NoCredentialsError",
+        "PartialCredentialsError",
+        "ProfileNotFound",
+        "UnauthorizedSSOTokenError",
+        "TokenRetrievalError",
+        "SSOTokenLoadError",
+    }:
+        return AIProviderInvocationError(format_aws_authentication_error(profile=profile))
+
     if error_name in {"ReadTimeoutError", "ConnectTimeoutError", "EndpointConnectionError"}:
         return AIProviderTimeoutError(f"Bedrock invocation timed out: {message}")
-
-    if error_code in {
-        "ThrottlingException",
-        "TooManyRequestsException",
-        "ServiceQuotaExceededException",
-    }:
-        return AIProviderInvocationError(f"Bedrock throttling error: {message}")
 
     if error_code in {
         "UnrecognizedClientException",
@@ -318,16 +353,38 @@ def _map_bedrock_exception(error: Exception) -> AIProviderError:
         "ExpiredTokenException",
         "AuthFailure",
     }:
-        return AIProviderInvocationError(f"Bedrock authentication error: {message}")
+        return AIProviderInvocationError(format_aws_authentication_error(profile=profile))
 
     if error_code in {"AccessDeniedException", "UnauthorizedOperation"}:
-        return AIProviderInvocationError(f"Bedrock access denied: {message}")
+        return AIProviderInvocationError(
+            "Bedrock model access denied. Verify IAM permissions for Bedrock "
+            f"and the selected model. Details: {message}"
+        )
 
-    if error_code in {"ValidationException", "InvalidRequestException"}:
-        return AIProviderInvocationError(f"Bedrock validation error: {message}")
+    if error_code in {
+        "ThrottlingException",
+        "TooManyRequestsException",
+        "ServiceQuotaExceededException",
+        "ModelNotReadyException",
+        "ServiceUnavailableException",
+        "InternalServerException",
+        "ModelTimeoutException",
+    }:
+        return AIProviderTimeoutError(f"Bedrock temporary service failure: {message}")
 
-    if error_code:
-        return AIProviderInvocationError(f"Bedrock service error ({error_code}): {message}")
+    if error_code in {
+        "ValidationException",
+        "InvalidRequestException",
+        "ResourceNotFoundException",
+        "ModelNotSupportedException",
+    }:
+        return AIProviderInvocationError(
+            f"Bedrock invalid model or request configuration: {message}"
+        )
+
+    if error_name in {"BotoCoreError", "ClientError"} or error_code:
+        label = error_code or error_name
+        return AIProviderInvocationError(f"Bedrock service error ({label}): {message}")
 
     return AIProviderInvocationError(f"Bedrock invocation failed: {message}")
 

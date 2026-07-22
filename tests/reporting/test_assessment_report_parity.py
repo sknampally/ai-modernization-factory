@@ -278,7 +278,7 @@ def _ai_assessment() -> ModernizationAssessmentResult:
             key_risks=["AI risk one"],
             recommendations=[
                 AIRecommendation(
-                    recommendation_id="REC-001",
+                    recommendation_id="AI-REC-001",
                     title="AI recommendation",
                     description="AI-only guidance",
                     rationale="Because of evidence",
@@ -295,7 +295,7 @@ def _ai_assessment() -> ModernizationAssessmentResult:
                     phase=1,
                     name="Stabilize",
                     objective="Reduce critical risk",
-                    recommendations=["REC-001"],
+                    recommendations=["AI-REC-001"],
                     expected_outcomes=["Safer baseline"],
                 )
             ],
@@ -392,7 +392,7 @@ def _report_input(
         assessment_mode=AssessmentMode.AI_ENHANCED,
         analysis_context=_context(),
         assessment_result=_ai_assessment(),
-        ai_status=AIExecutionStatus.EXECUTED,
+        ai_status=AIExecutionStatus.SUCCEEDED,
         generated_at_utc=datetime(2026, 7, 21, 15, 30, tzinfo=UTC),
         timing=AssessmentTiming(
             total_ms=250.0,
@@ -591,9 +591,9 @@ def test_ai_mode_keeps_deterministic_and_appends_single_ai_section(tmp_path: Pat
     assert det.index("Repository System Intelligence") < det.index("AI Interpretation")
     assert det.index("Deterministic Recommendations") < det.index("AI Interpretation")
     assert det.count('id="ai-interpretation"') == 1
-    assert det.count("AI interpretation was not executed") == 1
+    assert det.count("AI interpretation was not requested") == 1
     assert "AI executive interpretation" not in det
-    assert "REC-001" not in det
+    assert "AI-REC-001" not in det
 
     assert "Repository System Intelligence" in ai
     assert "Deterministic Recommendations (3)" in ai
@@ -602,7 +602,7 @@ def test_ai_mode_keeps_deterministic_and_appends_single_ai_section(tmp_path: Pat
     assert "Phase 1: Stabilize" in ai
     assert ai.count('id="ai-interpretation"') == 1
     assert ai.index("Deterministic Recommendations") < ai.index("AI Interpretation")
-    assert "AI interpretation was not executed" not in ai
+    assert "AI interpretation was not requested" not in ai
 
 
 def test_comparison_rendered_only_when_present(tmp_path: Path) -> None:

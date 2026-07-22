@@ -144,22 +144,22 @@ def _valid_result() -> AIRecommendationResult:
         overall_assessment="Overall assessment.",
         key_risks=["Secret exposure"],
         recommendations=[
-            _recommendation("REC-001", related=["SEC001"]),
-            _recommendation("REC-002", related=["SEC002"], dependencies=["REC-001"]),
+            _recommendation("AI-REC-001", related=["SEC001"]),
+            _recommendation("AI-REC-002", related=["SEC002"], dependencies=["AI-REC-001"]),
         ],
         modernization_phases=[
             ModernizationPhase(
                 phase=1,
                 name="Stabilize",
                 objective="Reduce risk",
-                recommendations=["REC-001"],
+                recommendations=["AI-REC-001"],
                 expected_outcomes=["Safer baseline"],
             ),
             ModernizationPhase(
                 phase=2,
                 name="Hardening",
                 objective="Continue modernization",
-                recommendations=["REC-002"],
+                recommendations=["AI-REC-002"],
                 expected_outcomes=["Better quality"],
             ),
         ],
@@ -404,7 +404,7 @@ def test_final_validation_failure() -> None:
     invalid = AIRecommendationResult(
         executive_summary="Summary",
         overall_assessment="Assessment",
-        recommendations=[_recommendation("REC-001", related=["MISSING"])],
+        recommendations=[_recommendation("AI-REC-001", related=["MISSING"])],
         evidence_coverage=EvidenceCoverage(
             total_findings=1,
             findings_considered=1,

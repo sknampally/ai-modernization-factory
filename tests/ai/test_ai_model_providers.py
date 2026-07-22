@@ -1,11 +1,10 @@
-"""Tests for AIMF AI model providers and Bedrock integration."""
+"""Tests for AIMF AI model providers and Bedrock Converse integration."""
 
 from __future__ import annotations
 
 import importlib
 import json
 import sys
-from io import BytesIO
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -38,8 +37,9 @@ from aimf.ai.providers import (
 )
 from aimf.ai.providers import bedrock as bedrock_module
 from aimf.ai.providers.bedrock import (
-    ANTHROPIC_BEDROCK_VERSION,
-    build_anthropic_bedrock_payload,
+    build_converse_request,
+    extract_converse_response,
+    split_prompt_for_converse,
 )
 from aimf.ai.providers.parsing import sanitize_provider_text
 from aimf.ai.recommendations import (
@@ -53,6 +53,7 @@ from aimf.ai.recommendations import (
     ModernizationPhase,
     ai_recommendation_result_to_json,
 )
+from aimf.config import DEFAULT_BEDROCK_MODEL_ID
 
 
 def _truncation(count: int = 0, *, truncated: bool = False) -> LLMSectionTruncation:
@@ -117,22 +118,22 @@ def _valid_result() -> AIRecommendationResult:
         overall_assessment="Overall assessment.",
         key_risks=["Secret exposure"],
         recommendations=[
-            _recommendation("REC-001", related=["SEC001"]),
-            _recommendation("REC-002", related=["SEC002"], dependencies=["REC-001"]),
+            _recommendation("AI-REC-001", related=["SEC001"]),
+            _recommendation("AI-REC-002", related=["SEC002"], dependencies=["AI-REC-001"]),
         ],
         modernization_phases=[
             ModernizationPhase(
                 phase=1,
                 name="Stabilize",
                 objective="Address critical gaps",
-                recommendations=["REC-001"],
+                recommendations=["AI-REC-001"],
                 expected_outcomes=["Lower risk"],
             ),
             ModernizationPhase(
                 phase=2,
                 name="Hardening",
                 objective="Continue modernization",
-                recommendations=["REC-002"],
+                recommendations=["AI-REC-002"],
                 expected_outcomes=["Safer releases"],
             ),
         ],
@@ -161,7 +162,7 @@ def _model_request(context: LLMAnalysisContext | None = None) -> ModernizationMo
 
 def _options(
     *,
-    model_id: str = "anthropic.claude-test-model",
+    model_id: str = DEFAULT_BEDROCK_MODEL_ID,
     temperature: float = 0.0,
     max_output_tokens: int = 2048,
     timeout_seconds: float = 30.0,
@@ -176,30 +177,40 @@ def _options(
     )
 
 
-def _bedrock_response(
-    text: str,
+def _converse_response(
+    text: str | list[str],
     *,
-    input_tokens: int = 11,
-    output_tokens: int = 22,
+    input_tokens: int | None = 11,
+    output_tokens: int | None = 22,
+    total_tokens: int | None = None,
     stop_reason: str = "end_turn",
     request_id: str = "req-123",
+    latency_ms: float | None = None,
+    include_usage: bool = True,
 ) -> dict[str, Any]:
-    body = {
-        "id": "msg_1",
-        "type": "message",
-        "role": "assistant",
-        "model": "claude",
-        "content": [{"type": "text", "text": text}],
-        "stop_reason": stop_reason,
-        "usage": {
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
+    blocks = [{"text": item} for item in ([text] if isinstance(text, str) else text)]
+    response: dict[str, Any] = {
+        "output": {
+            "message": {
+                "role": "assistant",
+                "content": blocks,
+            }
         },
-    }
-    return {
-        "body": BytesIO(json.dumps(body).encode("utf-8")),
+        "stopReason": stop_reason,
         "ResponseMetadata": {"RequestId": request_id},
     }
+    if include_usage:
+        usage: dict[str, Any] = {}
+        if input_tokens is not None:
+            usage["inputTokens"] = input_tokens
+        if output_tokens is not None:
+            usage["outputTokens"] = output_tokens
+        if total_tokens is not None:
+            usage["totalTokens"] = total_tokens
+        response["usage"] = usage
+    if latency_ms is not None:
+        response["metrics"] = {"latencyMs": latency_ms}
+    return response
 
 
 def _client_error(code: str, message: str = "boom") -> ClientError:
@@ -208,7 +219,7 @@ def _client_error(code: str, message: str = "boom") -> ClientError:
             "Error": {"Code": code, "Message": message},
             "ResponseMetadata": {"RequestId": "err-1"},
         },
-        "InvokeModel",
+        "Converse",
     )
 
 
@@ -236,13 +247,14 @@ def test_provider_abstraction() -> None:
     provider: AIModelProvider = _FakeProvider()
     result = provider.invoke(_model_request(), _options())
     assert result.metadata.provider == "fake"
-    assert result.recommendation_result.recommendations[0].recommendation_id == "REC-001"
+    assert result.recommendation_result.recommendations[0].recommendation_id == "AI-REC-001"
 
 
-def test_successful_bedrock_invocation() -> None:
+def test_successful_bedrock_converse_invocation() -> None:
     client = MagicMock()
-    client.invoke_model.return_value = _bedrock_response(
-        ai_recommendation_result_to_json(_valid_result(), indent=None)
+    client.converse.return_value = _converse_response(
+        ai_recommendation_result_to_json(_valid_result(), indent=None),
+        latency_ms=42.5,
     )
     provider = BedrockAIModelProvider(client=client)
     request = _model_request()
@@ -250,7 +262,7 @@ def test_successful_bedrock_invocation() -> None:
 
     assert result.recommendation_result == _valid_result()
     assert result.metadata.provider == "bedrock"
-    assert result.metadata.model_id == "anthropic.claude-test-model"
+    assert result.metadata.model_id == DEFAULT_BEDROCK_MODEL_ID
     assert result.metadata.request_id == "client-req"
     assert result.metadata.stop_reason == "end_turn"
     assert result.metadata.usage == ModelUsage(
@@ -258,21 +270,25 @@ def test_successful_bedrock_invocation() -> None:
         output_tokens=22,
         total_tokens=33,
     )
-    assert result.metadata.latency_ms >= 0.0
+    assert result.metadata.latency_ms == 42.5
     assert result.raw_response_text
-    client.invoke_model.assert_called_once()
+    client.converse.assert_called_once()
+    client.invoke_model.assert_not_called()
 
 
-def test_deterministic_payload_construction() -> None:
+def test_converse_request_includes_system_and_user() -> None:
     request = _model_request()
     options = _options(temperature=0.0, max_output_tokens=1024)
-    first = build_anthropic_bedrock_payload(request.prompt_request, options)
-    second = build_anthropic_bedrock_payload(request.prompt_request, options)
+    first = build_converse_request(request.prompt_request, options)
+    second = build_converse_request(request.prompt_request, options)
     assert first == second
-    assert first["anthropic_version"] == ANTHROPIC_BEDROCK_VERSION
-    assert first["temperature"] == 0.0
-    assert first["max_tokens"] == 1024
+    assert first["modelId"] == DEFAULT_BEDROCK_MODEL_ID
+    assert first["inferenceConfig"] == {"maxTokens": 1024, "temperature": 0.0}
+    assert first["system"][0]["text"]
+    assert "JSON object" in first["system"][0]["text"]
     assert first["messages"][0]["role"] == "user"
+    assert "text" in first["messages"][0]["content"][0]
+    assert "anthropic" not in json.dumps(first).lower()
 
 
 def test_system_developer_user_message_mapping() -> None:
@@ -294,27 +310,27 @@ def test_system_developer_user_message_mapping() -> None:
             prompt_template_version="1.0.0",
         ),
     )
-    payload = build_anthropic_bedrock_payload(prompt, _options())
-    assert payload["system"] == "System rules"
-    user_content = payload["messages"][0]["content"]
-    assert user_content.startswith("Developer instructions:\nDeveloper rules")
-    assert "Assess this repository" in user_content
-    assert "single JSON object only" in user_content
+    system_text, user_text = split_prompt_for_converse(prompt.messages)
+    assert "System rules" in system_text
+    assert "Developer instructions:\nDeveloper rules" in system_text
+    assert "JSON object only" in system_text
+    assert user_text == "Assess this repository"
+    assert "Assess this repository" not in system_text
 
 
-def test_configurable_model_id() -> None:
+def test_configurable_nova_model_id() -> None:
     client = MagicMock()
-    client.invoke_model.return_value = _bedrock_response(
+    client.converse.return_value = _converse_response(
         ai_recommendation_result_to_json(_valid_result(), indent=None)
     )
     provider = BedrockAIModelProvider(client=client)
-    provider.invoke(_model_request(), _options(model_id="custom.model-id"))
-    assert client.invoke_model.call_args.kwargs["modelId"] == "custom.model-id"
+    provider.invoke(_model_request(), _options(model_id="amazon.nova-lite-v1:0"))
+    assert client.converse.call_args.kwargs["modelId"] == "amazon.nova-lite-v1:0"
 
 
 def test_temperature_and_token_options() -> None:
     client = MagicMock()
-    client.invoke_model.return_value = _bedrock_response(
+    client.converse.return_value = _converse_response(
         ai_recommendation_result_to_json(_valid_result(), indent=None)
     )
     provider = BedrockAIModelProvider(client=client)
@@ -322,9 +338,62 @@ def test_temperature_and_token_options() -> None:
         _model_request(),
         _options(temperature=0.2, max_output_tokens=512),
     )
-    body = json.loads(client.invoke_model.call_args.kwargs["body"])
-    assert body["temperature"] == 0.2
-    assert body["max_tokens"] == 512
+    kwargs = client.converse.call_args.kwargs
+    assert kwargs["inferenceConfig"]["temperature"] == 0.2
+    assert kwargs["inferenceConfig"]["maxTokens"] == 512
+
+
+def test_multiple_text_blocks_are_concatenated() -> None:
+    client = MagicMock()
+    payload = ai_recommendation_result_to_json(_valid_result(), indent=None)
+    mid = len(payload) // 2
+    client.converse.return_value = _converse_response([payload[:mid], payload[mid:]])
+    provider = BedrockAIModelProvider(client=client)
+    result = provider.invoke(_model_request(), _options())
+    assert result.recommendation_result == _valid_result()
+    assert result.raw_response_text == payload
+
+
+def test_missing_usage_metadata_is_tolerated() -> None:
+    client = MagicMock()
+    client.converse.return_value = _converse_response(
+        ai_recommendation_result_to_json(_valid_result(), indent=None),
+        include_usage=False,
+    )
+    provider = BedrockAIModelProvider(client=client)
+    result = provider.invoke(_model_request(), _options())
+    assert result.metadata.usage == ModelUsage()
+    assert result.metadata.stop_reason == "end_turn"
+
+
+def test_empty_output_content_rejected() -> None:
+    client = MagicMock()
+    client.converse.return_value = {
+        "output": {"message": {"role": "assistant", "content": []}},
+        "stopReason": "end_turn",
+    }
+    provider = BedrockAIModelProvider(client=client)
+    with pytest.raises(AIProviderInvocationError, match="assistant text content"):
+        provider.invoke(_model_request(), _options())
+
+
+def test_missing_output_structure_rejected() -> None:
+    client = MagicMock()
+    client.converse.return_value = {"stopReason": "end_turn"}
+    provider = BedrockAIModelProvider(client=client)
+    with pytest.raises(AIProviderInvocationError, match="missing output"):
+        provider.invoke(_model_request(), _options())
+
+
+def test_extract_converse_response_helpers() -> None:
+    text, usage, stop_reason, request_id, latency = extract_converse_response(
+        _converse_response("hello", latency_ms=12.0, total_tokens=40)
+    )
+    assert text == "hello"
+    assert usage.total_tokens == 40
+    assert stop_reason == "end_turn"
+    assert request_id == "req-123"
+    assert latency == 12.0
 
 
 def test_strict_json_parsing() -> None:
@@ -338,6 +407,14 @@ def test_fenced_json_parsing() -> None:
     context = _context("SEC001", "SEC002")
     payload = ai_recommendation_result_to_json(_valid_result(), indent=2)
     fenced = f"```json\n{payload}\n```"
+    parsed = parse_recommendation_response(fenced, context)
+    assert parsed == _valid_result()
+
+
+def test_bare_fenced_json_parsing() -> None:
+    context = _context("SEC001", "SEC002")
+    payload = ai_recommendation_result_to_json(_valid_result(), indent=2)
+    fenced = f"```\n{payload}\n```"
     parsed = parse_recommendation_response(fenced, context)
     assert parsed == _valid_result()
 
@@ -360,103 +437,37 @@ def test_multiple_object_rejection() -> None:
 
 
 def test_invalid_recommendation_schema() -> None:
-    with pytest.raises(AIResponseValidationError, match="AIRecommendationResult"):
+    with pytest.raises(AIResponseValidationError, match="AIRecommendationResult") as info:
         parse_recommendation_response('{"executive_summary": "only"}', _context())
+    assert info.value.raw_response_text == '{"executive_summary": "only"}'
+    assert info.value.parsed_payload == {"executive_summary": "only"}
 
 
-def test_invalid_finding_references() -> None:
-    result = _valid_result()
-    broken = result.model_dump(mode="json")
-    broken["recommendations"][0]["related_finding_ids"] = ["MISSING"]
-    with pytest.raises(AIResponseValidationError, match="context-aware"):
-        parse_recommendation_response(json.dumps(broken), _context("SEC001", "SEC002"))
-
-
-def test_invalid_dependency_and_phase_references() -> None:
-    with pytest.raises(AIResponseValidationError):
-        parse_recommendation_response(
-            json.dumps(
-                {
-                    "schema_version": "1.0.0",
-                    "executive_summary": "Summary",
-                    "overall_assessment": "Assessment",
-                    "recommendations": [
-                        {
-                            "recommendation_id": "REC-001",
-                            "title": "Title",
-                            "description": "Description",
-                            "rationale": "Rationale",
-                            "priority": "high",
-                            "effort": "medium",
-                            "impact": "high",
-                            "confidence": "medium",
-                            "related_finding_ids": [],
-                            "suggested_actions": ["Act"],
-                            "dependencies": ["REC-999"],
-                        }
-                    ],
-                    "modernization_phases": [],
-                    "evidence_coverage": {
-                        "total_findings": 0,
-                        "findings_considered": 0,
-                        "findings_referenced": 0,
-                        "coverage_percentage": 0.0,
-                        "input_truncated": False,
-                    },
-                    "limitations": [],
-                }
-            ),
-            _context(),
-        )
-
-    with pytest.raises(AIResponseValidationError):
-        parse_recommendation_response(
-            json.dumps(
-                {
-                    "schema_version": "1.0.0",
-                    "executive_summary": "Summary",
-                    "overall_assessment": "Assessment",
-                    "recommendations": [
-                        {
-                            "recommendation_id": "REC-001",
-                            "title": "Title",
-                            "description": "Description",
-                            "rationale": "Rationale",
-                            "priority": "high",
-                            "effort": "medium",
-                            "impact": "high",
-                            "confidence": "medium",
-                            "related_finding_ids": [],
-                            "suggested_actions": ["Act"],
-                            "dependencies": [],
-                        }
-                    ],
-                    "modernization_phases": [
-                        {
-                            "phase": 1,
-                            "name": "Phase",
-                            "objective": "Objective",
-                            "recommendations": ["REC-999"],
-                            "expected_outcomes": [],
-                        }
-                    ],
-                    "evidence_coverage": {
-                        "total_findings": 0,
-                        "findings_considered": 0,
-                        "findings_referenced": 0,
-                        "coverage_percentage": 0.0,
-                        "input_truncated": False,
-                    },
-                    "limitations": [],
-                }
-            ),
-            _context(),
-        )
+def test_bedrock_validation_failure_preserves_invocation_metadata() -> None:
+    client = MagicMock()
+    client.converse.return_value = _converse_response(
+        '{"executive_summary": "only"}',
+        input_tokens=15,
+        output_tokens=17,
+        stop_reason="end_turn",
+        request_id="amzn-req-validation",
+    )
+    provider = BedrockAIModelProvider(client=client)
+    with pytest.raises(AIResponseValidationError) as info:
+        provider.invoke(_model_request(), _options())
+    error = info.value
+    assert error.metadata is not None
+    assert error.metadata.provider == "bedrock"
+    assert error.metadata.usage.input_tokens == 15
+    assert error.metadata.usage.output_tokens == 17
+    assert error.metadata.stop_reason == "end_turn"
+    assert error.raw_response_text == '{"executive_summary": "only"}'
+    assert error.parsed_payload == {"executive_summary": "only"}
 
 
 def test_usage_latency_request_id_and_stop_reason() -> None:
     client = MagicMock()
-    client.invoke_model.return_value = _bedrock_response(
+    client.converse.return_value = _converse_response(
         ai_recommendation_result_to_json(_valid_result(), indent=None),
         input_tokens=5,
         output_tokens=7,
@@ -473,7 +484,7 @@ def test_usage_latency_request_id_and_stop_reason() -> None:
 
 def test_timeout_mapping() -> None:
     client = MagicMock()
-    client.invoke_model.side_effect = ReadTimeoutError(endpoint_url="https://example")
+    client.converse.side_effect = ReadTimeoutError(endpoint_url="https://example")
     provider = BedrockAIModelProvider(client=client)
     with pytest.raises(AIProviderTimeoutError, match="timed out"):
         provider.invoke(_model_request(), _options())
@@ -481,9 +492,9 @@ def test_timeout_mapping() -> None:
 
 def test_throttling_mapping() -> None:
     client = MagicMock()
-    client.invoke_model.side_effect = _client_error("ThrottlingException", "slow down")
+    client.converse.side_effect = _client_error("ThrottlingException", "slow down")
     provider = BedrockAIModelProvider(client=client)
-    with pytest.raises(AIProviderInvocationError, match="throttling"):
+    with pytest.raises(AIProviderTimeoutError, match="temporary service failure"):
         provider.invoke(_model_request(), _options())
 
 
@@ -491,22 +502,38 @@ def test_authentication_and_access_denied_mapping() -> None:
     client = MagicMock()
     provider = BedrockAIModelProvider(client=client)
 
-    client.invoke_model.side_effect = _client_error(
+    client.converse.side_effect = _client_error(
         "UnrecognizedClientException",
         "AKIAIOSFODNN7EXAMPLE bad key",
     )
-    with pytest.raises(AIProviderInvocationError, match="authentication") as auth_info:
+    with pytest.raises(
+        AIProviderInvocationError,
+        match="Unable to authenticate with AWS",
+    ) as auth_info:
         provider.invoke(_model_request(), _options())
     assert "AKIAIOSFODNN7EXAMPLE" not in str(auth_info.value)
+    assert "aws sso login" in str(auth_info.value)
 
-    client.invoke_model.side_effect = _client_error("AccessDeniedException", "nope")
-    with pytest.raises(AIProviderInvocationError, match="access denied"):
+    client.converse.side_effect = _client_error("AccessDeniedException", "nope")
+    with pytest.raises(AIProviderInvocationError, match="model access denied"):
+        provider.invoke(_model_request(), _options())
+
+
+def test_validation_and_resource_errors() -> None:
+    client = MagicMock()
+    provider = BedrockAIModelProvider(client=client)
+    client.converse.side_effect = _client_error("ValidationException", "bad input")
+    with pytest.raises(AIProviderInvocationError, match="invalid model or request"):
+        provider.invoke(_model_request(), _options())
+
+    client.converse.side_effect = _client_error("ResourceNotFoundException", "missing")
+    with pytest.raises(AIProviderInvocationError, match="invalid model or request"):
         provider.invoke(_model_request(), _options())
 
 
 def test_generic_provider_failure_mapping() -> None:
     client = MagicMock()
-    client.invoke_model.side_effect = RuntimeError("unexpected AKIAIOSFODNN7EXAMPLE")
+    client.converse.side_effect = RuntimeError("unexpected AKIAIOSFODNN7EXAMPLE")
     provider = BedrockAIModelProvider(client=client)
     with pytest.raises(AIProviderInvocationError, match="invocation failed") as info:
         provider.invoke(_model_request(), _options())
@@ -525,19 +552,19 @@ def test_exception_sanitization() -> None:
 
 def test_injected_client_usage() -> None:
     client = MagicMock()
-    client.invoke_model.return_value = _bedrock_response(
+    client.converse.return_value = _converse_response(
         ai_recommendation_result_to_json(_valid_result(), indent=None)
     )
-    with patch("boto3.client") as factory:
+    with patch("aimf.ai.aws_config.create_bedrock_runtime_client") as factory:
         provider = BedrockAIModelProvider(client=client)
         provider.invoke(_model_request(), _options())
         factory.assert_not_called()
-    client.invoke_model.assert_called_once()
+    client.converse.assert_called_once()
 
 
 def test_no_aws_client_creation_during_module_import() -> None:
     module_name = "aimf.ai.providers.bedrock"
-    with patch("boto3.client") as factory:
+    with patch("aimf.ai.aws_config.create_bedrock_runtime_client") as factory:
         if module_name in sys.modules:
             importlib.reload(bedrock_module)
         else:
@@ -573,7 +600,7 @@ def test_frozen_contracts_and_extra_field_rejection() -> None:
 
 def test_prompt_request_not_mutated() -> None:
     client = MagicMock()
-    client.invoke_model.return_value = _bedrock_response(
+    client.converse.return_value = _converse_response(
         ai_recommendation_result_to_json(_valid_result(), indent=None)
     )
     request = _model_request()
@@ -582,17 +609,14 @@ def test_prompt_request_not_mutated() -> None:
     assert request.prompt_request.model_dump(mode="json") == before
 
 
-def test_validation_error_from_bedrock_service() -> None:
-    client = MagicMock()
-    client.invoke_model.side_effect = _client_error("ValidationException", "bad input")
-    provider = BedrockAIModelProvider(client=client)
-    with pytest.raises(AIProviderInvocationError, match="validation"):
-        provider.invoke(_model_request(), _options())
-
-
 def test_fenced_json_with_trailing_prose_rejected() -> None:
     payload = ai_recommendation_result_to_json(_valid_result(), indent=None)
     with pytest.raises(AIResponseParsingError):
         parse_recommendation_response(
             f"```json\n{payload}\n```\nthanks", _context("SEC001", "SEC002")
         )
+
+
+def test_no_anthropic_payload_helpers_exported() -> None:
+    assert not hasattr(bedrock_module, "ANTHROPIC_BEDROCK_VERSION")
+    assert not hasattr(bedrock_module, "build_anthropic_bedrock_payload")

@@ -20,6 +20,8 @@ from aimf.ai.recommendations.serialization import (
 )
 from aimf.ai.recommendations.validation import (
     AIRecommendationValidationError,
+    compute_evidence_coverage,
+    deterministic_recommendation_ids_from_context,
     finding_ids_from_context,
     validate_recommendation_result,
 )
@@ -38,6 +40,8 @@ __all__ = [
     "ai_recommendation_result_from_json",
     "ai_recommendation_result_to_dict",
     "ai_recommendation_result_to_json",
+    "compute_evidence_coverage",
+    "deterministic_recommendation_ids_from_context",
     "finding_ids_from_context",
     "validate_recommendation_result",
 ]

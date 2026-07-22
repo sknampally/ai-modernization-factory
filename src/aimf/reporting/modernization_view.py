@@ -18,6 +18,7 @@ from aimf.ai.recommendations.validation import (
 )
 from aimf.models import AnalysisResult, Finding, Severity
 from aimf.reporting.modernization_models import (
+    AI_FAILURE_STATUSES,
     AIExecutionStatus,
     AssessmentMode,
     ModernizationReportInput,
@@ -62,12 +63,17 @@ def validate_modernization_report_input(
             )
         return report_input
 
-    if report_input.ai_status == AIExecutionStatus.FAILED:
+    if report_input.ai_status in AI_FAILURE_STATUSES:
         if report_input.assessment_result is not None:
             raise ModernizationReportValidationError(
                 "Failed AI assessments must not include an AI assessment result"
             )
         return report_input
+
+    if report_input.ai_status != AIExecutionStatus.SUCCEEDED:
+        raise ModernizationReportValidationError(
+            f"Unsupported AI execution status for report validation: {report_input.ai_status}"
+        )
 
     if report_input.assessment_result is None or report_input.analysis_context is None:
         raise ModernizationReportValidationError(
@@ -100,7 +106,7 @@ def repository_identifier(report_input: ModernizationReportInput) -> str:
 
 
 def assessment_mode_label(mode: AssessmentMode) -> str:
-    """Return a human-readable assessment mode label."""
+    """Return a human-readable assessment mode label for the requested mode."""
 
     if mode == AssessmentMode.AI_ENHANCED:
         return "AI Enhanced"

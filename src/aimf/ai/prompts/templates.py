@@ -6,6 +6,31 @@ from aimf.ai.prompts.models import DEFAULT_PROMPT_TEMPLATE_VERSION
 
 SUPPORTED_PROMPT_TEMPLATE_VERSIONS = frozenset({DEFAULT_PROMPT_TEMPLATE_VERSION})
 
+_CONTRACT_EXAMPLE = """\
+Compact contract example (shape only; use real evidence IDs from context):
+{
+  "recommendations": [
+    {
+      "recommendation_id": "AI-REC-001",
+      "title": "Strengthen exception and resource lifecycle handling",
+      "related_finding_ids": ["SEC001", "pmd:ErrorProne.CloseResource"],
+      "related_deterministic_recommendation_ids": ["DET-REC-004", "DET-REC-007"],
+      "suggested_actions": [
+        "Replace raw throws with typed application exceptions",
+        "Ensure try-with-resources / equivalent closure for IO handles"
+      ]
+    }
+  ],
+  "modernization_phases": [
+    {
+      "phase": 1,
+      "name": "Stabilize reliability",
+      "objective": "Reduce production failure modes from exception and resource mishandling",
+      "recommendations": ["AI-REC-001"]
+    }
+  ]
+}"""
+
 
 def system_message_content(*, template_version: str) -> str:
     """Return the system-role behavioral and grounding instructions."""
@@ -14,10 +39,13 @@ def system_message_content(*, template_version: str) -> str:
     return (
         "You are an AIMF modernization assessment assistant.\n"
         "Operate only on the provided deterministic analysis evidence.\n"
+        "Deterministic findings and deterministic recommendations are evidence "
+        "inputs for synthesis — not a checklist to copy one-for-one into AI "
+        "recommendations.\n"
         "Distinguish deterministic evidence from your AI interpretation; "
         "do not present interpretation as observed fact.\n"
         "Ground every recommendation in the supplied findings, technologies, "
-        "metrics, and repository context.\n"
+        "metrics, deterministic recommendations, and repository context.\n"
         "Do not invent repository facts, technologies, findings, metrics, "
         "costs, timelines, or compliance claims.\n"
         "Source evidence may be incomplete or truncated; treat truncation "
@@ -38,34 +66,103 @@ def developer_message_content(*, template_version: str) -> str:
         "Construction rules for AIRecommendationResult:\n"
         "1. Return only valid JSON matching the embedded AIRecommendationResult "
         "JSON Schema.\n"
-        "2. Assign stable recommendation IDs using REC-001, REC-002, and so on "
-        "in ascending order.\n"
+        "2. Assign response-local AI recommendation IDs using AI-REC-001, "
+        "AI-REC-002, AI-REC-003, and so on in ascending sequential order. "
+        "IDs must be unique within the response. Never use PMD rule IDs, "
+        "finding IDs, or deterministic recommendation IDs as recommendation_id.\n"
         "3. related_finding_ids may reference only known finding identifiers "
         "from the supplied LLMAnalysisContext: rule_id, group_id, or finding_id. "
-        "Never invent finding IDs or absolute file paths.\n"
-        "4. recommendation dependencies may reference only recommendation IDs "
-        "that appear in the returned recommendations list.\n"
-        "5. modernization_phases must contain 3 or 4 phases ordered from phase 1 "
-        "and may reference only returned recommendation IDs. Prefer Stabilize, "
-        "Standardize, Modernize, Optimize when evidence supports them.\n"
-        "6. evidence_coverage must be internally consistent: "
-        "findings_considered <= total_findings, "
-        "findings_referenced <= findings_considered, and "
-        "coverage_percentage == round(100 * findings_referenced / "
-        "total_findings, 2) (or 0.0 when total_findings is 0). "
-        "Set input_truncated from the supplied context truncation metadata.\n"
-        "7. Capture uncertainty and missing or truncated evidence in "
+        "Never invent finding IDs or absolute file paths. Do not place "
+        "deterministic recommendation IDs in related_finding_ids.\n"
+        "4. related_deterministic_recommendation_ids may reference only "
+        "deterministic recommendation_id values from the supplied context. "
+        "Use this field for traceability to deterministic recommendations.\n"
+        "5. recommendation dependencies may reference only AI recommendation IDs "
+        "that appear in the returned recommendations list (AI-REC-*).\n"
+        "6. modernization_phases must contain 2 to 4 non-empty phases ordered "
+        "from phase 1. Every returned AI recommendation must appear in exactly "
+        "one phase. Phases must represent dependent engineering outcomes and "
+        "risk reduction order, not arbitrary partitions of IDs. Phase "
+        "objectives must describe the outcome achieved. Prefer Stabilize, "
+        "Standardize, Modernize, Optimize naming only when evidence supports "
+        "them.\n"
+        "7. evidence_coverage numbers should reflect unique related_finding_ids "
+        "referenced by accepted AI recommendations against included findings. "
+        "AIMF recalculates authoritative coverage after validation; do not "
+        "fabricate coverage. Set input_truncated from the supplied context "
+        "truncation metadata.\n"
+        "8. Capture uncertainty and missing or truncated evidence in "
         "limitations. Explicitly mention source-only assessment limits, lack of "
         "runtime/production telemetry, team/process context gaps, and the "
         "static-analysis profile used.\n"
-        "8. Prohibit invented repository facts, technologies, findings, "
+        "9. Prohibit invented repository facts, technologies, findings, "
         "metrics, costs, timelines, and compliance claims.\n"
-        "9. Keep rationale concise and evidence-grounded. Do not request or "
+        "10. Keep rationale concise and evidence-grounded. Do not request or "
         "emit chain-of-thought reasoning.\n"
-        "10. Produce 5 to 8 AI recommendations that consolidate related findings "
-        "and deterministic recommendations. Do not emit one recommendation per "
-        "observation. key_risks must contain at most 5 concise risk titles.\n"
-        "11. schema_version must be 1.0.0."
+        "11. Produce between 5 and 8 AI recommendations for evidence-rich "
+        "assessments. Prefer fewer, stronger recommendations over exhaustive "
+        "rule-by-rule output. key_risks must contain at most 5 concise risk "
+        "titles.\n"
+        "12. schema_version must be 1.0.0.\n"
+        "\n"
+        "AI layer role and consolidation (mandatory):\n"
+        "- Do not reproduce each deterministic recommendation as a separate AI "
+        "recommendation.\n"
+        "- Do not emit one AI recommendation per lint, PMD rule, or "
+        "deterministic item.\n"
+        "- Synthesize related evidence into broader modernization initiatives.\n"
+        "- Each AI recommendation should normally combine multiple related "
+        "findings and/or deterministic recommendations that share an "
+        "engineering outcome.\n"
+        "- Individual lint or PMD findings should normally become "
+        "implementation actions or evidence under a broader recommendation, "
+        "not separate modernization recommendations.\n"
+        "- Titles must describe engineering outcomes (for example: strengthen "
+        "exception and resource lifecycle handling; reduce controller and "
+        "method complexity; improve concurrency and shared-state safety; "
+        "strengthen automated-test reliability; standardize logging and "
+        "operational diagnostics; improve dependency and build "
+        "reproducibility; standardize deployment packaging).\n"
+        "- Avoid titles such as 'Address PMD pattern: Proper logger' or "
+        "'Address PMD pattern: Use locale with case conversions'. Those are "
+        "deterministic remediation items, not modernization initiatives.\n"
+        "- Consolidation examples (illustrative, not mandatory fixed "
+        "groupings; invent a category only when evidence supports it):\n"
+        "  * raw exception throwing, generic catching, and resource closure "
+        "may become one reliability recommendation\n"
+        "  * cognitive complexity, cyclomatic complexity, and too many "
+        "methods may become one modularity recommendation\n"
+        "  * test-only PMD findings may become one test-quality recommendation\n"
+        "  * logger and System.out findings may become one observability "
+        "recommendation\n"
+        "  * deployment and dependency findings may become delivery-readiness "
+        "recommendations when supported by evidence\n"
+        "\n"
+        "Production vs test evidence:\n"
+        "- Determine whether evidence comes from production code, test code, "
+        "configuration, CI/CD, or deployment assets.\n"
+        "- Do not assign high modernization impact to a test-only style issue "
+        "without broader supporting evidence.\n"
+        "- Consolidate lower-level test-code findings into a test-quality "
+        "initiative where appropriate.\n"
+        "- Prioritize production reliability, architectural reach, deployment "
+        "risk, and operational impact over isolated style violations.\n"
+        "- Explain prioritization briefly in rationale; do not apply "
+        "hardcoded path-based severity rules.\n"
+        "\n"
+        "Executive summary:\n"
+        "- Write a repository-specific executive_summary and "
+        "overall_assessment that include both strengths and gaps.\n"
+        "- Recognize evidence such as modern frameworks, automated tests, "
+        "CI/CD, deployment assets, cloud-readiness foundations, and security "
+        "findings or the absence of detected security findings when present "
+        "in context.\n"
+        "- Do not claim the repository broadly 'requires modernization' "
+        "without explaining the evidence.\n"
+        "- Distinguish wholesale modernization, targeted hardening, delivery "
+        "standardization, and architectural restructuring based on the "
+        "supplied evidence.\n"
+        "\n" + _CONTRACT_EXAMPLE
     )
 
 
@@ -85,7 +182,10 @@ def user_message_content(
         (f"Perform a modernization assessment for repository '{repository_identifier}'."),
         (
             "Use only the deterministic LLMAnalysisContext evidence supplied "
-            "with this request. Produce an AIRecommendationResult JSON object."
+            "with this request. Synthesize it into 5 to 8 outcome-oriented "
+            "AI recommendations (AI-REC-001…). Do not copy deterministic "
+            "recommendations one-for-one. Produce an AIRecommendationResult "
+            "JSON object."
         ),
         (
             "Remember that source evidence may be incomplete or truncated. "

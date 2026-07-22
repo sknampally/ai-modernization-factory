@@ -31,6 +31,15 @@ from aimf.reporters.html_rendering import (
     render_collection,
     wrap_table,
 )
+from aimf.reporting.ai_status import (
+    ai_cover_subtitle,
+    ai_execution_status_label,
+    ai_legend_chip_label,
+    ai_section_guidance,
+    assessment_mode_display_label,
+    coverage_guidance,
+    provider_invocation_label,
+)
 from aimf.reporting.deterministic_content import (
     render_comparison_section,
     render_deterministic_executive_summary,
@@ -38,9 +47,12 @@ from aimf.reporting.deterministic_content import (
     render_repository_system_intelligence,
     render_static_analysis_providers,
 )
-from aimf.reporting.modernization_models import AssessmentMode, ModernizationReportInput
+from aimf.reporting.modernization_models import (
+    AIExecutionStatus,
+    AssessmentMode,
+    ModernizationReportInput,
+)
 from aimf.reporting.modernization_view import (
-    assessment_mode_label,
     finding_anchor_id,
     finding_anchor_map,
     repository_identifier,
@@ -50,10 +62,13 @@ from aimf.reporting.modernization_view import (
 )
 from aimf.static_analysis.models import StaticAnalysisStatus
 
-AI_NOT_EXECUTED_MESSAGE = (
-    "AI interpretation was not executed for this assessment. "
+AI_NOT_REQUESTED_MESSAGE = (
+    "AI interpretation was not requested for this assessment. "
     "The report contains AIMF deterministic system intelligence only."
 )
+
+# Backward-compatible alias used by older tests/docs references.
+AI_NOT_EXECUTED_MESSAGE = AI_NOT_REQUESTED_MESSAGE
 
 CONTENT_SECURITY_POLICY = (
     "default-src 'none'; "
@@ -123,7 +138,7 @@ class ModernizationHTMLReportRenderer:
         org = report_input.organization_name
         notice = report_input.confidentiality_notice
         generated = _format_timestamp(report_input.generated_at_utc)
-        mode_label = assessment_mode_label(report_input.assessment_mode)
+        mode_label = assessment_mode_display_label(report_input)
         technologies = ", ".join(tech.name for tech in analysis.technologies) or ("None detected")
         build_systems = (
             ", ".join(analysis.facts.build.build_systems)
@@ -162,21 +177,16 @@ class ModernizationHTMLReportRenderer:
                 f"<dd>{escape_html(AI_RECOMMENDATION_SCHEMA_VERSION)}</dd>\n"
                 f"<dt>Agent version</dt><dd>{escape_html(AGENT_VERSION)}</dd>\n"
             )
+        legend_chip_class = "ai" if report_input.ai_executed else ""
         legend = (
             '<p class="legend">'
             '<span class="chip deterministic">Deterministic evidence</span> '
-            + (
-                '<span class="chip ai">AI-generated interpretation</span>'
-                if report_input.ai_executed
-                else '<span class="chip">AI interpretation not executed</span>'
-            )
-            + "</p>\n"
+            f'<span class="chip {legend_chip_class}">'
+            f"{escape_html(ai_legend_chip_label(report_input))}"
+            "</span>"
+            "</p>\n"
         )
-        subtitle = (
-            "AI-enhanced modernization assessment"
-            if report_input.ai_executed
-            else "Deterministic modernization assessment"
-        )
+        subtitle = ai_cover_subtitle(report_input)
         return (
             '<header id="cover" class="report-header cover">\n'
             "<h1>AI Modernization Factory</h1>\n"
@@ -232,16 +242,30 @@ class ModernizationHTMLReportRenderer:
         )
 
     def _render_ai_interpretation(self, report_input: ModernizationReportInput) -> str:
-        if report_input.ai_status.value == "failed":
-            detail = report_input.ai_failure_message or "AI assessment failed."
+        if report_input.ai_status in {
+            AIExecutionStatus.AUTHENTICATION_FAILED,
+            AIExecutionStatus.PROVIDER_FAILED,
+            AIExecutionStatus.PARSING_FAILED,
+            AIExecutionStatus.VALIDATION_FAILED,
+        }:
+            status_label = ai_execution_status_label(report_input.ai_status)
+            customer_detail = report_input.ai_failure_message or ai_section_guidance(report_input)
+            failure_code = (
+                report_input.ai_attempt.failure_code
+                if report_input.ai_attempt is not None
+                else None
+            )
+            code_suffix = f" ({escape_html(failure_code)})" if failure_code else ""
             return (
                 '<section id="ai-interpretation" class="section ai-section page-break">\n'
                 "<h2>AI Interpretation</h2>\n"
                 '<p class="ai-label">AI interpretation</p>\n'
                 '<p class="warning" role="status">'
-                "<strong>AI status:</strong> failed. Deterministic evidence above remains valid. "
-                f"{escape_and_wrap(detail)}"
+                f"<strong>AI status:</strong> {escape_html(status_label)}{code_suffix}. "
+                "Deterministic evidence above remains valid. "
+                f"{escape_and_wrap(customer_detail)}"
                 "</p>\n"
+                f"<p>{escape_and_wrap(ai_section_guidance(report_input))}</p>\n"
                 "</section>\n"
             )
         if not report_input.ai_executed:
@@ -249,7 +273,9 @@ class ModernizationHTMLReportRenderer:
                 '<section id="ai-interpretation" class="section ai-section page-break">\n'
                 "<h2>AI Interpretation</h2>\n"
                 '<p class="ai-label">AI interpretation</p>\n'
-                f'<p class="ai-not-executed">{escape_and_wrap(AI_NOT_EXECUTED_MESSAGE)}</p>\n'
+                f'<p class="ai-not-executed">'
+                f"{escape_and_wrap(ai_section_guidance(report_input))}"
+                "</p>\n"
                 "</section>\n"
             )
 
@@ -710,12 +736,12 @@ class ModernizationHTMLReportRenderer:
                 "</dl>\n"
             )
 
-        if report_input.ai_status.value == "failed":
-            ai_status = "failed"
-        elif report_input.ai_executed:
-            ai_status = "executed"
+        if report_input.ai_status == AIExecutionStatus.SUCCEEDED:
+            ai_status = "succeeded"
+        elif report_input.ai_status != AIExecutionStatus.NOT_REQUESTED:
+            ai_status = report_input.ai_status.value
         else:
-            ai_status = "not_executed"
+            ai_status = "not_requested"
         timing_rows = ""
         if report_input.timing is not None:
             timing = report_input.timing
@@ -754,18 +780,21 @@ class ModernizationHTMLReportRenderer:
         if not report_input.ai_executed:
             findings = report_input.analysis_result.findings
             with_evidence = sum(1 for item in findings if item.evidence)
+            ai_coverage = (
+                "Not applicable"
+                if report_input.ai_status == AIExecutionStatus.NOT_REQUESTED
+                else ai_execution_status_label(report_input.ai_status)
+            )
             return (
                 '<section id="coverage" class="section page-break">\n'
                 "<h2>Evidence Coverage and Limitations</h2>\n"
                 '<dl class="meta-grid">\n'
                 f"<dt>Total findings</dt><dd>{len(findings)}</dd>\n"
                 f"<dt>Findings with evidence</dt><dd>{with_evidence}</dd>\n"
-                "<dt>AI coverage</dt><dd>Not applicable</dd>\n"
+                f"<dt>AI coverage</dt><dd>{escape_html(ai_coverage)}</dd>\n"
                 "</dl>\n"
                 '<p class="validation-note">'
-                "This report contains deterministic repository evidence only. "
-                "Enable AI-enhanced assessment when modernization recommendations "
-                "and roadmap interpretation are required."
+                f"{escape_and_wrap(coverage_guidance(report_input))}"
                 "</p>\n"
                 "</section>\n"
             )
@@ -808,14 +837,46 @@ class ModernizationHTMLReportRenderer:
         )
 
     def _render_execution_details(self, report_input: ModernizationReportInput) -> str:
-        mode_label = assessment_mode_label(report_input.assessment_mode)
-        if not report_input.ai_executed:
+        mode_label = assessment_mode_display_label(report_input)
+        attempt = report_input.ai_attempt
+        if report_input.ai_executed:
+            assert report_input.assessment_result is not None
+            assessment = report_input.assessment_result
+            metadata = assessment.model_metadata
+            trace = assessment.trace
+            usage = metadata.usage
             return (
                 '<section id="execution" class="section page-break">\n'
                 "<h2>Assessment Execution Details</h2>\n"
                 '<dl class="meta-grid">\n'
                 f"<dt>Assessment mode</dt><dd>{escape_html(mode_label)}</dd>\n"
-                "<dt>AI executed</dt><dd>No</dd>\n"
+                "<dt>AI execution status</dt><dd>Succeeded</dd>\n"
+                "<dt>Provider invocation</dt><dd>Succeeded</dd>\n"
+                "<dt>AI result included</dt><dd>Yes</dd>\n"
+                "<dt>Fallback</dt><dd>Not used</dd>\n"
+                f"<dt>Provider</dt><dd>{escape_html(metadata.provider)}</dd>\n"
+                f"<dt>Model ID</dt><dd>{escape_html(metadata.model_id)}</dd>\n"
+                f"<dt>Latency (ms)</dt><dd>{metadata.latency_ms:.2f}</dd>\n"
+                f"<dt>Input tokens</dt><dd>{_optional_int(usage.input_tokens)}</dd>\n"
+                f"<dt>Output tokens</dt><dd>{_optional_int(usage.output_tokens)}</dd>\n"
+                f"<dt>Total tokens</dt><dd>{_optional_int(usage.total_tokens)}</dd>\n"
+                f"<dt>Agent version</dt><dd>{escape_html(trace.agent_version)}</dd>\n"
+                f"<dt>Tool-call count</dt><dd>{trace.tool_call_count}</dd>\n"
+                f"<dt>Model-call count</dt><dd>{trace.model_call_count}</dd>\n"
+                "</dl>\n"
+                "</section>\n"
+            )
+
+        if report_input.ai_status == AIExecutionStatus.NOT_REQUESTED:
+            return (
+                '<section id="execution" class="section page-break">\n'
+                "<h2>Assessment Execution Details</h2>\n"
+                '<dl class="meta-grid">\n'
+                f"<dt>Assessment mode</dt><dd>{escape_html(mode_label)}</dd>\n"
+                "<dt>AI execution status</dt><dd>Not requested</dd>\n"
+                "<dt>Provider invocation</dt><dd>Not requested</dd>\n"
+                "<dt>AI result included</dt><dd>No</dd>\n"
+                "<dt>Fallback</dt><dd>Not applicable</dd>\n"
                 "<dt>Provider</dt><dd>Not applicable</dd>\n"
                 "<dt>Model ID</dt><dd>Not applicable</dd>\n"
                 "<dt>Latency (ms)</dt><dd>Not applicable</dd>\n"
@@ -825,29 +886,50 @@ class ModernizationHTMLReportRenderer:
                 "</dl>\n"
                 "</section>\n"
             )
-        assert report_input.assessment_result is not None
-        assessment = report_input.assessment_result
-        metadata = assessment.model_metadata
-        trace = assessment.trace
-        usage = metadata.usage
-        input_tokens = _optional_int(usage.input_tokens)
-        output_tokens = _optional_int(usage.output_tokens)
-        total_tokens = _optional_int(usage.total_tokens)
+
+        provider = (attempt.provider if attempt and attempt.provider else None) or "—"
+        model_id = (attempt.model_id if attempt and attempt.model_id else None) or "—"
+        latency = (
+            f"{attempt.latency_ms:.2f}"
+            if attempt is not None and attempt.latency_ms is not None
+            else (
+                f"{report_input.timing.ai_ms:.2f}"
+                if report_input.timing is not None and report_input.timing.ai_ms is not None
+                else "—"
+            )
+        )
+        input_tokens = (
+            _optional_int(attempt.input_tokens)
+            if attempt is not None and attempt.input_tokens is not None
+            else "—"
+        )
+        output_tokens = (
+            _optional_int(attempt.output_tokens)
+            if attempt is not None and attempt.output_tokens is not None
+            else "—"
+        )
+        total_tokens = (
+            _optional_int(attempt.total_tokens)
+            if attempt is not None and attempt.total_tokens is not None
+            else "—"
+        )
         return (
             '<section id="execution" class="section page-break">\n'
             "<h2>Assessment Execution Details</h2>\n"
             '<dl class="meta-grid">\n'
             f"<dt>Assessment mode</dt><dd>{escape_html(mode_label)}</dd>\n"
-            "<dt>AI executed</dt><dd>Yes</dd>\n"
-            f"<dt>Provider</dt><dd>{escape_html(metadata.provider)}</dd>\n"
-            f"<dt>Model ID</dt><dd>{escape_html(metadata.model_id)}</dd>\n"
-            f"<dt>Latency (ms)</dt><dd>{metadata.latency_ms:.2f}</dd>\n"
-            f"<dt>Input tokens</dt><dd>{input_tokens}</dd>\n"
-            f"<dt>Output tokens</dt><dd>{output_tokens}</dd>\n"
-            f"<dt>Total tokens</dt><dd>{total_tokens}</dd>\n"
-            f"<dt>Agent version</dt><dd>{escape_html(trace.agent_version)}</dd>\n"
-            f"<dt>Tool-call count</dt><dd>{trace.tool_call_count}</dd>\n"
-            f"<dt>Model-call count</dt><dd>{trace.model_call_count}</dd>\n"
+            "<dt>AI execution status</dt>"
+            f"<dd>{escape_html(ai_execution_status_label(report_input.ai_status))}</dd>\n"
+            "<dt>Provider invocation</dt>"
+            f"<dd>{escape_html(provider_invocation_label(report_input))}</dd>\n"
+            "<dt>AI result included</dt><dd>No</dd>\n"
+            "<dt>Fallback</dt><dd>Deterministic report retained</dd>\n"
+            f"<dt>Provider</dt><dd>{escape_html(provider)}</dd>\n"
+            f"<dt>Model ID</dt><dd>{escape_html(model_id)}</dd>\n"
+            f"<dt>Latency (ms)</dt><dd>{escape_html(latency)}</dd>\n"
+            f"<dt>Input tokens</dt><dd>{escape_html(str(input_tokens))}</dd>\n"
+            f"<dt>Output tokens</dt><dd>{escape_html(str(output_tokens))}</dd>\n"
+            f"<dt>Total tokens</dt><dd>{escape_html(str(total_tokens))}</dd>\n"
             "</dl>\n"
             "</section>\n"
         )
@@ -863,6 +945,17 @@ class ModernizationHTMLReportRenderer:
                 "until an AI-enhanced assessment is requested.</li>\n"
                 "<li>This report separates deterministic evidence from AI interpretation "
                 "and does not invent modernization guidance.</li>\n"
+            )
+        elif report_input.ai_fallback_used:
+            steps = (
+                "<li>Deterministic repository analysis produces findings, technologies, "
+                "and metrics without generative invention.</li>\n"
+                "<li>AI interpretation was requested and attempted against normalized "
+                "evidence.</li>\n"
+                "<li>The model response was not included because it failed AIMF's "
+                "validated output contract or provider execution did not succeed.</li>\n"
+                "<li>This report retains deterministic evidence only and does not include "
+                "unvalidated AI recommendations.</li>\n"
             )
         else:
             steps = (

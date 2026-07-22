@@ -144,7 +144,7 @@ def _recommendation_result() -> AIRecommendationResult:
         key_risks=["Secret exposure"],
         recommendations=[
             AIRecommendation(
-                recommendation_id="REC-001",
+                recommendation_id="AI-REC-001",
                 title="Rotate secrets",
                 description="Remove secrets",
                 rationale="Finding SEC001",
@@ -162,7 +162,7 @@ def _recommendation_result() -> AIRecommendationResult:
                 phase=1,
                 name="Stabilize",
                 objective="Reduce risk",
-                recommendations=["REC-001"],
+                recommendations=["AI-REC-001"],
                 expected_outcomes=["Safer baseline"],
             )
         ],
@@ -378,7 +378,7 @@ def test_local_repository_assessment_success(tmp_path: Path) -> None:
     assert "Repository System Intelligence" in html
     assert "Deterministic Recommendations" in html
     assert "AI Interpretation" in html
-    assert "Rotate secrets" in html or "REC-001" in html
+    assert "Rotate secrets" in html or "AI-REC-001" in html
 
 
 def test_deterministic_assessment_success_without_model_or_aws(
@@ -421,8 +421,8 @@ def test_deterministic_assessment_success_without_model_or_aws(
     html = result.html_report_path.read_text(encoding="utf-8")
     assert "Assessment mode" in html
     assert "Deterministic" in html
-    assert "AI interpretation was not executed" in html
-    assert html.count("AI interpretation was not executed") == 1
+    assert "AI interpretation was not requested" in html
+    assert html.count("AI interpretation was not requested") == 1
     assert "Repository System Intelligence" in html
     assert "Deterministic Recommendations" in html
     assert "AKIAIOSFODNN7EXAMPLE" not in html
@@ -561,10 +561,15 @@ def test_model_id_from_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert result.model_id == "config-model"
 
 
-def test_ai_mode_missing_model_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ai_mode_defaults_to_nova_lite(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AIMF_BEDROCK_MODEL_ID", raising=False)
-    with pytest.raises(AssessmentCommandError, match="Missing Bedrock model ID"):
-        _run(tmp_path, mode=AssessmentMode.AI_ENHANCED, model_id=None, settings=_settings())
+    result, _, _ = _run(
+        tmp_path,
+        mode=AssessmentMode.AI_ENHANCED,
+        model_id=None,
+        settings=_settings(),
+    )
+    assert result.model_id == "amazon.nova-lite-v1:0"
 
 
 def test_model_id_without_with_ai_is_usage_error(tmp_path: Path) -> None:
@@ -605,7 +610,7 @@ def test_provider_timeout(tmp_path: Path) -> None:
     html = result.html_report_path.read_text(encoding="utf-8")
     assert "failed" in html.lower()
     document = json.loads(result.json_report_path.read_text(encoding="utf-8"))
-    assert document["assessment"]["ai"]["status"] == "failed"
+    assert document["assessment"]["ai"]["status"] == "provider_failed"
     assert document["assessment"]["ai"]["executed"] is False
     assert active_provider.calls
 
@@ -616,10 +621,11 @@ def test_provider_authentication_failure(tmp_path: Path) -> None:
     assert result.html_report_path.is_file()
     assert result.ai_executed is False
     document = json.loads(result.json_report_path.read_text(encoding="utf-8"))
-    assert document["assessment"]["ai"]["status"] == "failed"
-    assert "authentication or access denied" in (
-        document["assessment"]["ai"].get("failure_message") or ""
-    )
+    assert document["assessment"]["ai"]["status"] == "authentication_failed"
+    failure = document["assessment"]["ai"].get("failure_message") or ""
+    detail = document["assessment"]["ai"].get("failure_detail") or ""
+    assert "Unable to authenticate with AWS" in failure + detail
+    assert "aws sso login" in detail or "aws sso login" in failure
 
 
 def test_ai_provider_failure_retains_deterministic_report(tmp_path: Path) -> None:
@@ -632,7 +638,7 @@ def test_ai_provider_failure_retains_deterministic_report(tmp_path: Path) -> Non
     assert result.ai_executed is False
     document = json.loads(result.json_report_path.read_text(encoding="utf-8"))
     assert document["assessment"]["summary"]["finding_count"] >= 1
-    assert document["assessment"]["ai"]["status"] == "failed"
+    assert document["assessment"]["ai"]["status"] == "provider_failed"
     assert document["assessment"]["ai"]["recommendations"] == []
     html = result.html_report_path.read_text(encoding="utf-8")
     assert "Repository System Intelligence" in html
@@ -646,8 +652,11 @@ def test_invalid_model_response(tmp_path: Path) -> None:
     assert result.html_report_path.is_file()
     assert result.ai_executed is False
     document = json.loads(result.json_report_path.read_text(encoding="utf-8"))
-    assert document["assessment"]["ai"]["status"] == "failed"
-    assert "Invalid model response" in (document["assessment"]["ai"].get("failure_message") or "")
+    assert document["assessment"]["ai"]["status"] == "validation_failed"
+    failure_message = document["assessment"]["ai"].get("failure_message") or ""
+    assert "contract validation" in failure_message.lower()
+    assert document["assessment"]["ai"].get("failure_code") == "AI_VALIDATION_FAILED"
+    assert (result.run_directory / "ai-response-diagnostic.json").is_file()
 
 
 def test_report_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -729,7 +738,7 @@ def test_cli_deterministic_succeeds_without_model_id(
     assert "Missing Bedrock model ID" not in result.stderr
 
 
-def test_cli_ai_mode_nonzero_exit_for_missing_model_id(
+def test_cli_ai_mode_defaults_model_and_retains_deterministic_on_auth_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -739,6 +748,9 @@ def test_cli_ai_mode_nonzero_exit_for_missing_model_id(
         """
         [repository]
         url = "https://github.com/example/sample-app.git"
+
+        [static_analysis]
+        enabled = false
         """,
         encoding="utf-8",
     )
@@ -756,21 +768,37 @@ def test_cli_ai_mode_nonzero_exit_for_missing_model_id(
             "--with-ai",
         ],
     )
-    assert result.exit_code != 0
-    assert "Missing Bedrock model ID" in result.stderr
+    # Without usable AWS credentials the AI stage fails, but deterministic reports remain.
+    assert result.exit_code == 0, result.stdout + result.stderr
+    assert "AI status: fallback" in result.stdout
+    assert "Missing Bedrock model ID" not in result.stderr
     assert "Traceback" not in result.stderr
+    out_root = tmp_path / "out"
+    run_dirs = [path for path in out_root.rglob("report.json")]
+    assert run_dirs
+    document = json.loads(run_dirs[0].read_text(encoding="utf-8"))
+    assert document["assessment"]["ai"]["status"] in {
+        "authentication_failed",
+        "provider_failed",
+    }
 
 
 def test_verbose_error_mode_includes_traceback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("AIMF_BEDROCK_MODEL_ID", raising=False)
+    def _boom(*_args: Any, **_kwargs: Any) -> tuple[Path, Path]:
+        raise OSError("disk full")
+
+    monkeypatch.setattr("aimf.cli.assess.write_modernization_assessment_reports", _boom)
     config = tmp_path / "aimf.toml"
     config.write_text(
         """
         [repository]
         url = "https://github.com/example/sample-app.git"
+
+        [static_analysis]
+        enabled = false
         """,
         encoding="utf-8",
     )
@@ -785,12 +813,11 @@ def test_verbose_error_mode_includes_traceback(
             str(tmp_path / "out"),
             "--config",
             str(config),
-            "--with-ai",
             "--verbose",
         ],
     )
     assert result.exit_code != 0
-    assert "Missing Bedrock model ID" in result.stderr
+    assert "Report validation or write failure" in result.stderr
     assert "Traceback" in result.stderr
 
 
@@ -1089,6 +1116,9 @@ def test_resolve_model_id_priority(monkeypatch: pytest.MonkeyPatch) -> None:
     assert resolve_bedrock_model_id(cli_model_id=None, settings=settings) == "env-model"
     monkeypatch.delenv("AIMF_BEDROCK_MODEL_ID", raising=False)
     assert resolve_bedrock_model_id(cli_model_id=None, settings=settings) == "config-model"
+    assert (
+        resolve_bedrock_model_id(cli_model_id=None, settings=_settings()) == "amazon.nova-lite-v1:0"
+    )
 
 
 def test_load_settings_reads_bedrock_configuration(tmp_path: Path) -> None:
@@ -1099,13 +1129,14 @@ def test_load_settings_reads_bedrock_configuration(tmp_path: Path) -> None:
         url = "https://github.com/example/sample-app.git"
 
         [ai.bedrock]
-        model_id = "anthropic.claude-test"
+        model_id = "amazon.nova-lite-v1:0"
         region = "us-west-2"
         """,
         encoding="utf-8",
     )
     settings = load_settings(config)
-    assert settings.ai.bedrock.model_id == "anthropic.claude-test"
+    assert settings.ai.provider == "bedrock"
+    assert settings.ai.bedrock.model_id == "amazon.nova-lite-v1:0"
     assert settings.ai.bedrock.region == "us-west-2"
 
 

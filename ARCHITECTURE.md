@@ -250,17 +250,22 @@ LLMAnalysisContextBuilder
 ModernizationPromptBuilder
          │
          ▼
-BedrockAIModelProvider  (exactly one call)
+create_bedrock_runtime_client()   # single Bedrock Runtime client factory
+         │                         # aws.profile / aws.region → env → boto3 chain
+         ▼
+BedrockAIModelProvider.converse()  (exactly one Converse call; model-family neutral)
          │
          ▼
 AIRecommendationResult
          │
          ▼
 validate_recommendation_result
-    ├─ known finding / group / recommendation IDs only
-    ├─ reject empty material evidence
-    ├─ reject unsupported severity escalation
-    └─ reject invented / absolute paths
+    ├─ AI-REC-001… sequential IDs (not PMD / DET / REC-* IDs)
+    ├─ 5–8 recommendations for evidence-rich assessments
+    ├─ related_finding_ids → findings only; related_deterministic_recommendation_ids for DET IDs
+    ├─ 2–4 non-empty phases; every AI-REC in exactly one phase
+    ├─ reject unsupported severity escalation and invented paths
+    └─ recompute evidence_coverage from unique related_finding_ids
          │
          ▼
 ModernizationAssessmentResult → reporting layer
@@ -307,6 +312,7 @@ src/aimf/
 │   ├── modernization_models.py
 │   └── ...
 ├── ai/
+│   ├── aws_config.py        # centralized AWS profile/region + Bedrock client
 │   ├── contracts/           # LLMAnalysisContext + budgeted builder
 │   ├── prompts/
 │   ├── providers/           # Bedrock + parsing
@@ -341,7 +347,10 @@ src/aimf/
 * `workspace.clean_before_clone` — whether to replace an existing clone
 * `static_analysis.enabled` / `fail_on_provider_error`
 * `static_analysis.pmd.*` — executable, profile, rulesets, priority, timeout
-* `ai.bedrock.model_id` / `ai.bedrock.region` — optional defaults for `--with-ai`
+* `aws.profile` / `aws.region` — optional AWS session for Bedrock (preferred over exporting env vars)
+* `ai.provider` — AI provider name (currently `bedrock`)
+* `ai.bedrock.model_id` — Bedrock model ID (defaults to `amazon.nova-lite-v1:0` when unset)
+* `ai.bedrock.region` — optional legacy region fallback
 
 ### Scanners
 
@@ -406,8 +415,10 @@ Assess HTML structure (high level):
 3. Deterministic findings
 4. Deterministic recommendations
 5. Optional comparison section
-6. AI interpretation (executed, failed, or not executed)
+6. AI interpretation (`not_requested`, `succeeded`, or an explicit failure status such as `validation_failed`)
 7. Coverage, execution metadata, methodology
+
+When AI was requested but the response fails validation after a successful provider call, reports show deterministic fallback (not “AI not executed”), retain provider/token metadata, and may write developer-only `ai-response-diagnostic.json` in the run directory. Unvalidated AI content is never included in customer-facing HTML/JSON.
 
 ### AI contracts
 
@@ -415,7 +426,7 @@ Assess HTML structure (high level):
 * `AIRecommendationResult` schema version **1.0.0**
 * Assessment JSON schema/report version **1.2**
 
-Assess JSON AI block includes execution status, provider/model, executive summary, key risks, recommendations, phases, limitations, evidence coverage, token usage, latency, and budget metadata. HTML and JSON must agree on AI status, counts, provider/model, tokens, latency, and evidence references.
+Assess JSON AI block includes execution status, lifecycle stages, provider/model, executive summary, key risks, recommendations, phases, limitations, evidence coverage, token usage, latency, failure code/detail when applicable, and budget metadata. HTML and JSON must agree on AI status, counts, provider/model, tokens, latency, and evidence references. A successful provider call that later fails contract validation is reported as `validation_failed` (with metadata preserved), not as `executed: false` without invocation context.
 
 ## Contracts
 

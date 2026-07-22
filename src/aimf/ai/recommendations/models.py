@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -14,6 +15,7 @@ from aimf.ai.recommendations.enums import (
 )
 
 AI_RECOMMENDATION_SCHEMA_VERSION = "1.0.0"
+AI_RECOMMENDATION_ID_PATTERN = re.compile(r"^AI-REC-\d{3}$")
 
 
 def _sorted_unique_strings(values: list[str], *, label: str) -> list[str]:
@@ -45,17 +47,17 @@ class EvidenceCoverage(BaseModel):
             raise ValueError(
                 "findings_referenced must be less than or equal to findings_considered"
             )
-        if self.total_findings == 0:
+        if self.findings_considered == 0:
             expected = 0.0
         else:
             expected = round(
-                100.0 * self.findings_referenced / self.total_findings,
+                100.0 * self.findings_referenced / self.findings_considered,
                 2,
             )
         if round(self.coverage_percentage, 2) != expected:
             raise ValueError(
                 "coverage_percentage must equal "
-                "round(100 * findings_referenced / total_findings, 2) "
+                "round(100 * findings_referenced / findings_considered, 2) "
                 f"(expected {expected})"
             )
         return self
@@ -75,6 +77,7 @@ class AIRecommendation(BaseModel):
     impact: AIRecommendationImpact
     confidence: AIRecommendationConfidence
     related_finding_ids: list[str] = Field(default_factory=list)
+    related_deterministic_recommendation_ids: list[str] = Field(default_factory=list)
     suggested_actions: list[str] = Field(default_factory=list)
     dependencies: list[str] = Field(default_factory=list)
 
@@ -84,9 +87,21 @@ class AIRecommendation(BaseModel):
         compact = value.strip()
         if not compact:
             raise ValueError("recommendation_id must be a nonempty string")
+        if not AI_RECOMMENDATION_ID_PATTERN.fullmatch(compact):
+            raise ValueError(
+                "recommendation_id must match AI-REC-NNN "
+                "(for example AI-REC-001); PMD rule IDs and deterministic "
+                "recommendation IDs are not valid AI recommendation IDs"
+            )
         return compact
 
-    @field_validator("related_finding_ids", "suggested_actions", "dependencies", mode="before")
+    @field_validator(
+        "related_finding_ids",
+        "related_deterministic_recommendation_ids",
+        "suggested_actions",
+        "dependencies",
+        mode="before",
+    )
     @classmethod
     def normalize_string_lists(cls, value: object) -> object:
         if not isinstance(value, list):
@@ -166,6 +181,16 @@ class AIRecommendationResult(BaseModel):
         if len(recommendation_ids) != len(set(recommendation_ids)):
             raise ValueError("recommendation_id values must be unique")
 
+        if recommendation_ids:
+            expected_ids = [
+                f"AI-REC-{index:03d}" for index in range(1, len(recommendation_ids) + 1)
+            ]
+            if sorted(recommendation_ids) != expected_ids:
+                raise ValueError(
+                    "recommendation_id values must be sequential "
+                    f"AI-REC-001 through AI-REC-{len(recommendation_ids):03d}"
+                )
+
         phase_numbers = [item.phase for item in self.modernization_phases]
         if len(phase_numbers) != len(set(phase_numbers)):
             raise ValueError("modernization phase numbers must be unique")
@@ -181,12 +206,27 @@ class AIRecommendationResult(BaseModel):
                     + ", ".join(unknown_dependencies)
                 )
 
+        assigned: list[str] = []
         for phase in self.modernization_phases:
+            if not phase.recommendations:
+                raise ValueError(f"modernization phase {phase.phase} must not be empty")
             unknown = sorted(set(phase.recommendations) - known_ids)
             if unknown:
                 raise ValueError(
                     "modernization phases reference unknown recommendation IDs: "
                     + ", ".join(unknown)
+                )
+            assigned.extend(phase.recommendations)
+
+        if self.modernization_phases:
+            if len(assigned) != len(set(assigned)):
+                raise ValueError(
+                    "each AI recommendation may appear in at most one modernization phase"
+                )
+            missing = sorted(known_ids - set(assigned))
+            if missing:
+                raise ValueError(
+                    "modernization phases omit recommendation IDs: " + ", ".join(missing)
                 )
 
         if self.schema_version != AI_RECOMMENDATION_SCHEMA_VERSION:

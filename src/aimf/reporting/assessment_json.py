@@ -10,6 +10,7 @@ from typing import Any
 
 from aimf.models import AnalysisResult, Finding, Priority, Recommendation, Severity, Technology
 from aimf.reporting.modernization_models import (
+    AIExecutionStatus,
     AssessmentTiming,
     ModernizationReportInput,
 )
@@ -91,12 +92,17 @@ def build_assessment_json_document(
             "ai": {
                 "executed": report_input.ai_executed,
                 "status": ai_block.get("status"),
+                "result_included": ai_block.get("result_included"),
+                "provider_invoked": ai_block.get("provider_invoked"),
+                "fallback_used": ai_block.get("fallback_used"),
+                "stages_completed": ai_block.get("stages_completed"),
                 "model_id": ai_block["model_id"],
                 "provider": ai_block["provider"],
                 "input_tokens": ai_block["input_tokens"],
                 "output_tokens": ai_block["output_tokens"],
                 "total_tokens": ai_block["total_tokens"],
                 "latency_ms": ai_block["latency_ms"],
+                "stop_reason": ai_block.get("stop_reason"),
                 "executive_summary": ai_block["executive_summary"],
                 "overall_assessment": ai_block["overall_assessment"],
                 "key_risks": ai_block["key_risks"],
@@ -109,14 +115,16 @@ def build_assessment_json_document(
                 "omitted_informational_count": ai_block.get("omitted_informational_count"),
                 "static_analysis_profile": ai_block.get("static_analysis_profile"),
                 "estimated_input_tokens": ai_block.get("estimated_input_tokens"),
+                "failure_code": ai_block.get("failure_code"),
                 "failure_message": ai_block.get("failure_message"),
+                "failure_detail": ai_block.get("failure_detail"),
             },
             "timing": timing,
             "coverage": {
                 "deterministic_analysis": "completed",
                 "static_analysis": static_analysis["status"],
                 "ai_interpretation": ai_block.get("status")
-                or ("executed" if report_input.ai_executed else "not_executed"),
+                or AIExecutionStatus.NOT_REQUESTED.value,
             },
         },
     }
@@ -239,47 +247,40 @@ def _ai_block(report_input: ModernizationReportInput) -> dict[str, Any]:
     ):
         budget = report_input.analysis_context.budget.model_dump(mode="json")
 
-    if report_input.ai_status.value == "failed":
-        return {
-            "status": "failed",
-            "executed": False,
-            "recommendation_count": 0,
-            "phase_count": 0,
-            "model_id": None,
-            "provider": None,
-            "input_tokens": None,
-            "output_tokens": None,
-            "total_tokens": None,
-            "latency_ms": report_input.timing.ai_ms if report_input.timing else None,
-            "executive_summary": None,
-            "overall_assessment": None,
-            "key_risks": [],
-            "recommendations": [],
-            "phases": [],
-            "limitations": [],
-            "evidence_coverage": None,
-            "failure_message": _sanitize_optional_message(report_input.ai_failure_message),
-            "candidate_finding_count": budget.get("candidate_finding_count") if budget else None,
-            "included_finding_count": budget.get("included_finding_count") if budget else None,
-            "omitted_informational_count": (
-                budget.get("omitted_informational_count") if budget else None
-            ),
-            "static_analysis_profile": (budget.get("static_analysis_profile") if budget else None),
-            "estimated_input_tokens": budget.get("estimated_input_tokens") if budget else None,
-        }
+    attempt = report_input.ai_attempt
+    stages = [stage.value for stage in attempt.stages_completed] if attempt is not None else []
+    budget_fields = {
+        "candidate_finding_count": budget.get("candidate_finding_count") if budget else None,
+        "included_finding_count": budget.get("included_finding_count") if budget else None,
+        "omitted_informational_count": (
+            budget.get("omitted_informational_count") if budget else None
+        ),
+        "static_analysis_profile": (budget.get("static_analysis_profile") if budget else None),
+        "estimated_input_tokens": budget.get("estimated_input_tokens") if budget else None,
+    }
 
-    if not report_input.ai_executed or report_input.assessment_result is None:
+    if report_input.ai_status != AIExecutionStatus.SUCCEEDED:
+        latency_ms = None
+        if attempt is not None and attempt.latency_ms is not None:
+            latency_ms = attempt.latency_ms
+        elif report_input.timing is not None:
+            latency_ms = report_input.timing.ai_ms
         return {
-            "status": "not_executed",
+            "status": report_input.ai_status.value,
             "executed": False,
+            "result_included": False,
+            "provider_invoked": report_input.ai_provider_invoked,
+            "fallback_used": report_input.ai_fallback_used,
+            "stages_completed": stages,
             "recommendation_count": 0,
             "phase_count": 0,
-            "model_id": None,
-            "provider": None,
-            "input_tokens": None,
-            "output_tokens": None,
-            "total_tokens": None,
-            "latency_ms": None,
+            "model_id": attempt.model_id if attempt is not None else None,
+            "provider": attempt.provider if attempt is not None else None,
+            "input_tokens": attempt.input_tokens if attempt is not None else None,
+            "output_tokens": attempt.output_tokens if attempt is not None else None,
+            "total_tokens": attempt.total_tokens if attempt is not None else None,
+            "latency_ms": latency_ms,
+            "stop_reason": attempt.stop_reason if attempt is not None else None,
             "executive_summary": None,
             "overall_assessment": None,
             "key_risks": [],
@@ -287,22 +288,34 @@ def _ai_block(report_input: ModernizationReportInput) -> dict[str, Any]:
             "phases": [],
             "limitations": [],
             "evidence_coverage": None,
-            "candidate_finding_count": budget.get("candidate_finding_count") if budget else None,
-            "included_finding_count": budget.get("included_finding_count") if budget else None,
-            "omitted_informational_count": (
-                budget.get("omitted_informational_count") if budget else None
+            "failure_code": (attempt.failure_code if attempt is not None else None),
+            "failure_message": _sanitize_optional_message(report_input.ai_failure_message),
+            "failure_detail": _sanitize_optional_message(
+                attempt.failure_detail if attempt is not None else None
             ),
-            "static_analysis_profile": (budget.get("static_analysis_profile") if budget else None),
-            "estimated_input_tokens": budget.get("estimated_input_tokens") if budget else None,
+            **budget_fields,
         }
 
     assessment = report_input.assessment_result
+    assert assessment is not None
     recommendation = assessment.recommendation_result
     metadata = assessment.model_metadata
     usage = metadata.usage
     return {
-        "status": "executed",
+        "status": AIExecutionStatus.SUCCEEDED.value,
         "executed": True,
+        "result_included": True,
+        "provider_invoked": True,
+        "fallback_used": False,
+        "stages_completed": stages
+        or [
+            "requested",
+            "provider_invoked",
+            "response_received",
+            "response_parsed",
+            "response_validated",
+            "result_included",
+        ],
         "recommendation_count": len(recommendation.recommendations),
         "phase_count": len(recommendation.modernization_phases),
         "model_id": metadata.model_id,
@@ -311,6 +324,7 @@ def _ai_block(report_input: ModernizationReportInput) -> dict[str, Any]:
         "output_tokens": usage.output_tokens,
         "total_tokens": usage.total_tokens,
         "latency_ms": metadata.latency_ms,
+        "stop_reason": metadata.stop_reason,
         "executive_summary": recommendation.executive_summary,
         "overall_assessment": recommendation.overall_assessment,
         "key_risks": list(recommendation.key_risks),
@@ -320,13 +334,10 @@ def _ai_block(report_input: ModernizationReportInput) -> dict[str, Any]:
         "phases": [item.model_dump(mode="json") for item in recommendation.modernization_phases],
         "limitations": list(recommendation.limitations),
         "evidence_coverage": recommendation.evidence_coverage.model_dump(mode="json"),
-        "candidate_finding_count": budget.get("candidate_finding_count") if budget else None,
-        "included_finding_count": budget.get("included_finding_count") if budget else None,
-        "omitted_informational_count": (
-            budget.get("omitted_informational_count") if budget else None
-        ),
-        "static_analysis_profile": budget.get("static_analysis_profile") if budget else None,
-        "estimated_input_tokens": budget.get("estimated_input_tokens") if budget else None,
+        "failure_code": None,
+        "failure_message": None,
+        "failure_detail": None,
+        **budget_fields,
     }
 
 

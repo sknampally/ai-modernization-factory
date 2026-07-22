@@ -255,21 +255,37 @@ def test_known_finding_reference_instructions() -> None:
 
 def test_recommendation_id_instructions() -> None:
     content = ModernizationPromptBuilder().build(_minimal_context()).messages[1].content
-    assert "REC-001" in content
-    assert "REC-002" in content
+    assert "AI-REC-001" in content
+    assert "AI-REC-002" in content
+    assert "Do not reproduce each deterministic recommendation" in content
+    assert "PMD rule IDs" in content
 
 
 def test_dependency_and_phase_instructions() -> None:
     content = ModernizationPromptBuilder().build(_minimal_context()).messages[1].content
-    assert "dependencies may reference only recommendation IDs" in content
-    assert "modernization_phases must contain 3 or 4 phases ordered from phase 1" in content
+    assert "dependencies may reference only AI recommendation IDs" in content
+    assert "modernization_phases must contain 2 to 4 non-empty phases" in content
+    assert "exactly one phase" in content
 
 
 def test_evidence_coverage_instructions() -> None:
     content = ModernizationPromptBuilder().build(_minimal_context()).messages[1].content
-    assert "evidence_coverage must be internally consistent" in content
-    assert "coverage_percentage" in content
+    assert "evidence_coverage" in content
+    assert "AIMF recalculates authoritative coverage" in content
     assert "input_truncated" in content
+
+
+def test_consolidation_and_production_test_instructions() -> None:
+    system = ModernizationPromptBuilder().build(_minimal_context()).messages[0].content
+    developer = ModernizationPromptBuilder().build(_minimal_context()).messages[1].content
+    user = ModernizationPromptBuilder().build(_minimal_context()).messages[2].content
+    assert "evidence inputs" in system
+    assert "Do not reproduce each deterministic recommendation" in developer
+    assert "Prefer fewer, stronger recommendations" in developer
+    assert "production code, test code" in developer
+    assert "Do not assign high modernization impact to a test-only" in developer
+    assert "Do not copy deterministic recommendations one-for-one" in user
+    assert "Address PMD pattern" in developer
 
 
 def test_limitation_and_uncertainty_instructions() -> None:

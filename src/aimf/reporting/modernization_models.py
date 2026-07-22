@@ -20,11 +20,64 @@ class AssessmentMode(StrEnum):
 
 
 class AIExecutionStatus(StrEnum):
-    """Outcome of the optional AI assessment stage."""
+    """Overall outcome of the optional AI assessment stage.
 
-    NOT_EXECUTED = "not_executed"
-    EXECUTED = "executed"
-    FAILED = "failed"
+    Distinguishes lifecycle outcomes so a successful provider call that later
+    fails contract validation is never represented as "AI not executed."
+    """
+
+    NOT_REQUESTED = "not_requested"
+    SUCCEEDED = "succeeded"
+    AUTHENTICATION_FAILED = "authentication_failed"
+    PROVIDER_FAILED = "provider_failed"
+    PARSING_FAILED = "parsing_failed"
+    VALIDATION_FAILED = "validation_failed"
+
+
+class AIExecutionStage(StrEnum):
+    """Ordered lifecycle stages for an AI assessment attempt."""
+
+    REQUESTED = "requested"
+    PROVIDER_INVOKED = "provider_invoked"
+    RESPONSE_RECEIVED = "response_received"
+    RESPONSE_PARSED = "response_parsed"
+    RESPONSE_VALIDATED = "response_validated"
+    RESULT_INCLUDED = "result_included"
+    FALLBACK_USED = "fallback_used"
+
+
+AI_FAILURE_STATUSES = frozenset(
+    {
+        AIExecutionStatus.AUTHENTICATION_FAILED,
+        AIExecutionStatus.PROVIDER_FAILED,
+        AIExecutionStatus.PARSING_FAILED,
+        AIExecutionStatus.VALIDATION_FAILED,
+    }
+)
+
+AI_POST_INVOCATION_FAILURE_STATUSES = frozenset(
+    {
+        AIExecutionStatus.PARSING_FAILED,
+        AIExecutionStatus.VALIDATION_FAILED,
+    }
+)
+
+
+class AIAttemptInfo(BaseModel):
+    """Safe provider-execution metadata retained even when AI content is rejected."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider: str | None = None
+    model_id: str | None = None
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    total_tokens: int | None = Field(default=None, ge=0)
+    latency_ms: float | None = Field(default=None, ge=0.0)
+    stop_reason: str | None = None
+    stages_completed: tuple[AIExecutionStage, ...] = Field(default_factory=tuple)
+    failure_code: str | None = None
+    failure_detail: str | None = None
 
 
 class AssessmentTiming(BaseModel):
@@ -57,8 +110,9 @@ class ModernizationReportInput(BaseModel):
     assessment_mode: AssessmentMode = AssessmentMode.DETERMINISTIC
     analysis_context: LLMAnalysisContext | None = None
     assessment_result: ModernizationAssessmentResult | None = None
-    ai_status: AIExecutionStatus = AIExecutionStatus.NOT_EXECUTED
+    ai_status: AIExecutionStatus = AIExecutionStatus.NOT_REQUESTED
     ai_failure_message: str | None = None
+    ai_attempt: AIAttemptInfo | None = None
     generated_at_utc: datetime
     report_title: str = "Modernization Assessment"
     organization_name: str | None = None
@@ -94,24 +148,46 @@ class ModernizationReportInput(BaseModel):
     @model_validator(mode="after")
     def validate_mode_payload(self) -> ModernizationReportInput:
         if self.assessment_mode == AssessmentMode.AI_ENHANCED:
-            if self.ai_status == AIExecutionStatus.EXECUTED:
+            if self.ai_status == AIExecutionStatus.SUCCEEDED:
                 if self.analysis_context is None:
                     raise ValueError("AI-enhanced reports require analysis_context")
                 if self.assessment_result is None:
                     raise ValueError("AI-enhanced reports require assessment_result")
-            elif self.ai_status == AIExecutionStatus.FAILED:
+            elif self.ai_status in AI_FAILURE_STATUSES:
                 if self.assessment_result is not None:
                     raise ValueError("Failed AI assessments must not include assessment_result")
+            elif self.ai_status == AIExecutionStatus.NOT_REQUESTED:
+                raise ValueError(
+                    "AI-enhanced mode requires an AI execution status other than not_requested"
+                )
             elif self.assessment_result is not None:
-                raise ValueError("AI assessment_result requires ai_status=executed")
+                raise ValueError("AI assessment_result requires ai_status=succeeded")
         elif self.assessment_result is not None:
             raise ValueError("Deterministic reports must not include assessment_result")
         return self
 
     @property
     def ai_executed(self) -> bool:
+        """True when a validated AI result is included in the customer-facing report."""
+
         return (
             self.assessment_mode == AssessmentMode.AI_ENHANCED
-            and self.ai_status == AIExecutionStatus.EXECUTED
+            and self.ai_status == AIExecutionStatus.SUCCEEDED
             and self.assessment_result is not None
         )
+
+    @property
+    def ai_provider_invoked(self) -> bool:
+        """True when the AI provider was invoked (success or post-call failure)."""
+
+        if self.ai_attempt is None:
+            return self.ai_status in {
+                AIExecutionStatus.SUCCEEDED,
+                *AI_POST_INVOCATION_FAILURE_STATUSES,
+                AIExecutionStatus.PROVIDER_FAILED,
+            }
+        return AIExecutionStage.PROVIDER_INVOKED in self.ai_attempt.stages_completed
+
+    @property
+    def ai_fallback_used(self) -> bool:
+        return self.ai_status in AI_FAILURE_STATUSES

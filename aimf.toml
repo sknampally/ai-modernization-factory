@@ -31,3 +31,16 @@ rulesets = [
 ]
 minimum_priority = 5
 timeout_seconds = 120
+
+# Optional AWS session for --with-ai (preferred over exporting AWS_PROFILE / AWS_REGION).
+# After `aws configure sso` and `aws sso login --profile aimf`, AIMF uses this profile.
+[aws]
+profile = "aimf"
+region = "us-east-1"
+
+# Bedrock Converse defaults for --with-ai
+[ai]
+provider = "bedrock"
+
+[ai.bedrock]
+model_id = "amazon.nova-lite-v1:0"

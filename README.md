@@ -82,10 +82,17 @@ rulesets = [
 minimum_priority = 5
 timeout_seconds = 120
 
-# Optional — only required for --with-ai
-# [ai.bedrock]
-# model_id = "amazon.nova-lite-v1:0"
-# region = "us-east-1"
+# Optional — AWS session + Bedrock Converse model for --with-ai
+# (preferred over exporting AWS_PROFILE / AWS_REGION)
+[aws]
+profile = "aimf"
+region = "us-east-1"
+
+[ai]
+provider = "bedrock"
+
+[ai.bedrock]
+model_id = "amazon.nova-lite-v1:0"
 ```
 
 ### Private GitHub repositories
@@ -120,6 +127,60 @@ aimf scan --config aimf.toml
 ```
 
 Never place `token`, `password`, `secret`, or private-key material in `aimf.toml`.
+
+### AWS Setup (for `--with-ai`)
+
+AIMF uses Amazon Bedrock's **Converse** API through a centralized AWS configuration module (`aimf.ai.aws_config`). After SSO login, you do **not** need to export `AWS_PROFILE` or `AWS_REGION`.
+
+1. Install the AWS CLI v2.
+2. Configure SSO once:
+
+```bash
+aws configure sso
+```
+
+Use a named profile such as `aimf` and choose the region where Bedrock is enabled (for example `us-east-1`).
+
+3. Log in before AI-enhanced assessments:
+
+```bash
+aws sso login --profile aimf
+```
+
+4. Optional `aimf.toml` configuration (recommended):
+
+```toml
+[aws]
+profile = "aimf"
+region = "us-east-1"
+
+[ai]
+provider = "bedrock"
+
+[ai.bedrock]
+model_id = "amazon.nova-lite-v1:0"
+```
+
+If `ai.bedrock.model_id` is omitted, AIMF defaults to `amazon.nova-lite-v1:0`.
+
+5. Run:
+
+```bash
+aimf assess \
+  --repo .aimf/workspace/spring-petclinic \
+  --output reports \
+  --with-ai
+```
+
+Resolution order:
+
+* Profile: `[aws].profile` → `AWS_PROFILE` → boto3 default credential chain
+* Region: `[aws].region` → legacy `[ai.bedrock].region` → `AWS_REGION` / `AWS_DEFAULT_REGION` → boto3 default
+* Model ID: `--model-id` → `AIMF_BEDROCK_MODEL_ID` → `[ai.bedrock].model_id` → `amazon.nova-lite-v1:0`
+
+The Bedrock provider is model-family neutral (Converse API). It does not use Anthropic-specific `invoke_model` payloads.
+
+If authentication fails, AIMF prints guidance such as `aws sso login --profile <profile>` without exposing boto3 stack traces. Deterministic HTML/JSON reports are still written.
 
 #### SSH agent
 
@@ -273,8 +334,16 @@ aimf assess \
 aimf assess \
   --repo .aimf/workspace/spring-petclinic \
   --output reports \
+  --with-ai
+```
+
+Model ID and AWS profile/region can come from `aimf.toml` (see AWS Setup). Override the model when needed:
+
+```bash
+aimf assess \
+  --repo .aimf/workspace/spring-petclinic \
+  --output reports \
   --with-ai \
-  --pmd-profile standard \
   --model-id <bedrock-model-id>
 ```
 
@@ -291,7 +360,9 @@ aimf assess \
 | `--static-analysis` / `--no-static-analysis` | follow config | Enable or disable external static analysis for this run |
 | `--verbose` / `-v` | off | Diagnostic logging and failure stack traces |
 
-Model ID resolution for `--with-ai`: CLI `--model-id` → `AIMF_BEDROCK_MODEL_ID` → `ai.bedrock.model_id` in config.
+Model ID resolution for `--with-ai`: CLI `--model-id` → `AIMF_BEDROCK_MODEL_ID` → `ai.bedrock.model_id` → default `amazon.nova-lite-v1:0`.
+
+AWS profile/region resolution: `[aws]` in `aimf.toml` → environment variables → boto3 default chain. No manual `export AWS_PROFILE` / `export AWS_REGION` is required when `[aws]` is configured.
 
 ### Assessment execution levels
 
@@ -343,16 +414,30 @@ When `--with-ai` is set:
 4. Evidence validation rejects unknown finding/group IDs, empty material evidence, unsupported severity escalation, and invented paths
 5. HTML and JSON are written from the same report input; AI content is appended to the same report (not a separate artifact)
 
-If AI provider execution or validation fails:
+AIMF distinguishes three customer-facing outcomes:
+
+| Outcome | When | Report content |
+| --- | --- | --- |
+| Deterministic assessment | `--no-ai` (default) | Deterministic evidence only; AI marked `not_requested` |
+| Successful AI-enhanced assessment | Provider call succeeds and the response passes contract validation | Deterministic evidence plus validated AI interpretation |
+| Deterministic fallback after AI failure | AI was requested but auth, provider, parsing, or validation failed | Deterministic evidence only; AI status records the failure stage |
+
+If AI provider execution, parsing, or validation fails:
 
 * Deterministic HTML and JSON are still written
-* AI status is recorded as `failed` with a sanitized warning
-* Raw model responses and prompts are never exposed in reports
+* AI status is recorded with an explicit lifecycle value (`authentication_failed`, `provider_failed`, `parsing_failed`, or `validation_failed`) — not as “AI not executed”
+* Provider/model/token/latency metadata is retained when the provider call succeeded before the failure
+* A developer-only `ai-response-diagnostic.json` may be written beside the run reports for parsing/validation failures (raw model text + parsed JSON + validation diagnostics). It is not a customer deliverable and is never linked from the HTML report
+* Unvalidated AI recommendations are never included in the customer-facing report
+* Customer-facing warnings stay concise (for example `AI_VALIDATION_FAILED`); detailed validation errors stay in JSON metadata, the diagnostic artifact, and debug logs
+* Raw model responses and prompts are never exposed in HTML
 * No fabricated AI sections are inserted
 
 AI input includes repository identity, technology inventory, architecture/build/dependency/CI/CD/security/cloud facts, static-analysis profile summary, AIMF-native findings, grouped PMD findings, deterministic recommendations, and coverage warnings.
 
-AI output (when successful) includes executive interpretation, key modernization risks (≤5), consolidated AI recommendations (typically 5–8), modernization phases (3–4), limitations, evidence coverage, and token/latency metadata.
+AI output (when successful) includes executive interpretation, key modernization risks (≤5), consolidated AI recommendations (5–8 outcome-oriented initiatives with response-local IDs `AI-REC-001`…), modernization phases (2–4), limitations, evidence coverage recalculated by AIMF from unique `related_finding_ids`, and token/latency metadata.
+
+AI recommendations must synthesize deterministic findings and deterministic recommendations into broader modernization initiatives. They must not copy each deterministic remediation item one-for-one. Traceability uses `related_finding_ids` and optional `related_deterministic_recommendation_ids`.
 
 ### HTML report usability
 

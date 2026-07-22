@@ -214,11 +214,11 @@ def _assessment(
         overall_assessment="The application is moderately ready for modernization.",
         key_risks=["Secret exposure", "Weak dependency controls"],
         recommendations=[
-            _recommendation("REC-001", related=related_one),
+            _recommendation("AI-REC-001", related=related_one),
             _recommendation(
-                "REC-002",
+                "AI-REC-002",
                 related=["SEC002"] if related_ok else [],
-                dependencies=["REC-001"],
+                dependencies=["AI-REC-001"],
                 priority=AIRecommendationPriority.MEDIUM,
             ),
         ],
@@ -227,14 +227,14 @@ def _assessment(
                 phase=1,
                 name="Stabilize",
                 objective="Reduce critical risk",
-                recommendations=["REC-001"],
+                recommendations=["AI-REC-001"],
                 expected_outcomes=["Lower exposure"],
             ),
             ModernizationPhase(
                 phase=2,
                 name="Hardening",
                 objective="Improve dependency hygiene",
-                recommendations=["REC-002"],
+                recommendations=["AI-REC-002"],
                 expected_outcomes=["Safer builds"],
             ),
         ],
@@ -291,9 +291,9 @@ def _report_input(
         analysis_context=context or _context(truncated=truncated),
         assessment_result=assessment or _assessment(),
         ai_status=(
-            AIExecutionStatus.EXECUTED
+            AIExecutionStatus.SUCCEEDED
             if assessment_mode == AssessmentMode.AI_ENHANCED
-            else AIExecutionStatus.NOT_EXECUTED
+            else AIExecutionStatus.NOT_REQUESTED
         ),
         generated_at_utc=datetime(2026, 7, 21, 15, 30, tzinfo=UTC),
         organization_name=organization_name,
@@ -330,7 +330,7 @@ def test_minimal_valid_report(tmp_path: Path) -> None:
         assessment_mode=AssessmentMode.AI_ENHANCED,
         analysis_context=_context(),
         assessment_result=assessment,
-        ai_status=AIExecutionStatus.EXECUTED,
+        ai_status=AIExecutionStatus.SUCCEEDED,
         generated_at_utc=datetime(2026, 7, 21, 15, 30, tzinfo=UTC),
     )
     html = ModernizationHTMLReportRenderer().render(minimal)
@@ -349,15 +349,15 @@ def test_deterministic_report_without_ai(tmp_path: Path) -> None:
     html = ModernizationHTMLReportRenderer().render(report_input)
     assert "Assessment mode" in html
     assert "Deterministic" in html
-    assert "AI interpretation was not executed for this assessment" in html
-    assert html.count("AI interpretation was not executed for this assessment") == 1
+    assert "AI interpretation was not requested for this assessment" in html
+    assert html.count("AI interpretation was not requested for this assessment") == 1
     assert html.count('id="ai-interpretation"') == 1
     assert "Deterministic Findings" in html
     assert "Deterministic Recommendations" in html
     assert "Repository System Intelligence" in html
     assert "Critical finding" in html
     assert "Java" in html
-    assert "REC-001" not in html
+    assert "AI-REC-001" not in html
     assert "Not applicable" in html
     assert "Agent version" not in html
     assert "SYSTEM PROMPT" not in html
@@ -400,8 +400,8 @@ def test_repository_overview_technology_and_metrics(tmp_path: Path) -> None:
 
 def test_risks_recommendations_and_phases(tmp_path: Path) -> None:
     html = ModernizationHTMLReportRenderer().render(_report_input(tmp_path))
-    assert "REC-001" in html
-    assert "Title REC-<wbr>001" in html or "Title REC-001" in html
+    assert "AI-REC-001" in html
+    assert "Title AI-<wbr>REC-<wbr>001" in html or "Title AI-REC-001" in html
     assert "Phase 1: Stabilize" in html
     assert "Reduce critical risk" in html
     assert "EFFORT MEDIUM" in html
@@ -463,7 +463,7 @@ def test_analysis_coverage_section_disabled_static_analysis(tmp_path: Path) -> N
     assert "disabled" in html
     assert "Static analysis was not configured for this assessment." in html
     assert "AI interpretation" in html
-    assert "not executed" in html
+    assert "not_requested" in html
 
 
 def test_analysis_coverage_unavailable_and_timing(tmp_path: Path) -> None:
@@ -517,7 +517,7 @@ def test_html_escaping_and_injection_prevention(tmp_path: Path) -> None:
             overall_assessment="<img src=x onerror=alert(1)>",
             key_risks=["<b>bold</b>"],
             recommendations=[
-                _recommendation("REC-001", related=["SEC001"]),
+                _recommendation("AI-REC-001", related=["SEC001"]),
             ],
             modernization_phases=[],
             evidence_coverage=EvidenceCoverage(
@@ -601,7 +601,7 @@ def test_invalid_phase_reference_rejection(tmp_path: Path) -> None:
                 phase=1,
                 name="Broken",
                 objective="Objective",
-                recommendations=["REC-999"],
+                recommendations=["AI-REC-999"],
                 expected_outcomes=[],
             )
         ],
@@ -614,7 +614,10 @@ def test_invalid_phase_reference_rejection(tmp_path: Path) -> None:
         trace=base.trace,
         raw_model_response=None,
     )
-    with pytest.raises(ModernizationReportValidationError, match="Phase recommendation"):
+    with pytest.raises(
+        ModernizationReportValidationError,
+        match="Phase recommendation|unknown recommendation|omit recommendation",
+    ):
         ModernizationHTMLReportRenderer().render(_report_input(tmp_path, assessment=assessment))
 
 

@@ -33,7 +33,17 @@ from aimf.reporting import (
     ModernizationReportValidationError,
     write_modernization_assessment_reports,
 )
-from aimf.reporting.modernization_models import AIExecutionStatus
+from aimf.reporting.ai_diagnostic import (
+    build_ai_response_diagnostic,
+    write_ai_response_diagnostic,
+)
+from aimf.reporting.ai_status import (
+    attempt_info_from_metadata,
+    customer_failure_message,
+    failure_code_for_status,
+    stages_for_status,
+)
+from aimf.reporting.modernization_models import AIAttemptInfo, AIExecutionStatus
 from aimf.repository_auth.exceptions import (
     RepositoryAccessError,
     UnsupportedRepositoryUrlError,
@@ -70,9 +80,22 @@ AIMF_BEDROCK_MODEL_ID_ENV = "AIMF_BEDROCK_MODEL_ID"
 class AssessmentCommandError(Exception):
     """CLI-facing assessment failure."""
 
-    def __init__(self, message: str, *, exit_code: int = 1) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        exit_code: int = 1,
+        ai_status: AIExecutionStatus | None = None,
+        ai_attempt: AIAttemptInfo | None = None,
+        diagnostic_document: dict[str, object] | None = None,
+        customer_message: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.exit_code = exit_code
+        self.ai_status = ai_status
+        self.ai_attempt = ai_attempt
+        self.diagnostic_document = diagnostic_document
+        self.customer_message = customer_message
 
 
 class AssessmentCommandResult(BaseModel):
@@ -223,8 +246,10 @@ def run_assessment(
     analysis_context: LLMAnalysisContext | None = None
     assessment_result: ModernizationAssessmentResult | None = None
     ai_ms: float | None = None
-    ai_status = "not_executed"
+    ai_status = AIExecutionStatus.NOT_REQUESTED
     ai_failure_message: str | None = None
+    ai_attempt: AIAttemptInfo | None = None
+    ai_diagnostic_document: dict[str, object] | None = None
 
     if mode == AssessmentMode.AI_ENHANCED:
         from aimf.ai.prompts.models import DEFAULT_MAX_CONTEXT_CHARACTERS
@@ -240,7 +265,7 @@ def run_assessment(
         )
         ai_started = perf_counter()
         try:
-            analysis_context, assessment_result = _run_ai_assessment(
+            analysis_context, assessment_result, ai_attempt = _run_ai_assessment(
                 analysis_result=analysis_result,
                 settings=loaded_settings,
                 resolved_model_id=resolved_model_id,
@@ -254,13 +279,26 @@ def run_assessment(
                 context_builder=context_builder,
                 stage=stage,
             )
-            ai_status = AIExecutionStatus.EXECUTED.value
+            ai_status = AIExecutionStatus.SUCCEEDED
         except AssessmentCommandError as error:
-            ai_status = AIExecutionStatus.FAILED.value
-            ai_failure_message = str(error)
+            ai_status = error.ai_status or AIExecutionStatus.PROVIDER_FAILED
+            ai_attempt = error.ai_attempt
+            ai_diagnostic_document = error.diagnostic_document
+            ai_failure_message = error.customer_message or customer_failure_message(ai_status)
+            detail = sanitize_provider_text(str(error))
+            if ai_attempt is not None and ai_attempt.failure_detail is None:
+                ai_attempt = ai_attempt.model_copy(update={"failure_detail": detail})
+            elif ai_attempt is None:
+                ai_attempt = AIAttemptInfo(
+                    model_id=resolved_model_id,
+                    stages_completed=stages_for_status(ai_status),
+                    failure_code=failure_code_for_status(ai_status),
+                    failure_detail=detail,
+                )
+            code = failure_code_for_status(ai_status) or "AI_FAILED"
             warnings.append(
-                "AI assessment failed; deterministic HTML and JSON reports were still written. "
-                f"Details: {sanitize_provider_text(str(error))}"
+                f"{ai_failure_message} [{code}] "
+                "Deterministic HTML and JSON reports were still written."
             )
             warn(warnings[-1])
             if analysis_context is None:
@@ -273,6 +311,8 @@ def run_assessment(
                 except Exception:  # noqa: BLE001 - best effort only
                     analysis_context = None
         ai_ms = round((perf_counter() - ai_started) * 1000, 2)
+        if ai_attempt is not None and ai_attempt.latency_ms is None and ai_ms is not None:
+            ai_attempt = ai_attempt.model_copy(update={"latency_ms": ai_ms})
 
     stage("Generating HTML and JSON reports")
     generated_at = now()
@@ -284,14 +324,14 @@ def run_assessment(
         create_directory=False,
     )
     provisional_total = round((perf_counter() - total_started) * 1000, 2)
-    report_ai_status = AIExecutionStatus(ai_status)
     report_input = ModernizationReportInput(
         analysis_result=analysis_result,
         assessment_mode=mode,
         analysis_context=analysis_context,
         assessment_result=assessment_result,
-        ai_status=report_ai_status,
+        ai_status=ai_status,
         ai_failure_message=ai_failure_message,
+        ai_attempt=ai_attempt,
         generated_at_utc=generated_at,
         report_title=report_title.strip() or DEFAULT_ASSESS_REPORT_TITLE,
         organization_name=organization_name,
@@ -312,6 +352,8 @@ def run_assessment(
             report_input,
             report_paths,
         )
+        if ai_diagnostic_document is not None:
+            write_ai_response_diagnostic(written_paths.run_directory, ai_diagnostic_document)
     except ModernizationReportValidationError as error:
         raise AssessmentCommandError(
             f"Report validation or write failure: {sanitize_provider_text(str(error))}"
@@ -344,7 +386,8 @@ def run_assessment(
         mode=mode,
         analysis_result=analysis_result,
         assessment_result=assessment_result,
-        ai_status=report_ai_status,
+        ai_status=ai_status,
+        ai_attempt=ai_attempt,
         duration_ms=total_ms,
     )
     _print_success_summary(active_console, result)
@@ -356,7 +399,9 @@ def resolve_bedrock_model_id(
     cli_model_id: str | None,
     settings: AimfSettings,
 ) -> str:
-    """Resolve Bedrock model ID from CLI, environment, then config."""
+    """Resolve Bedrock model ID from CLI, environment, config, then default."""
+
+    from aimf.config.settings import DEFAULT_BEDROCK_MODEL_ID
 
     if cli_model_id and cli_model_id.strip():
         return cli_model_id.strip()
@@ -369,10 +414,7 @@ def resolve_bedrock_model_id(
     if configured and configured.strip():
         return configured.strip()
 
-    raise AssessmentCommandError(
-        "Missing Bedrock model ID. Provide --model-id, set "
-        f"{AIMF_BEDROCK_MODEL_ID_ENV}, or configure ai.bedrock.model_id."
-    )
+    return DEFAULT_BEDROCK_MODEL_ID
 
 
 def modernization_report_basename(repository_name: str) -> str:
@@ -443,7 +485,7 @@ def _run_ai_assessment(
     agent: ModernizationAssessmentAgent | None,
     context_builder: LLMAnalysisContextBuilder | None,
     stage: Callable[[str], None],
-) -> tuple[LLMAnalysisContext, ModernizationAssessmentResult]:
+) -> tuple[LLMAnalysisContext, ModernizationAssessmentResult, AIAttemptInfo]:
     from aimf.ai.agents import (
         AgentConfigurationError,
         AgentError,
@@ -469,16 +511,35 @@ def _run_ai_assessment(
         analysis_context = builder.build(analysis_result)
     except AIContextBudgetError as error:
         raise AssessmentCommandError(
-            f"AI context budget failure: {sanitize_provider_text(str(error))}"
+            f"AI context budget failure: {sanitize_provider_text(str(error))}",
+            ai_status=AIExecutionStatus.PROVIDER_FAILED,
+            customer_message=customer_failure_message(AIExecutionStatus.PROVIDER_FAILED),
+            ai_attempt=AIAttemptInfo(
+                model_id=resolved_model_id,
+                stages_completed=stages_for_status(AIExecutionStatus.PROVIDER_FAILED),
+                failure_code=failure_code_for_status(AIExecutionStatus.PROVIDER_FAILED),
+                failure_detail=sanitize_provider_text(str(error)),
+            ),
         ) from error
     except Exception as error:  # noqa: BLE001 - CLI boundary
         raise AssessmentCommandError(
-            f"Failed to build AI context: {sanitize_provider_text(str(error))}"
+            f"Failed to build AI context: {sanitize_provider_text(str(error))}",
+            ai_status=AIExecutionStatus.PROVIDER_FAILED,
+            customer_message=customer_failure_message(AIExecutionStatus.PROVIDER_FAILED),
+            ai_attempt=AIAttemptInfo(
+                model_id=resolved_model_id,
+                stages_completed=stages_for_status(AIExecutionStatus.PROVIDER_FAILED),
+                failure_code=failure_code_for_status(AIExecutionStatus.PROVIDER_FAILED),
+                failure_detail=sanitize_provider_text(str(error)),
+            ),
         ) from error
 
     stage("Running modernization assessment")
     active_prompt_builder = prompt_builder or ModernizationPromptBuilder()
-    active_provider = provider or _create_bedrock_provider(settings)
+    try:
+        active_provider = provider or _create_bedrock_provider(settings)
+    except AIProviderError as error:
+        raise _map_provider_error(error, model_id=resolved_model_id) from error
     active_agent = agent or ModernizationAssessmentAgent(
         active_provider,
         prompt_builder=active_prompt_builder,
@@ -500,51 +561,210 @@ def _run_ai_assessment(
     except AgentValidationError as error:
         cause = error.__cause__
         if isinstance(cause, (AIResponseValidationError, AIResponseParsingError)):
-            raise AssessmentCommandError(
-                f"Invalid model response: {sanitize_provider_text(str(cause))}"
-            ) from error
+            raise _map_response_contract_error(cause, model_id=resolved_model_id) from error
         raise AssessmentCommandError(
-            f"Recommendation validation failure: {sanitize_provider_text(str(error))}"
+            f"Recommendation validation failure: {sanitize_provider_text(str(error))}",
+            ai_status=AIExecutionStatus.VALIDATION_FAILED,
+            customer_message=customer_failure_message(AIExecutionStatus.VALIDATION_FAILED),
+            ai_attempt=AIAttemptInfo(
+                model_id=resolved_model_id,
+                stages_completed=stages_for_status(AIExecutionStatus.VALIDATION_FAILED),
+                failure_code=failure_code_for_status(AIExecutionStatus.VALIDATION_FAILED),
+                failure_detail=sanitize_provider_text(str(error)),
+            ),
+            diagnostic_document=build_ai_response_diagnostic(
+                status=AIExecutionStatus.VALIDATION_FAILED,
+                attempt=AIAttemptInfo(
+                    model_id=resolved_model_id,
+                    stages_completed=stages_for_status(AIExecutionStatus.VALIDATION_FAILED),
+                    failure_code=failure_code_for_status(AIExecutionStatus.VALIDATION_FAILED),
+                    failure_detail=sanitize_provider_text(str(error)),
+                ),
+                raw_model_text=None,
+                parsed_json=None,
+                validation_error_summary=customer_failure_message(
+                    AIExecutionStatus.VALIDATION_FAILED
+                ),
+                validation_diagnostics=sanitize_provider_text(str(error)),
+            ),
         ) from error
     except AIProviderTimeoutError as error:
         raise AssessmentCommandError(
-            f"Bedrock timeout or throttling: {sanitize_provider_text(str(error))}"
+            f"Bedrock timeout or throttling: {sanitize_provider_text(str(error))}",
+            ai_status=AIExecutionStatus.PROVIDER_FAILED,
+            customer_message=customer_failure_message(AIExecutionStatus.PROVIDER_FAILED),
+            ai_attempt=AIAttemptInfo(
+                provider="bedrock",
+                model_id=resolved_model_id,
+                stages_completed=stages_for_status(AIExecutionStatus.PROVIDER_FAILED),
+                failure_code=failure_code_for_status(AIExecutionStatus.PROVIDER_FAILED),
+                failure_detail=sanitize_provider_text(str(error)),
+            ),
         ) from error
     except (AIResponseValidationError, AIResponseParsingError) as error:
-        raise AssessmentCommandError(
-            f"Invalid model response: {sanitize_provider_text(str(error))}"
-        ) from error
+        raise _map_response_contract_error(error, model_id=resolved_model_id) from error
     except AIProviderError as error:
-        raise _map_provider_error(error) from error
+        raise _map_provider_error(error, model_id=resolved_model_id) from error
     except (AgentConfigurationError, AgentExecutionError, AgentError) as error:
         cause = error.__cause__
         if isinstance(cause, AIProviderTimeoutError):
             raise AssessmentCommandError(
-                f"Bedrock timeout or throttling: {sanitize_provider_text(str(cause))}"
+                f"Bedrock timeout or throttling: {sanitize_provider_text(str(cause))}",
+                ai_status=AIExecutionStatus.PROVIDER_FAILED,
+                customer_message=customer_failure_message(AIExecutionStatus.PROVIDER_FAILED),
+                ai_attempt=AIAttemptInfo(
+                    provider="bedrock",
+                    model_id=resolved_model_id,
+                    stages_completed=stages_for_status(AIExecutionStatus.PROVIDER_FAILED),
+                    failure_code=failure_code_for_status(AIExecutionStatus.PROVIDER_FAILED),
+                    failure_detail=sanitize_provider_text(str(cause)),
+                ),
             ) from error
         if isinstance(cause, (AIResponseValidationError, AIResponseParsingError)):
-            raise AssessmentCommandError(
-                f"Invalid model response: {sanitize_provider_text(str(cause))}"
-            ) from error
+            raise _map_response_contract_error(cause, model_id=resolved_model_id) from error
         if isinstance(cause, AIProviderError):
-            raise _map_provider_error(cause) from error
-        raise AssessmentCommandError(sanitize_provider_text(str(error))) from error
+            raise _map_provider_error(cause, model_id=resolved_model_id) from error
+        raise AssessmentCommandError(
+            sanitize_provider_text(str(error)),
+            ai_status=AIExecutionStatus.PROVIDER_FAILED,
+            customer_message=customer_failure_message(AIExecutionStatus.PROVIDER_FAILED),
+            ai_attempt=AIAttemptInfo(
+                model_id=resolved_model_id,
+                stages_completed=stages_for_status(AIExecutionStatus.PROVIDER_FAILED),
+                failure_code=failure_code_for_status(AIExecutionStatus.PROVIDER_FAILED),
+                failure_detail=sanitize_provider_text(str(error)),
+            ),
+        ) from error
     except Exception as error:  # noqa: BLE001 - CLI boundary
         raise AssessmentCommandError(
-            f"Modernization assessment failed: {sanitize_provider_text(str(error))}"
+            f"Modernization assessment failed: {sanitize_provider_text(str(error))}",
+            ai_status=AIExecutionStatus.PROVIDER_FAILED,
+            customer_message=customer_failure_message(AIExecutionStatus.PROVIDER_FAILED),
+            ai_attempt=AIAttemptInfo(
+                model_id=resolved_model_id,
+                stages_completed=stages_for_status(AIExecutionStatus.PROVIDER_FAILED),
+                failure_code=failure_code_for_status(AIExecutionStatus.PROVIDER_FAILED),
+                failure_detail=sanitize_provider_text(str(error)),
+            ),
         ) from error
 
-    return analysis_context, assessment_result
+    attempt = attempt_info_from_metadata(
+        assessment_result.model_metadata,
+        status=AIExecutionStatus.SUCCEEDED,
+    )
+    return analysis_context, assessment_result, attempt
 
 
-def _map_provider_error(error: Exception) -> AssessmentCommandError:
+def _map_response_contract_error(
+    error: Exception,
+    *,
+    model_id: str,
+) -> AssessmentCommandError:
+    from aimf.ai.providers.exceptions import AIResponseValidationError
+
+    status = (
+        AIExecutionStatus.VALIDATION_FAILED
+        if isinstance(error, AIResponseValidationError)
+        else AIExecutionStatus.PARSING_FAILED
+    )
+    metadata = getattr(error, "metadata", None)
+    raw_text = getattr(error, "raw_response_text", None)
+    parsed_payload = getattr(error, "parsed_payload", None)
+    validation_details = getattr(error, "validation_details", None) or str(error)
+    detail = sanitize_provider_text(str(error))
+    if metadata is not None:
+        attempt = attempt_info_from_metadata(
+            metadata,
+            status=status,
+            failure_detail=detail,
+        )
+    else:
+        attempt = AIAttemptInfo(
+            provider="bedrock",
+            model_id=model_id,
+            stages_completed=stages_for_status(status),
+            failure_code=failure_code_for_status(status),
+            failure_detail=detail,
+        )
+    label = "Invalid model response"
+    return AssessmentCommandError(
+        f"{label}: {detail}",
+        ai_status=status,
+        customer_message=customer_failure_message(status),
+        ai_attempt=attempt,
+        diagnostic_document=build_ai_response_diagnostic(
+            status=status,
+            attempt=attempt,
+            raw_model_text=raw_text if isinstance(raw_text, str) else None,
+            parsed_json=parsed_payload if isinstance(parsed_payload, dict) else None,
+            validation_error_summary=customer_failure_message(status),
+            validation_diagnostics=sanitize_provider_text(str(validation_details)),
+        ),
+    )
+
+
+def _map_provider_error(
+    error: Exception,
+    *,
+    model_id: str | None = None,
+) -> AssessmentCommandError:
     message = sanitize_provider_text(str(error))
     lowered = message.lower()
-    if "authentication" in lowered or "access denied" in lowered:
-        return AssessmentCommandError(f"AWS authentication or access denied: {message}")
-    if "throttl" in lowered or "timed out" in lowered or "timeout" in lowered:
-        return AssessmentCommandError(f"Bedrock timeout or throttling: {message}")
-    return AssessmentCommandError(f"Model provider failure: {message}")
+    is_auth = (
+        "unable to authenticate with aws" in lowered
+        or "authentication" in lowered
+        or "authenticate" in lowered
+        or "expired token" in lowered
+        or "sso" in lowered
+        or "nocredentials" in lowered
+    )
+    if is_auth and "unable to authenticate with aws" not in lowered:
+        from aimf.ai.aws_config import format_aws_authentication_error
+
+        message = format_aws_authentication_error()
+        is_auth = True
+
+    if is_auth:
+        status = AIExecutionStatus.AUTHENTICATION_FAILED
+        attempt = AIAttemptInfo(
+            provider="bedrock",
+            model_id=model_id,
+            stages_completed=stages_for_status(status),
+            failure_code=failure_code_for_status(status),
+            failure_detail=message,
+        )
+        return AssessmentCommandError(
+            message,
+            ai_status=status,
+            customer_message=customer_failure_message(status),
+            ai_attempt=attempt,
+        )
+
+    status = AIExecutionStatus.PROVIDER_FAILED
+    if "model access denied" in lowered or "invalid model or request configuration" in lowered:
+        detail = message
+    elif (
+        "throttl" in lowered
+        or "timed out" in lowered
+        or "timeout" in lowered
+        or "temporary service failure" in lowered
+    ):
+        detail = f"Bedrock timeout or throttling: {message}"
+    else:
+        detail = f"Model provider failure: {message}"
+    attempt = AIAttemptInfo(
+        provider="bedrock",
+        model_id=model_id,
+        stages_completed=stages_for_status(status),
+        failure_code=failure_code_for_status(status),
+        failure_detail=detail,
+    )
+    return AssessmentCommandError(
+        detail,
+        ai_status=status,
+        customer_message=customer_failure_message(status),
+        ai_attempt=attempt,
+    )
 
 
 def _static_analysis_warnings(analysis_result: AnalysisResult) -> list[str]:
@@ -601,12 +821,13 @@ def _build_command_result(
     analysis_result: AnalysisResult,
     assessment_result: ModernizationAssessmentResult | None,
     ai_status: AIExecutionStatus,
+    ai_attempt: AIAttemptInfo | None,
     duration_ms: float | None,
 ) -> AssessmentCommandResult:
     deterministic_recommendation_count = len(analysis_result.recommendations)
     if (
         mode == AssessmentMode.AI_ENHANCED
-        and ai_status == AIExecutionStatus.EXECUTED
+        and ai_status == AIExecutionStatus.SUCCEEDED
         and assessment_result is not None
     ):
         recommendation = assessment_result.recommendation_result
@@ -642,10 +863,10 @@ def _build_command_result(
         recommendations_count=deterministic_recommendation_count,
         phases_count=0,
         ai_executed=False,
-        input_tokens=None,
-        output_tokens=None,
-        model_id=None,
-        latency_ms=None,
+        input_tokens=ai_attempt.input_tokens if ai_attempt is not None else None,
+        output_tokens=ai_attempt.output_tokens if ai_attempt is not None else None,
+        model_id=ai_attempt.model_id if ai_attempt is not None else None,
+        latency_ms=ai_attempt.latency_ms if ai_attempt is not None else None,
         duration_ms=duration_ms,
     )
 
@@ -680,12 +901,7 @@ def _scan_repository(
 def _create_bedrock_provider(settings: AimfSettings) -> AIModelProvider:
     from aimf.ai.providers.bedrock import BedrockAIModelProvider
 
-    region = (
-        settings.ai.bedrock.region
-        or os.environ.get("AWS_REGION")
-        or os.environ.get("AWS_DEFAULT_REGION")
-    )
-    return BedrockAIModelProvider(region_name=region)
+    return BedrockAIModelProvider(settings=settings)
 
 
 def _safe_repository_reference(repo: str) -> str:
@@ -711,7 +927,12 @@ def _display_path(path: Path) -> str:
 
 
 def _print_success_summary(console: Console, result: AssessmentCommandResult) -> None:
-    mode_label = "AI Enhanced" if result.mode == AssessmentMode.AI_ENHANCED else "Deterministic"
+    if result.mode == AssessmentMode.AI_ENHANCED and result.ai_executed:
+        mode_label = "AI Enhanced"
+    elif result.mode == AssessmentMode.AI_ENHANCED:
+        mode_label = "AI requested, deterministic fallback"
+    else:
+        mode_label = "Deterministic"
     console.print()
     console.print("[green]Modernization assessment completed[/green]")
     console.print(f"Assessment mode: {mode_label}")
@@ -720,9 +941,15 @@ def _print_success_summary(console: Console, result: AssessmentCommandResult) ->
     console.print(f"Technologies: {result.technologies_count}")
     console.print(f"Deterministic recommendations: {result.recommendations_count}")
     if result.mode == AssessmentMode.AI_ENHANCED and not result.ai_executed:
-        console.print("AI status: failed")
+        console.print("AI status: fallback (validated AI result not included)")
+        if result.model_id:
+            console.print(f"Model ID: {result.model_id}")
+        if result.input_tokens is not None:
+            console.print(f"Input tokens: {result.input_tokens}")
+        if result.output_tokens is not None:
+            console.print(f"Output tokens: {result.output_tokens}")
     if result.ai_executed:
-        console.print("AI status: executed")
+        console.print("AI status: succeeded")
         console.print(f"Modernization phases: {result.phases_count}")
         console.print(
             f"Input tokens: {result.input_tokens if result.input_tokens is not None else '—'}"
@@ -782,8 +1009,9 @@ def register_assess_command(app: typer.Typer) -> None:
             typer.Option(
                 "--model-id",
                 help=(
-                    "Bedrock model ID (required with --with-ai). Defaults to "
-                    "AIMF_BEDROCK_MODEL_ID or ai.bedrock.model_id from configuration."
+                    "Bedrock model ID for --with-ai. Resolution order: this flag, "
+                    "AIMF_BEDROCK_MODEL_ID, ai.bedrock.model_id, then "
+                    "amazon.nova-lite-v1:0."
                 ),
             ),
         ] = None,
