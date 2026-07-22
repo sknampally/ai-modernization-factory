@@ -137,7 +137,7 @@ class BedrockAIModelProvider(AIModelProvider):
             stop_reason=stop_reason,
         )
         try:
-            recommendation_result = parse_recommendation_response(
+            parse_outcome = parse_recommendation_response(
                 raw_response_text,
                 request.analysis_context,
             )
@@ -167,9 +167,11 @@ class BedrockAIModelProvider(AIModelProvider):
             ) from error
 
         return ModelInvocationResult(
-            recommendation_result=recommendation_result,
+            recommendation_result=parse_outcome.result,
             metadata=metadata,
             raw_response_text=raw_response_text,
+            parsed_model_response=parse_outcome.parsed_model_response,
+            normalization_removals=parse_outcome.normalization_removals,
         )
 
 

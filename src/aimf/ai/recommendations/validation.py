@@ -49,11 +49,20 @@ class AIRecommendationValidationError(ValueError):
 
 
 @dataclass(frozen=True)
+class DeterministicRecommendationNormalizationRemoval:
+    """Unknown deterministic recommendation IDs removed from one AI recommendation."""
+
+    recommendation_id: str
+    removed_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class RecommendationValidationOutcome:
     """Accepted recommendation result plus developer-only normalization metadata."""
 
     result: AIRecommendationResult
     removed_unknown_deterministic_recommendation_ids: tuple[str, ...] = ()
+    normalization_removals: tuple[DeterministicRecommendationNormalizationRemoval, ...] = ()
 
 
 def finding_ids_from_context(context: LLMAnalysisContext) -> set[str]:
@@ -243,6 +252,7 @@ def validate_recommendation_result_outcome(
 
     normalized_recommendations: list[AIRecommendation] = []
     removed_unknown: list[str] = []
+    normalization_removals: list[DeterministicRecommendationNormalizationRemoval] = []
     unknown_finding_ids: set[str] = set()
 
     for recommendation in result.recommendations:
@@ -251,6 +261,13 @@ def validate_recommendation_result_outcome(
             available=available_deterministic_ids,
         )
         removed_unknown.extend(removed)
+        if removed:
+            normalization_removals.append(
+                DeterministicRecommendationNormalizationRemoval(
+                    recommendation_id=recommendation.recommendation_id,
+                    removed_ids=tuple(removed),
+                )
+            )
         if kept_det_ids != list(recommendation.related_deterministic_recommendation_ids):
             recommendation = recommendation.model_copy(
                 update={"related_deterministic_recommendation_ids": kept_det_ids}
@@ -318,6 +335,7 @@ def validate_recommendation_result_outcome(
     return RecommendationValidationOutcome(
         result=accepted,
         removed_unknown_deterministic_recommendation_ids=tuple(removed_unknown),
+        normalization_removals=tuple(normalization_removals),
     )
 
 

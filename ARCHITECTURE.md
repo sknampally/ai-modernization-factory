@@ -407,7 +407,7 @@ Supporting parsers:
 | Path | Used by | Artifacts | Retention |
 | ---- | ------- | --------- | --------- |
 | `reporters/` | `aimf scan` | `report.txt`, `report.json`, `report.html` | Keep latest 3 completed runs (delete older) |
-| `reporting/` | `aimf assess` | `report.html`, `report.json` only | Keep latest 3 completed runs (delete older; no archive/) |
+| `reporting/` | `aimf assess` | `report.html`, `report.json`; plus `ai-execution.json` when AI was invoked | Keep latest 3 completed runs (delete older; no archive/) |
 
 Assess HTML structure (high level):
 
@@ -419,7 +419,7 @@ Assess HTML structure (high level):
 6. AI interpretation (`not_requested`, `succeeded`, or an explicit failure status such as `validation_failed`)
 7. Coverage, execution metadata, methodology
 
-When AI was requested but the response fails validation after a successful provider call, reports show deterministic fallback (not “AI not executed”), retain provider/token metadata, and may write developer-only `ai-response-diagnostic.json` in the run directory. Unvalidated AI content is never included in customer-facing HTML/JSON.
+When AI was requested, AIMF writes an internal `ai-execution.json` in the run directory for both successful and failed AI attempts. The artifact separates raw model text, pre-acceptance parsed JSON, and the AIMF-accepted recommendation result (including authoritative evidence coverage), plus optional normalization metadata. It is evaluation-oriented observability data (model comparison / regression / benchmarking), not a customer deliverable, and is never linked from HTML. Failure of writing this artifact emits a warning and does not force AI fallback. When AI fails after a successful provider call, reports show deterministic fallback (not “AI not executed”), retain provider/token metadata, and still write `ai-execution.json` with available raw/parsed layers. Unvalidated AI content is never included in customer-facing HTML/JSON.
 
 ### AI contracts
 

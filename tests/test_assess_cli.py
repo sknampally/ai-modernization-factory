@@ -228,6 +228,7 @@ class FakeProvider(AIModelProvider):
                 stop_reason="end_turn",
             ),
             raw_response_text=self.raw_response_text,
+            parsed_model_response=self.result.model_dump(mode="json"),
         )
 
 
@@ -656,7 +657,7 @@ def test_invalid_model_response(tmp_path: Path) -> None:
     failure_message = document["assessment"]["ai"].get("failure_message") or ""
     assert "contract validation" in failure_message.lower()
     assert document["assessment"]["ai"].get("failure_code") == "AI_VALIDATION_FAILED"
-    assert (result.run_directory / "ai-response-diagnostic.json").is_file()
+    assert (result.run_directory / "ai-execution.json").is_file()
 
 
 def test_report_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -985,13 +986,13 @@ def test_fifth_assessment_still_keeps_three_runs(tmp_path: Path) -> None:
     assert not (repo_dir / "20260721-110000").exists()
 
 
-def test_aged_out_run_deletes_diagnostic_artifact(tmp_path: Path) -> None:
+def test_aged_out_run_deletes_execution_artifact(tmp_path: Path) -> None:
     repo_dir = tmp_path / "reports" / "sample-app"
     historical = repo_dir / "20260721-090000"
     historical.mkdir(parents=True)
     (historical / "report.html").write_text("<html>old</html>", encoding="utf-8")
     (historical / "report.json").write_text("{}", encoding="utf-8")
-    (historical / "ai-response-diagnostic.json").write_text("{}", encoding="utf-8")
+    (historical / "ai-execution.json").write_text("{}", encoding="utf-8")
 
     for moment in [
         datetime(2026, 7, 21, 10, 0, 0, tzinfo=UTC),

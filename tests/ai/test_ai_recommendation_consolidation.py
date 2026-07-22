@@ -419,9 +419,9 @@ def test_parse_accepts_inconsistent_model_coverage_without_fallback() -> None:
         "limitations": [],
     }
     parsed = parse_recommendation_response(json.dumps(payload), context)
-    assert parsed.evidence_coverage.findings_considered == 2
-    assert parsed.evidence_coverage.findings_referenced == 2
-    assert parsed.evidence_coverage.coverage_percentage == 100.0
+    assert parsed.result.evidence_coverage.findings_considered == 2
+    assert parsed.result.evidence_coverage.findings_referenced == 2
+    assert parsed.result.evidence_coverage.coverage_percentage == 100.0
 
 
 def test_aggregated_validation_issues_include_count_and_unknown_findings() -> None:

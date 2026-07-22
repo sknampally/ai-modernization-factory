@@ -27,10 +27,10 @@ from aimf.reporting import (
     build_assessment_json_document,
     write_modernization_assessment_reports,
 )
-from aimf.reporting.ai_diagnostic import (
-    AI_RESPONSE_DIAGNOSTIC_FILENAME,
-    build_ai_response_diagnostic,
-    write_ai_response_diagnostic,
+from aimf.reporting.ai_execution import (
+    AI_EXECUTION_FILENAME,
+    build_ai_execution_document,
+    write_ai_execution_artifact,
 )
 from aimf.reporting.ai_status import (
     AI_FAILURE_CODE_VALIDATION,
@@ -142,7 +142,7 @@ def test_validation_failure_preserves_provider_metadata_in_html_and_json(
     assert "AI_VALIDATION_FAILED" in html
 
 
-def test_validation_failure_writes_diagnostic_without_credentials(tmp_path: Path) -> None:
+def test_validation_failure_writes_execution_artifact_without_credentials(tmp_path: Path) -> None:
     attempt = AIAttemptInfo(
         provider="bedrock",
         model_id="amazon.nova-lite-v1:0",
@@ -155,33 +155,36 @@ def test_validation_failure_writes_diagnostic_without_credentials(tmp_path: Path
         failure_code=AI_FAILURE_CODE_VALIDATION,
         failure_detail="unknown recommendation id REC-999",
     )
-    document = build_ai_response_diagnostic(
+    document = build_ai_execution_document(
         status=AIExecutionStatus.VALIDATION_FAILED,
         attempt=attempt,
         raw_model_text='{"recommendations":[{"recommendation_id":"AI-REC-001"}]}',
-        parsed_json={
+        parsed_model_response={
             "recommendations": [{"recommendation_id": "AI-REC-001"}],
             "aws_access_key_id": "AKIAIOSFODNN7EXAMPLE",
             "authorization": "Bearer secret",
         },
-        validation_error_summary=customer_failure_message(AIExecutionStatus.VALIDATION_FAILED),
-        validation_diagnostics="unknown recommendation id REC-999",
+        accepted_ai_result=None,
+        failure_message=customer_failure_message(AIExecutionStatus.VALIDATION_FAILED),
+        failure_detail="unknown recommendation id REC-999",
         timestamp=datetime(2026, 7, 21, 15, 30, tzinfo=UTC),
     )
-    path = write_ai_response_diagnostic(tmp_path, document)
-    assert path.name == AI_RESPONSE_DIAGNOSTIC_FILENAME
+    path = write_ai_execution_artifact(tmp_path, document)
+    assert path.name == AI_EXECUTION_FILENAME
     loaded = json.loads(path.read_text(encoding="utf-8"))
+    assert loaded["artifact"] == "ai-execution"
+    assert loaded["schema_version"] == "1.0.0"
     assert loaded["execution_status"] == "validation_failed"
     assert loaded["raw_model_text"].startswith('{"recommendations"')
-    assert loaded["parsed_json"]["recommendations"][0]["recommendation_id"] == "AI-REC-001"
-    assert "aws_access_key_id" not in loaded["parsed_json"]
-    assert "authorization" not in loaded["parsed_json"]
-    assert "credential" not in json.dumps(loaded).lower()
-    assert loaded["failure_code"] == "AI_VALIDATION_FAILED"
-    assert (
-        "REC-999" in loaded["validation_diagnostics"]
-        or "AI-REC-999" in loaded["validation_diagnostics"]
+    assert loaded["parsed_model_response"]["recommendations"][0]["recommendation_id"] == (
+        "AI-REC-001"
     )
+    assert loaded["accepted_ai_result"] is None
+    assert "aws_access_key_id" not in loaded["parsed_model_response"]
+    assert "authorization" not in loaded["parsed_model_response"]
+    assert "credential" not in json.dumps(loaded).lower()
+    assert loaded["failure"]["code"] == "AI_VALIDATION_FAILED"
+    assert "REC-999" in (loaded["failure"]["detail"] or "")
 
 
 def test_validation_failure_keeps_deterministic_reports(tmp_path: Path) -> None:
@@ -287,7 +290,7 @@ class _ValidationFailingProvider(AIModelProvider):
         )
 
 
-def test_assess_validation_failure_writes_diagnostic_and_preserves_metadata(
+def test_assess_validation_failure_writes_execution_artifact_and_preserves_metadata(
     tmp_path: Path,
 ) -> None:
     result, provider, _ = _run(
@@ -310,20 +313,23 @@ def test_assess_validation_failure_writes_diagnostic_and_preserves_metadata(
     assert ai["failure_code"] == "AI_VALIDATION_FAILED"
     assert "contract validation" in (ai["failure_message"] or "").lower()
     assert "REC-999" in (ai["failure_detail"] or "")
+    assert ai["internal_execution_artifact"] == "ai-execution.json"
     assert "AI interpretation was not executed" not in html
     assert "Enable AI-" not in html
     assert "AI response rejected during contract validation" in html
     assert "44" in html
+    assert "ai-execution.json" not in html
 
-    diagnostic_path = result.run_directory / AI_RESPONSE_DIAGNOSTIC_FILENAME
-    assert diagnostic_path.is_file()
-    diagnostic = json.loads(diagnostic_path.read_text(encoding="utf-8"))
-    assert diagnostic["execution_status"] == "validation_failed"
-    assert diagnostic["raw_model_text"]
-    phase0 = diagnostic["parsed_json"]["modernization_phases"][0]
+    execution_path = result.run_directory / AI_EXECUTION_FILENAME
+    assert execution_path.is_file()
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+    assert execution["execution_status"] == "validation_failed"
+    assert execution["raw_model_text"]
+    phase0 = execution["parsed_model_response"]["modernization_phases"][0]
     assert phase0["recommendation_ids"] == ["AI-REC-999"]
-    assert "aws_access_key" not in json.dumps(diagnostic).lower()
-    assert "authorization" not in json.dumps(diagnostic).lower()
+    assert execution["accepted_ai_result"] is None
+    assert "aws_access_key" not in json.dumps(execution).lower()
+    assert "authorization" not in json.dumps(execution).lower()
 
 
 def test_stages_for_validation_failure() -> None:

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from aimf.ai.contracts.models import LLMAnalysisContext
 from aimf.ai.prompts.models import PromptRequest
 from aimf.ai.recommendations.models import AIRecommendationResult
+from aimf.ai.recommendations.validation import DeterministicRecommendationNormalizationRemoval
 
 DEFAULT_MAX_OUTPUT_TOKENS = 8192
 DEFAULT_TIMEOUT_SECONDS = 60.0
@@ -56,6 +59,8 @@ class ModelInvocationResult(BaseModel):
     recommendation_result: AIRecommendationResult
     metadata: ModelInvocationMetadata
     raw_response_text: str
+    parsed_model_response: dict[str, Any] | None = None
+    normalization_removals: tuple[DeterministicRecommendationNormalizationRemoval, ...] = ()
 
 
 class ModernizationModelRequest(BaseModel):

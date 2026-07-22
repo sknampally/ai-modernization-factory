@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from aimf.models import AnalysisResult, Finding, Priority, Recommendation, Severity, Technology
+from aimf.reporting.ai_execution import AI_EXECUTION_FILENAME
 from aimf.reporting.modernization_models import (
     AIExecutionStatus,
     AssessmentTiming,
@@ -118,6 +119,7 @@ def build_assessment_json_document(
                 "failure_code": ai_block.get("failure_code"),
                 "failure_message": ai_block.get("failure_message"),
                 "failure_detail": ai_block.get("failure_detail"),
+                "internal_execution_artifact": ai_block.get("internal_execution_artifact"),
             },
             "timing": timing,
             "coverage": {
@@ -293,6 +295,11 @@ def _ai_block(report_input: ModernizationReportInput) -> dict[str, Any]:
             "failure_detail": _sanitize_optional_message(
                 attempt.failure_detail if attempt is not None else None
             ),
+            "internal_execution_artifact": (
+                AI_EXECUTION_FILENAME
+                if report_input.ai_status != AIExecutionStatus.NOT_REQUESTED
+                else None
+            ),
             **budget_fields,
         }
 
@@ -337,6 +344,7 @@ def _ai_block(report_input: ModernizationReportInput) -> dict[str, Any]:
         "failure_code": None,
         "failure_message": None,
         "failure_detail": None,
+        "internal_execution_artifact": AI_EXECUTION_FILENAME,
         **budget_fields,
     }
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import ValidationError
@@ -17,7 +18,8 @@ from aimf.ai.providers.exceptions import (
 from aimf.ai.recommendations.models import AIRecommendationResult
 from aimf.ai.recommendations.validation import (
     AIRecommendationValidationError,
-    validate_recommendation_result,
+    DeterministicRecommendationNormalizationRemoval,
+    validate_recommendation_result_outcome,
 )
 from aimf.security.redaction import redact_secrets
 
@@ -32,6 +34,15 @@ _AWS_KEY_PATTERN = re.compile(r"AKIA[0-9A-Z]{16}")
 _AWS_SECRET_PATTERN = re.compile(
     r"(?i)(aws_secret_access_key\s*[=:]\s*)(\S+)",
 )
+
+
+@dataclass(frozen=True)
+class RecommendationParseOutcome:
+    """Accepted recommendation plus pre-acceptance parsed JSON and normalization."""
+
+    result: AIRecommendationResult
+    parsed_model_response: dict[str, Any]
+    normalization_removals: tuple[DeterministicRecommendationNormalizationRemoval, ...] = ()
 
 
 def sanitize_provider_text(text: str | None, *, max_length: int = _MAX_ERROR_EXCERPT) -> str:
@@ -49,14 +60,15 @@ def sanitize_provider_text(text: str | None, *, max_length: int = _MAX_ERROR_EXC
 def parse_recommendation_response(
     raw_text: str,
     analysis_context: LLMAnalysisContext,
-) -> AIRecommendationResult:
-    """Parse and validate a model response into AIRecommendationResult.
+) -> RecommendationParseOutcome:
+    """Parse and validate a model response into an accepted recommendation result.
 
     Accepts a single JSON object, optionally wrapped as one fenced code block.
     Rejects surrounding prose, multiple JSON values, and repairs nothing.
 
     Model-supplied ``evidence_coverage`` numbers are treated as untrusted and are
-    replaced by AIMF after structural and referential validation.
+    replaced by AIMF after structural and referential validation. The original
+    parsed JSON object is retained separately for evaluation artifacts.
     """
 
     try:
@@ -99,7 +111,7 @@ def parse_recommendation_response(
         ) from error
 
     try:
-        return validate_recommendation_result(result, analysis_context)
+        outcome = validate_recommendation_result_outcome(result, analysis_context)
     except AIRecommendationValidationError as error:
         raise AIResponseValidationError(
             "Model response failed context-aware recommendation validation: "
@@ -108,6 +120,12 @@ def parse_recommendation_response(
             parsed_payload=data,
             validation_details=str(error),
         ) from error
+
+    return RecommendationParseOutcome(
+        result=outcome.result,
+        parsed_model_response=data,
+        normalization_removals=outcome.normalization_removals,
+    )
 
 
 def _extract_json_object_text(raw_text: str) -> str:

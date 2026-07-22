@@ -216,6 +216,7 @@ class FakeProvider(AIModelProvider):
                 stop_reason="end_turn",
             ),
             raw_response_text=self.raw_response_text,
+            parsed_model_response=self.result.model_dump(mode="json"),
         )
 
 
@@ -239,7 +240,7 @@ def test_successful_end_to_end_orchestration() -> None:
     assert result.recommendation_result == _valid_result()
     assert result.model_metadata.provider == "fake"
     assert result.trace.status == AgentExecutionStatus.COMPLETED
-    assert result.raw_model_response is None
+    assert result.raw_model_response == provider.raw_response_text
     assert len(provider.calls) == 1
 
 
@@ -297,8 +298,9 @@ def test_complete_successful_trace_shape() -> None:
 
 def test_optional_raw_response_inclusion_and_default_exclusion() -> None:
     provider = FakeProvider(raw_response_text='{"raw":true}')
-    excluded = ModernizationAssessmentAgent(provider).run(_context(), _options())
-    assert excluded.raw_model_response is None
+    # Raw response is always retained for the internal AI execution artifact.
+    always = ModernizationAssessmentAgent(provider).run(_context(), _options())
+    assert always.raw_model_response == '{"raw":true}'
 
     included = ModernizationAssessmentAgent(provider).run(
         _context(),

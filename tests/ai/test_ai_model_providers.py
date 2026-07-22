@@ -400,7 +400,7 @@ def test_strict_json_parsing() -> None:
     context = _context("SEC001", "SEC002")
     payload = ai_recommendation_result_to_json(_valid_result(), indent=None)
     parsed = parse_recommendation_response(f"  {payload}  ", context)
-    assert parsed == _valid_result()
+    assert parsed.result == _valid_result()
 
 
 def test_fenced_json_parsing() -> None:
@@ -408,7 +408,7 @@ def test_fenced_json_parsing() -> None:
     payload = ai_recommendation_result_to_json(_valid_result(), indent=2)
     fenced = f"```json\n{payload}\n```"
     parsed = parse_recommendation_response(fenced, context)
-    assert parsed == _valid_result()
+    assert parsed.result == _valid_result()
 
 
 def test_bare_fenced_json_parsing() -> None:
@@ -416,7 +416,7 @@ def test_bare_fenced_json_parsing() -> None:
     payload = ai_recommendation_result_to_json(_valid_result(), indent=2)
     fenced = f"```\n{payload}\n```"
     parsed = parse_recommendation_response(fenced, context)
-    assert parsed == _valid_result()
+    assert parsed.result == _valid_result()
 
 
 def test_prose_rejection() -> None:

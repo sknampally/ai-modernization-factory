@@ -20,6 +20,7 @@ from aimf.ai.recommendations.serialization import (
 )
 from aimf.ai.recommendations.validation import (
     AIRecommendationValidationError,
+    DeterministicRecommendationNormalizationRemoval,
     RecommendationValidationOutcome,
     compute_evidence_coverage,
     deterministic_recommendation_ids_from_context,
@@ -38,6 +39,7 @@ __all__ = [
     "AIRecommendationPriority",
     "AIRecommendationResult",
     "AIRecommendationValidationError",
+    "DeterministicRecommendationNormalizationRemoval",
     "EvidenceCoverage",
     "ModernizationPhase",
     "RecommendationValidationOutcome",

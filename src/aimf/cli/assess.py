@@ -32,9 +32,10 @@ from aimf.reporting import (
     ModernizationReportValidationError,
     write_modernization_assessment_reports,
 )
-from aimf.reporting.ai_diagnostic import (
-    build_ai_response_diagnostic,
-    write_ai_response_diagnostic,
+from aimf.reporting.ai_execution import (
+    AI_EXECUTION_FILENAME,
+    build_ai_execution_document,
+    try_write_ai_execution_artifact,
 )
 from aimf.reporting.ai_status import (
     attempt_info_from_metadata,
@@ -87,13 +88,16 @@ class AssessmentCommandError(Exception):
         ai_status: AIExecutionStatus | None = None,
         ai_attempt: AIAttemptInfo | None = None,
         diagnostic_document: dict[str, object] | None = None,
+        execution_document: dict[str, object] | None = None,
         customer_message: str | None = None,
     ) -> None:
         super().__init__(message)
         self.exit_code = exit_code
         self.ai_status = ai_status
         self.ai_attempt = ai_attempt
-        self.diagnostic_document = diagnostic_document
+        # Prefer execution_document; diagnostic_document kept as a temporary alias.
+        self.execution_document = execution_document or diagnostic_document
+        self.diagnostic_document = self.execution_document
         self.customer_message = customer_message
 
 
@@ -248,7 +252,7 @@ def run_assessment(
     ai_status = AIExecutionStatus.NOT_REQUESTED
     ai_failure_message: str | None = None
     ai_attempt: AIAttemptInfo | None = None
-    ai_diagnostic_document: dict[str, object] | None = None
+    ai_execution_document: dict[str, object] | None = None
 
     if mode == AssessmentMode.AI_ENHANCED:
         from aimf.ai.prompts.models import DEFAULT_MAX_CONTEXT_CHARACTERS
@@ -279,10 +283,17 @@ def run_assessment(
                 stage=stage,
             )
             ai_status = AIExecutionStatus.SUCCEEDED
+            ai_execution_document = build_ai_execution_document(
+                status=AIExecutionStatus.SUCCEEDED,
+                attempt=ai_attempt,
+                analysis_context=analysis_context,
+                assessment_result=assessment_result,
+                failure_message=None,
+            )
         except AssessmentCommandError as error:
             ai_status = error.ai_status or AIExecutionStatus.PROVIDER_FAILED
             ai_attempt = error.ai_attempt
-            ai_diagnostic_document = error.diagnostic_document
+            ai_execution_document = error.execution_document
             ai_failure_message = error.customer_message or customer_failure_message(ai_status)
             detail = sanitize_provider_text(str(error))
             if ai_attempt is not None and ai_attempt.failure_detail is None:
@@ -309,6 +320,17 @@ def run_assessment(
                     )
                 except Exception:  # noqa: BLE001 - best effort only
                     analysis_context = None
+            if ai_execution_document is None:
+                ai_execution_document = build_ai_execution_document(
+                    status=ai_status,
+                    attempt=ai_attempt,
+                    analysis_context=analysis_context,
+                    raw_model_text=None,
+                    parsed_model_response=None,
+                    accepted_ai_result=None,
+                    failure_message=ai_failure_message,
+                    failure_detail=(ai_attempt.failure_detail if ai_attempt is not None else None),
+                )
         ai_ms = round((perf_counter() - ai_started) * 1000, 2)
         if ai_attempt is not None and ai_attempt.latency_ms is None and ai_ms is not None:
             ai_attempt = ai_attempt.model_copy(update={"latency_ms": ai_ms})
@@ -351,8 +373,17 @@ def run_assessment(
             report_input,
             report_paths,
         )
-        if ai_diagnostic_document is not None:
-            write_ai_response_diagnostic(written_paths.run_directory, ai_diagnostic_document)
+        if ai_execution_document is not None:
+            written = try_write_ai_execution_artifact(
+                written_paths.run_directory,
+                ai_execution_document,
+            )
+            if written is None:
+                warn(
+                    "AI execution artifact could not be written; "
+                    "customer HTML and JSON reports were kept. "
+                    f"Expected file: {AI_EXECUTION_FILENAME}"
+                )
     except ModernizationReportValidationError as error:
         raise AssessmentCommandError(
             f"Report validation or write failure: {sanitize_provider_text(str(error))}"
@@ -571,7 +602,7 @@ def _run_ai_assessment(
                 failure_code=failure_code_for_status(AIExecutionStatus.VALIDATION_FAILED),
                 failure_detail=sanitize_provider_text(str(error)),
             ),
-            diagnostic_document=build_ai_response_diagnostic(
+            execution_document=build_ai_execution_document(
                 status=AIExecutionStatus.VALIDATION_FAILED,
                 attempt=AIAttemptInfo(
                     model_id=resolved_model_id,
@@ -579,12 +610,12 @@ def _run_ai_assessment(
                     failure_code=failure_code_for_status(AIExecutionStatus.VALIDATION_FAILED),
                     failure_detail=sanitize_provider_text(str(error)),
                 ),
+                analysis_context=analysis_context,
                 raw_model_text=None,
-                parsed_json=None,
-                validation_error_summary=customer_failure_message(
-                    AIExecutionStatus.VALIDATION_FAILED
-                ),
-                validation_diagnostics=sanitize_provider_text(str(error)),
+                parsed_model_response=None,
+                accepted_ai_result=None,
+                failure_message=customer_failure_message(AIExecutionStatus.VALIDATION_FAILED),
+                failure_detail=sanitize_provider_text(str(error)),
             ),
         ) from error
     except AIProviderTimeoutError as error:
@@ -691,13 +722,14 @@ def _map_response_contract_error(
         ai_status=status,
         customer_message=customer_failure_message(status),
         ai_attempt=attempt,
-        diagnostic_document=build_ai_response_diagnostic(
+        execution_document=build_ai_execution_document(
             status=status,
             attempt=attempt,
             raw_model_text=raw_text if isinstance(raw_text, str) else None,
-            parsed_json=parsed_payload if isinstance(parsed_payload, dict) else None,
-            validation_error_summary=customer_failure_message(status),
-            validation_diagnostics=sanitize_provider_text(str(validation_details)),
+            parsed_model_response=parsed_payload if isinstance(parsed_payload, dict) else None,
+            accepted_ai_result=None,
+            failure_message=customer_failure_message(status),
+            failure_detail=sanitize_provider_text(str(validation_details)),
         ),
     )
 
@@ -737,6 +769,13 @@ def _map_provider_error(
             ai_status=status,
             customer_message=customer_failure_message(status),
             ai_attempt=attempt,
+            execution_document=build_ai_execution_document(
+                status=status,
+                attempt=attempt,
+                accepted_ai_result=None,
+                failure_message=customer_failure_message(status),
+                failure_detail=message,
+            ),
         )
 
     status = AIExecutionStatus.PROVIDER_FAILED
@@ -763,6 +802,13 @@ def _map_provider_error(
         ai_status=status,
         customer_message=customer_failure_message(status),
         ai_attempt=attempt,
+        execution_document=build_ai_execution_document(
+            status=status,
+            attempt=attempt,
+            accepted_ai_result=None,
+            failure_message=customer_failure_message(status),
+            failure_detail=detail,
+        ),
     )
 
 

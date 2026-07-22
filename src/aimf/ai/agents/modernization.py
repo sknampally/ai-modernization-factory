@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time
+from typing import Any
 
 from aimf.ai.agents.exceptions import (
     AgentConfigurationError,
@@ -37,6 +40,7 @@ from aimf.ai.providers.parsing import sanitize_provider_text
 from aimf.ai.recommendations.models import AIRecommendationResult
 from aimf.ai.recommendations.validation import (
     AIRecommendationValidationError,
+    DeterministicRecommendationNormalizationRemoval,
     validate_recommendation_result_outcome,
 )
 from aimf.ai.tools import AIMFToolRegistry, build_analysis_tool_registry
@@ -87,20 +91,38 @@ class ModernizationAssessmentAgent:
                 options,
                 recorder,
             )
-            recommendation_result = self._validate_recommendations(
+            recommendation_result, normalization_removals = self._validate_recommendations(
                 model_result.recommendation_result,
                 context,
                 recorder,
             )
+            if model_result.normalization_removals:
+                normalization_removals = model_result.normalization_removals
+
+            prompt_hash = _stable_content_hash(
+                {
+                    "template_version": prompt_request.metadata.prompt_template_version,
+                    "messages": [
+                        {"role": message.role, "content": message.content}
+                        for message in prompt_request.messages
+                    ],
+                }
+            )
+            context_hash = _stable_content_hash(context.model_dump(mode="json"))
 
             trace = recorder.finalize(AgentExecutionStatus.COMPLETED)
             return ModernizationAssessmentResult(
                 recommendation_result=recommendation_result,
                 model_metadata=model_result.metadata,
                 trace=trace,
-                raw_model_response=(
-                    model_result.raw_response_text if options.include_raw_model_response else None
-                ),
+                # Always retain raw text for the internal AI execution artifact.
+                # Customer HTML/JSON never serialize this field.
+                raw_model_response=model_result.raw_response_text,
+                parsed_model_response=model_result.parsed_model_response,
+                normalization_removals=normalization_removals,
+                prompt_template_version=prompt_request.metadata.prompt_template_version,
+                prompt_hash=prompt_hash,
+                context_hash=context_hash,
             )
         except AgentError:
             raise
@@ -397,7 +419,7 @@ class ModernizationAssessmentAgent:
         recommendation_result: AIRecommendationResult,
         context: LLMAnalysisContext,
         recorder: AgentTraceRecorder,
-    ) -> AIRecommendationResult:
+    ) -> tuple[AIRecommendationResult, tuple[DeterministicRecommendationNormalizationRemoval, ...]]:
         started_at = utc_now()
         started_perf = time.perf_counter()
         input_summary: dict[str, JSONValue] = {
@@ -457,7 +479,22 @@ class ModernizationAssessmentAgent:
             input_summary=input_summary,
             output_summary=output_summary,
         )
-        return validated
+        return validated, outcome.normalization_removals
+
+
+def _stable_content_hash(payload: str | bytes | dict[str, Any] | list[Any]) -> str:
+    if isinstance(payload, bytes):
+        raw = payload
+    elif isinstance(payload, str):
+        raw = payload.encode("utf-8")
+    else:
+        raw = json.dumps(
+            payload,
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
 
 
 def _tool_output_summary(result: AIMFToolResult) -> dict[str, JSONValue]:

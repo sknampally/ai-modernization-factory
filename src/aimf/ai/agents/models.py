@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from aimf.ai.prompts.models import PromptBuildOptions
 from aimf.ai.providers.models import ModelInvocationMetadata, ModelInvocationOptions
 from aimf.ai.recommendations.models import AIRecommendationResult
+from aimf.ai.recommendations.validation import DeterministicRecommendationNormalizationRemoval
 
 AGENT_NAME = "modernization_assessment"
 AGENT_VERSION = "1.0.0"
@@ -141,3 +142,8 @@ class ModernizationAssessmentResult(BaseModel):
     model_metadata: ModelInvocationMetadata
     trace: AgentExecutionTrace
     raw_model_response: str | None = None
+    parsed_model_response: dict[str, Any] | None = None
+    normalization_removals: tuple[DeterministicRecommendationNormalizationRemoval, ...] = ()
+    prompt_template_version: str | None = None
+    prompt_hash: str | None = None
+    context_hash: str | None = None

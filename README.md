@@ -309,24 +309,27 @@ reports/
 └── spring-petclinic/
     ├── 20260721-153045/
     │   ├── report.html
-    │   └── report.json
+    │   ├── report.json
+    │   └── ai-execution.json   # only when an AI provider was invoked
     ├── 20260721-160000/
     │   ├── report.html
     │   └── report.json
     └── 20260721-170000/
         ├── report.html
-        └── report.json
+        ├── report.json
+        └── ai-execution.json
 ```
 
-* HTML is the customer-facing assessment
-* JSON is the machine-readable assessment record (schema/report version **1.2**) for APIs, MCP, CI/CD, comparison, and knowledge-graph ingestion
+* `report.html` is the customer-readable assessment
+* `report.json` is the machine-readable assessment record (schema/report version **1.2**) for APIs, MCP, CI/CD, comparison, and knowledge-graph ingestion
+* `ai-execution.json` is an internal AI observability / evaluation artifact created only when an AI provider is invoked (success or failure). It is not a customer deliverable, is never linked from HTML, and should be treated as potentially sensitive repository-derived data. It is future-compatible evaluation data for model comparison, prompt evaluation, regression analysis, and benchmarking — not a fine-tuning pipeline
 * Each successful execution creates a new timestamped run directory
-* MVP retention keeps only the latest **three completed** runs per repository; older completed runs are deleted automatically
+* MVP retention keeps only the latest **three completed** runs per repository; older completed runs are deleted automatically (including any `ai-execution.json` in that run)
+* Completed-run detection depends only on `report.html` and `report.json`
 * No local `archive/` directory is created
-* Developer diagnostics such as `ai-response-diagnostic.json` live inside a run directory and are removed when that run ages out
 * Retention runs only after successful artifact generation
 * Longer retention / cloud archival is deferred and is expected to use customer-owned storage when required later — not local AIMF archive folders
-* Both artifacts are produced from the same validated assessment input
+* Customer HTML and JSON are produced from the same validated assessment input
 
 ```bash
 # Deterministic (default) — no AWS required
@@ -432,9 +435,9 @@ If AI provider execution, parsing, or validation fails:
 * Deterministic HTML and JSON are still written
 * AI status is recorded with an explicit lifecycle value (`authentication_failed`, `provider_failed`, `parsing_failed`, or `validation_failed`) — not as “AI not executed”
 * Provider/model/token/latency metadata is retained when the provider call succeeded before the failure
-* A developer-only `ai-response-diagnostic.json` may be written beside the run reports for parsing/validation failures (raw model text + parsed JSON + validation diagnostics). It is not a customer deliverable and is never linked from the HTML report
+* An internal `ai-execution.json` is written beside the run reports whenever AI was requested (success or failure), capturing raw/parsed/accepted layers when available, normalization metadata, and failure stage/code. It is not a customer deliverable and is never linked from the HTML report. `report.json` may name the artifact via `internal_execution_artifact` without embedding its contents
 * Unvalidated AI recommendations are never included in the customer-facing report
-* Customer-facing warnings stay concise (for example `AI_VALIDATION_FAILED`); detailed validation errors stay in JSON metadata, the diagnostic artifact, and debug logs
+* Customer-facing warnings stay concise (for example `AI_VALIDATION_FAILED`); detailed validation errors stay in JSON metadata, the execution artifact, and debug logs
 * Raw model responses and prompts are never exposed in HTML
 * No fabricated AI sections are inserted
 
@@ -491,7 +494,7 @@ AnalysisResult
     ├─ aimf scan  → report.txt + report.json + report.html
     └─ aimf assess
            ├─ (optional) budgeted AI context → one Bedrock call → validated AI result
-           └─ report.html + report.json  (keep latest 3 completed runs)
+           └─ report.html + report.json (+ ai-execution.json when AI invoked; keep latest 3 completed runs)
 ```
 
 Each analyzer receives facts accumulated so far, returns new findings and newly produced facts, and `CompositeAnalyzer` merges those facts before calling the next analyzer.
