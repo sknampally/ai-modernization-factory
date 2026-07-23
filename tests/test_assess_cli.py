@@ -377,10 +377,11 @@ def test_local_repository_assessment_success(tmp_path: Path) -> None:
     assert len(provider.calls) == 1
     assert (result.run_directory / "ai-enrichment.json").is_file()
     html = result.html_report_path.read_text(encoding="utf-8")
-    assert "Repository System Intelligence" in html
-    assert "Deterministic Recommendations" in html
-    assert "AI Interpretation" in html
-    assert "Rotate secrets" in html or "AI-REC-001" in html
+    assert "Findings Overview" in html
+    assert "Modernization Roadmap" in html
+    assert "AI Executive Summary" in html
+    assert 'id="ai-enrichment"' in html
+    assert "AI-generated interpretation" in html or "Rotate secrets" in html
 
 
 def test_deterministic_assessment_success_without_model_or_aws(
@@ -423,10 +424,9 @@ def test_deterministic_assessment_success_without_model_or_aws(
     html = result.html_report_path.read_text(encoding="utf-8")
     assert "Assessment mode" in html
     assert "Deterministic" in html
-    assert "AI interpretation was not requested" in html
-    assert html.count("AI interpretation was not requested") == 1
-    assert "Repository System Intelligence" in html
-    assert "Deterministic Recommendations" in html
+    assert 'id="ai-enrichment"' not in html
+    assert "Findings Overview" in html
+    assert "Modernization Roadmap" in html
     assert "AKIAIOSFODNN7EXAMPLE" not in html
 
 
@@ -648,8 +648,8 @@ def test_ai_provider_failure_retains_deterministic_report(tmp_path: Path) -> Non
     assert document["assessment"]["ai"]["recommendations"] == []
     assert not (result.run_directory / "ai-enrichment.json").exists()
     html = result.html_report_path.read_text(encoding="utf-8")
-    assert "Repository System Intelligence" in html
-    assert "Deterministic Findings" in html
+    assert "Findings Overview" in html
+    assert 'id="ai-enrichment"' not in html
     assert "raw_response" not in html.lower()
 
 
@@ -871,7 +871,7 @@ def test_static_analysis_unavailable_warning(tmp_path: Path) -> None:
         "pmd static analysis was unavailable. Remaining deterministic analyzers completed."
     ) in joined
     html = result.html_report_path.read_text(encoding="utf-8")
-    assert "Assessment warnings" in html
+    assert "Warnings" in html
     assert "static analysis was unavailable" in html.replace("<wbr>", "")
     assert "Remaining deterministic analyzers completed." in html.replace("<wbr>", "")
 
@@ -912,7 +912,10 @@ def test_ai_mode_writes_html_and_json(tmp_path: Path) -> None:
     assert payload["assessment"]["summary"]["ai_recommendation_count"] == 1
     assert len(payload["assessment"]["ai"]["recommendations"]) == 1
     assert "repository_facts" in payload["assessment"]
-    assert "Deterministic Recommendations" in result.html_report_path.read_text(encoding="utf-8")
+    html = result.html_report_path.read_text(encoding="utf-8")
+    assert "Modernization Roadmap" in html
+    assert "AI Executive Summary" in html
+    assert 'id="ai-enrichment"' in html
 
 
 def test_second_assessment_preserves_previous_run(tmp_path: Path) -> None:

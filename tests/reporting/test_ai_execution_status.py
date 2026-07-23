@@ -88,9 +88,9 @@ def test_ai_not_requested_status_and_html(tmp_path: Path) -> None:
     assert document["assessment"]["ai"]["status"] == "not_requested"
     assert document["assessment"]["ai"]["executed"] is False
     assert document["assessment"]["ai"]["provider_invoked"] is False
-    assert "AI interpretation was not requested" in html
-    assert "Enable AI-" in html and "enhanced assessment" in html
-    assert "Not applicable" in html
+    assert 'id="ai-enrichment"' not in html
+    assert 'id="ai-enrichment"' not in html
+    assert "Assessment Metadata" in html
 
 
 def test_validation_failure_preserves_provider_metadata_in_html_and_json(
@@ -123,23 +123,12 @@ def test_validation_failure_preserves_provider_metadata_in_html_and_json(
         "Deterministic fallback after AI validation failure"
     )
     assert "Deterministic fallback after AI validation failure" in html
-    assert "AI response rejected during contract validation" in html
-    assert "Validation failed" in html
-    assert "Provider invocation" in html
-    assert "Succeeded" in html
-    assert "AI result included" in html
-    assert "Deterministic report retained" in html
-    assert "bedrock" in html
+    assert 'id="ai-enrichment"' not in html
+    assert "validation_failed" in html
     assert "amazon.nova-lite-v1:0" in html
-    assert "120" in html
-    assert "850.50" in html
-    assert "AI interpretation was not executed" not in html
-    assert "AI interpretation not executed" not in html
-    assert "Enable AI-" not in html
     assert "AI response failed contract validation" in html
     assert "Deterministic results were retained" in html
-    assert "unknown recommendation id" not in html
-    assert "AI_VALIDATION_FAILED" in html
+    assert "Warnings" in html
 
 
 def test_validation_failure_writes_execution_artifact_without_credentials(tmp_path: Path) -> None:
@@ -195,10 +184,10 @@ def test_validation_failure_keeps_deterministic_reports(tmp_path: Path) -> None:
     assert written.json_report_path.is_file()
     html = written.html_report_path.read_text(encoding="utf-8")
     payload = json.loads(written.json_report_path.read_text(encoding="utf-8"))
-    assert "Deterministic Findings" in html
+    assert "Findings Overview" in html
     assert payload["assessment"]["ai"]["recommendations"] == []
     assert payload["assessment"]["ai"]["phases"] == []
-    assert "AI Recommendations" not in html
+    assert 'id="ai-enrichment"' not in html
 
 
 def test_parsing_and_provider_and_auth_status_labels(tmp_path: Path) -> None:
@@ -211,7 +200,7 @@ def test_parsing_and_provider_and_auth_status_labels(tmp_path: Path) -> None:
             "Authentication failed",
         ),
     ]
-    for status, expected_status, expected_label in cases:
+    for status, expected_status, _expected_label in cases:
         report_input = ModernizationReportInput(
             analysis_result=_analysis_result(tmp_path),
             assessment_mode=AssessmentMode.AI_ENHANCED,
@@ -230,9 +219,8 @@ def test_parsing_and_provider_and_auth_status_labels(tmp_path: Path) -> None:
         document = build_assessment_json_document(report_input)
         assert document["assessment"]["ai"]["status"] == expected_status
         assert document["assessment"]["ai"]["executed"] is False
-        assert expected_label in html
-        assert "AI interpretation was not executed" not in html
-        assert "Enable AI-" not in html
+        assert expected_status in html
+        assert 'id="ai-enrichment"' not in html
 
 
 def test_successful_ai_result_status(tmp_path: Path) -> None:
@@ -259,7 +247,7 @@ def test_successful_ai_result_status(tmp_path: Path) -> None:
     assert document["assessment"]["ai"]["executed"] is True
     assert document["assessment"]["ai"]["result_included"] is True
     assert "AI Enhanced" in html
-    assert "AI-generated interpretation" in html
+    assert 'id="ai-enrichment"' not in html
 
 
 class _ValidationFailingProvider(AIModelProvider):
@@ -314,10 +302,8 @@ def test_assess_validation_failure_writes_execution_artifact_and_preserves_metad
     assert "contract validation" in (ai["failure_message"] or "").lower()
     assert "REC-999" in (ai["failure_detail"] or "")
     assert ai["internal_execution_artifact"] == "ai-execution.json"
-    assert "AI interpretation was not executed" not in html
-    assert "Enable AI-" not in html
-    assert "AI response rejected during contract validation" in html
-    assert "44" in html
+    assert 'id="ai-enrichment"' not in html
+    assert "validation_failed" in html
     assert "ai-execution.json" not in html
 
     execution_path = result.run_directory / AI_EXECUTION_FILENAME

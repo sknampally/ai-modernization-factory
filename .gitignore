@@ -103,7 +103,7 @@ temp/
 *.db
 
 # ==========================================
-# AI Artifacts (Future)
+# Local caches / embeddings
 # ==========================================
 
 vector_store/

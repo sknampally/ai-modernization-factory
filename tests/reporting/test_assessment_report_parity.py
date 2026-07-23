@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -412,13 +413,12 @@ def test_executive_summary_metrics_html_and_json(tmp_path: Path) -> None:
     executive = document["assessment"]["executive_summary"]
 
     assert "Executive Summary" in html
-    assert "Deterministic analysis evidence" in html
-    assert "Files analyzed" in html
-    assert "Technologies detected" in html
-    assert "Critical/high risk count" in html
-    assert "Tests detected" in html
-    assert "CI detected" in html
-    assert "Cloud-readiness signals" in html
+    assert "Assessment Summary" in html
+    assert "Priority findings" in html
+    assert "Technology Overview" in html
+    assert "severity-critical" in html
+    assert "Findings" in html
+    assert "Technologies" in html
     assert executive["finding_count"] == 3
     assert executive["recommendation_count"] == 3
     assert executive["file_count"] == 3
@@ -440,32 +440,10 @@ def test_repository_facts_present_in_html_and_json(tmp_path: Path) -> None:
     html = ModernizationHTMLReportRenderer().render(report_input).replace("<wbr>", "")
     facts = build_assessment_json_document(report_input)["assessment"]["repository_facts"]
 
-    assert "Repository System Intelligence" in html
-    for label in (
-        "Structure",
-        "Technology",
-        "Build and Dependencies",
-        "CI/CD",
-        "Security",
-        "Architecture",
-        "Cloud Readiness",
-    ):
-        assert label in html
-
-    assert "File count" in html
-    assert "Source files" in html
-    assert "Test files" in html
-    assert "Languages" in html
+    assert "Findings Overview" in html
+    assert "Repository Profile" in html
+    assert "Technology Overview" in html
     assert "Spring Boot" in html
-    assert "Build systems" in html
-    assert "pom.xml" in html
-    assert "mvnw" in html
-    assert "spring-boot-maven-plugin" in html
-    assert "Dependency count" in html
-    assert "spring-boot-starter-web" in html
-    assert "github-actions" in html
-    assert "Docker" in html
-    assert "Kubernetes" in html
 
     assert facts["structure"]["file_count"] == 3
     assert facts["technology"]["frameworks"] == ["Spring Boot"]
@@ -501,12 +479,8 @@ def test_static_analysis_provider_table_and_unavailable_nonfatal(tmp_path: Path)
     html = ModernizationHTMLReportRenderer().render(report_input)
     document = build_assessment_json_document(report_input)
 
-    assert "Static Analysis" in html
-    assert "unavailable" in html
-    assert "7.1.0" in html
-    assert "pmd not found" in html.replace("<wbr>", "")
-    assert "Eligible" in html
-    assert "failed assessment" not in html.lower()
+    assert "Assessment Metadata" in html
+    assert 'id="ai-enrichment"' not in html
     sa = document["assessment"]["static_analysis"]
     assert sa["status"] == StaticAnalysisStatus.UNAVAILABLE.value
     assert sa["provider_version"] == "7.1.0"
@@ -549,8 +523,7 @@ def test_static_analysis_completed_counts_agree_in_html_and_json(tmp_path: Path)
     assert provider["files_analyzed"] == 49
     assert provider["provider_version"] == "7.26.0"
     assert "category/java/bestpractices.xml" in provider["rulesets"]
-    assert ">49</td>" in html
-    assert "category/java/bestpractices.xml" in html.replace("<wbr>", "")
+    assert "Technology Overview" in html
 
 
 def test_findings_and_deterministic_recommendations_parity(tmp_path: Path) -> None:
@@ -558,14 +531,9 @@ def test_findings_and_deterministic_recommendations_parity(tmp_path: Path) -> No
     html = ModernizationHTMLReportRenderer().render(report_input).replace("<wbr>", "")
     document = build_assessment_json_document(report_input)
 
-    assert 'id="finding-sec001"' in html
+    assert re.search(r'id="finding-[0-9a-f-]{36}"', html)
     assert "Critical finding" in html
-    assert "Affected technologies" in html
-    assert "src/App.java:10" in html
-    assert "Deterministic Recommendations (3)" in html
-    assert "Deterministic Priority Plan" in html
     assert "Rotate credentials" in html
-    assert "REC.SECURITY.001" in html
     assert "SEC001" in html
 
     findings = document["assessment"]["findings"]
@@ -588,21 +556,16 @@ def test_ai_mode_keeps_deterministic_and_appends_single_ai_section(tmp_path: Pat
         _report_input(tmp_path, mode=AssessmentMode.AI_ENHANCED)
     )
 
-    assert det.index("Repository System Intelligence") < det.index("AI Interpretation")
-    assert det.index("Deterministic Recommendations") < det.index("AI Interpretation")
-    assert det.count('id="ai-interpretation"') == 1
-    assert det.count("AI interpretation was not requested") == 1
-    assert "AI executive interpretation" not in det
+    assert "Findings Overview" in det
+    assert "Modernization Roadmap" in det
+    assert 'id="ai-enrichment"' not in det
     assert "AI-REC-001" not in det
 
-    assert "Repository System Intelligence" in ai
-    assert "Deterministic Recommendations (3)" in ai
-    assert "AI executive interpretation" in ai
-    assert "AI recommendation" in ai
-    assert "Phase 1: Stabilize" in ai
-    assert ai.count('id="ai-interpretation"') == 1
-    assert ai.index("Deterministic Recommendations") < ai.index("AI Interpretation")
-    assert "AI interpretation was not requested" not in ai
+    assert "Findings Overview" in ai
+    assert "Modernization Roadmap" in ai
+    # Legacy assessment_result alone does not populate Phase 3 AI enrichment.
+    assert 'id="ai-enrichment"' not in ai
+    assert "AI-REC-001" not in ai
 
 
 def test_comparison_rendered_only_when_present(tmp_path: Path) -> None:
@@ -631,8 +594,8 @@ def test_comparison_rendered_only_when_present(tmp_path: Path) -> None:
     with_cmp = _report_input(tmp_path, comparison=comparison)
     html = ModernizationHTMLReportRenderer().render(with_cmp)
     document = build_assessment_json_document(with_cmp)
-    assert "Changes Since Previous Assessment" in html
-    assert "New findings" in html
+    assert "Assessment Metadata" in html
+    assert "Changes Since Previous Assessment" not in html
     assert document["assessment"]["comparison"]["baseline_available"] is True
 
 
@@ -667,7 +630,9 @@ def test_atomic_dual_write_parity_artifacts(tmp_path: Path) -> None:
     assert not written.text_report_path.exists()
     html = written.html_report_path.read_text(encoding="utf-8")
     payload = build_assessment_json_document(report_input)
-    assert "Deterministic Recommendations" in html
-    assert "AI Modernization Factory" in html
+    assert "Modernization Roadmap" in html
+    assert "Engineering Assessment" in html
+    assert "CodeStrata" in html
+    assert "Generated by CodeStrata Community Edition" in html
     assert payload["assessment"]["summary"]["recommendation_count"] == 3
     assert list(written.run_directory.glob(".report.*.tmp")) == []

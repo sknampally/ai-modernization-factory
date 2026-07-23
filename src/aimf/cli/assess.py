@@ -360,6 +360,7 @@ def run_assessment(
     ai_failure_message: str | None = None
     ai_attempt: AIAttemptInfo | None = None
     ai_execution_document: dict[str, object] | None = None
+    enrichment_result: AiEnrichmentResult | None = None
 
     if mode == AssessmentMode.AI_ENHANCED:
         from aimf.ai.enrichment import DEFAULT_MAX_CONTEXT_CHARACTERS
@@ -378,7 +379,6 @@ def run_assessment(
             else DEFAULT_MAX_CONTEXT_CHARACTERS
         )
         ai_started = perf_counter()
-        enrichment_result: AiEnrichmentResult | None = None
         try:
             (
                 analysis_context,
@@ -468,8 +468,13 @@ def run_assessment(
     stage("Generating HTML and JSON reports")
     # Reuse the run directory created before optional AI so graph artifacts remain
     # alongside HTML/JSON for the same assessment run.
+    from aimf.reporting.html_v2 import build_highlighted_versions, default_report_artifacts
+
     generated_at = now()
     provisional_total = round((perf_counter() - total_started) * 1000, 2)
+    include_ai_enrichment = (
+        enrichment_result is not None and ai_status == AIExecutionStatus.SUCCEEDED
+    )
     report_input = ModernizationReportInput(
         analysis_result=analysis_result,
         assessment_mode=mode,
@@ -490,6 +495,14 @@ def run_assessment(
             static_analysis_ms=static_analysis_ms,
             ai_ms=ai_ms,
             report_ms=None,
+        ),
+        assessment_rule_evaluation=rule_evaluation,
+        assessment_recommendation_result=recommendation_result,
+        ai_enrichment=enrichment_result if include_ai_enrichment else None,
+        highlighted_versions=build_highlighted_versions(graph_pipeline_result.repository_graph),
+        report_artifacts=default_report_artifacts(
+            include_ai_enrichment=include_ai_enrichment,
+            include_ai_execution=ai_execution_document is not None,
         ),
     )
 

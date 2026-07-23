@@ -9,6 +9,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from aimf.ai.agents.models import ModernizationAssessmentResult
 from aimf.ai.contracts.models import LLMAnalysisContext
+from aimf.domain.ai_enrichment import AiEnrichmentResult
+from aimf.domain.findings import RuleEvaluationResult
+from aimf.domain.graph.validation import optional_nonblank, require_nonblank
+from aimf.domain.recommendations import RecommendationResult
 from aimf.models import AnalysisResult
 
 
@@ -101,6 +105,43 @@ class ModernizationReportValidationError(ModernizationReportError):
     """Raised when report input fails validation before rendering."""
 
 
+class HighlightedVersionInput(BaseModel):
+    """Compact version highlight for Report v2 (not a full dependency dump)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    label: str
+    value: str
+    kind: str = "dependency"
+    detail: str | None = None
+
+    @field_validator("label", "value", "kind", mode="before")
+    @classmethod
+    def normalize_required(cls, value: object) -> str:
+        return require_nonblank(str(value), label="highlighted version field")
+
+    @field_validator("detail", mode="before")
+    @classmethod
+    def normalize_optional(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        return optional_nonblank(str(value), label="version detail")
+
+
+class ReportArtifactInput(BaseModel):
+    """Relative artifact reference for Report v2 (no absolute paths)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    label: str
+    relative_path: str
+
+    @field_validator("label", "relative_path", mode="before")
+    @classmethod
+    def normalize_required(cls, value: object) -> str:
+        return require_nonblank(str(value), label="artifact field")
+
+
 class ModernizationReportInput(BaseModel):
     """Validated input for a customer-facing modernization HTML report."""
 
@@ -121,6 +162,12 @@ class ModernizationReportInput(BaseModel):
     confidentiality_notice: str | None = None
     warnings: tuple[str, ...] = Field(default_factory=tuple)
     timing: AssessmentTiming | None = None
+    # Phase 3 / Report v2 inputs (optional; do not alter report.json schema).
+    assessment_rule_evaluation: RuleEvaluationResult | None = None
+    assessment_recommendation_result: RecommendationResult | None = None
+    ai_enrichment: AiEnrichmentResult | None = None
+    highlighted_versions: tuple[HighlightedVersionInput, ...] = Field(default_factory=tuple)
+    report_artifacts: tuple[ReportArtifactInput, ...] = Field(default_factory=tuple)
 
     @field_validator("generated_at_utc")
     @classmethod

@@ -23,7 +23,7 @@ keywords = [
 ]
 
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
@@ -74,7 +74,12 @@ where = ["src"]
 
 
 [tool.setuptools.package-data]
-aimf = ["resources/**/*.yaml", "resources/**/*.yml", "resources/**/*.json"]
+aimf = [
+    "resources/**/*.yaml",
+    "resources/**/*.yml",
+    "resources/**/*.json",
+    "reporting/assets/*.png",
+]
 
 
 [tool.pytest.ini_options]
