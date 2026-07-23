@@ -1,6 +1,6 @@
 # Engineering knowledge store
 
-**Status:** Phase 2B Increment 2 (snapshots, runs, immutable artifacts).
+**Status:** Phase 2B Increment 3 (persistent knowledge query services).
 
 Assessment opens the store by default (`.aimf/knowledge/` via `[knowledge].directory`).
 
@@ -47,7 +47,7 @@ Content fingerprint (not timestamps) decides snapshot reuse.
 
 ## Full recomputation
 
-Increment 2 always runs the full deterministic pipeline. Fingerprints are stored
+Increment 2+ always runs the full deterministic pipeline. Fingerprints are stored
 for future incremental work; they do not skip analysis yet.
 
 ## Persistence failure semantics
@@ -76,6 +76,74 @@ manifest fingerprint.
 Report retention (`keep=3`) does not delete knowledge store rows or blobs.
 Knowledge retention policy is deferred.
 
+Reports remain derived outputs. Query services never read `report.json`,
+`report.html`, or run-directory artifacts.
+
+## Knowledge query services (Increment 3)
+
+Transport-neutral application API:
+
+```text
+CLI / FastMCP / REST / agents
+        ↓
+KnowledgeQueryService
+        ↓
+KnowledgeStore ports
+        ↓
+SQLite metadata + verified immutable JSON blobs
+```
+
+Package: `aimf.application.knowledge.queries`
+
+- Depends only on application ports/models and domain payloads.
+- Does not import `sqlite3`, Typer, or infrastructure SQLite classes.
+- Does not expose blob paths, knowledge-root paths, credentials, or SQL.
+- Local path aliases are omitted from public repository DTOs by default.
+
+Composition helper:
+
+`create_knowledge_query_service(store=...)` or
+`create_knowledge_query_service(directory=...)` /
+`create_knowledge_query_service(settings=...)`.
+
+### Authoritative findings
+
+Query APIs expose **Phase 3** stable findings and recommendations
+(`finding:…`, `recommendation:…`). Phase 1 UUID report findings are not part of
+this knowledge API.
+
+### Artifact validation
+
+Artifacts are selected by run + kind, hash-verified, JSON-parsed, and validated
+against existing domain codecs. Missing required deterministic artifacts raise
+typed errors. Optional AI artifacts return `None` when absent. Corrupt or
+incompatible payloads raise application query errors (never silent substitution).
+
+### Historical snapshot comparison
+
+`compare_repository_snapshots` diffs two persisted manifests via
+`RepositoryManifestDiffer`. Results include added / modified / deleted /
+metadata-changed paths. Rename detection is deferred (rename = delete + add).
+Comparison does not read the live working tree.
+
+### Explanations
+
+`explain_finding` / `explain_recommendation` assemble deterministic provenance
+from persisted findings, recommendations, and graphs. They do not call AI and
+do not fabricate missing evidence.
+
+### Component / dependency queries
+
+Loaded from the immutable Repository Graph. Dependency traversal uses
+`depends_on` edges, default depth 1, maximum depth 3, with cycle protection and
+result bounds. No relational graph indexes or graph database in this increment.
+
+### Why MCP must use query services
+
+Future FastMCP (and REST/CLI/agent) adapters must call `KnowledgeQueryService`
+rather than opening SQLite or blob files. That keeps validation, privacy
+filtering, and DTO stability in one application boundary.
+
 ## Legacy aliases
 
 Conflicting optional `legacy_repository_key` aliases are skipped during
@@ -84,7 +152,10 @@ Conflicting optional `legacy_repository_key` aliases are skipped during
 
 ## Deferred
 
-- MCP / query application services
+- Thin CLI (`aimf agent …`) and high-level MCP agent tools over AgentOrchestrator
+- REST adapters
 - Incremental graph execution
 - Knowledge retention / GC of unreferenced blobs
 - Catalog-level EKG deduplication across repositories
+- Relational graph indexes / graph database
+- Rename detection in snapshot comparison

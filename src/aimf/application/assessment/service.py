@@ -150,6 +150,9 @@ class AssessmentCommandResult(BaseModel):
     findings_artifact_path: Path | None = None
     phase3_recommendation_count: int | None = Field(default=None, ge=0)
     recommendations_artifact_path: Path | None = None
+    knowledge_repository_id: str | None = None
+    knowledge_run_id: str | None = None
+    knowledge_snapshot_id: str | None = None
 
     @model_validator(mode="after")
     def populate_report_path_alias(self) -> AssessmentCommandResult:
@@ -691,7 +694,7 @@ class AssessmentApplicationService:
         )
         _print_success_summary(active_console, result)
         try:
-            knowledge_session.complete(
+            snapshot_id = knowledge_session.complete(
                 graph_pipeline_result=graph_pipeline_result,
                 rule_evaluation=rule_evaluation,
                 recommendation_result=recommendation_result,
@@ -708,7 +711,13 @@ class AssessmentApplicationService:
                 f"Knowledge persistence failed: {sanitize_provider_text(str(error))}"
             ) from error
 
-        return result
+        return result.model_copy(
+            update={
+                "knowledge_repository_id": knowledge_session.repository_id,
+                "knowledge_run_id": knowledge_session.run_id,
+                "knowledge_snapshot_id": snapshot_id,
+            }
+        )
 
 
 def run_assessment(

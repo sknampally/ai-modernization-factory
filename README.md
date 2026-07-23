@@ -37,6 +37,9 @@ Use it for modernization discovery, client demos, and engineering due diligence.
 * JSON artifacts for findings, recommendations, graphs, and enrichment
 * Deterministic mode (zero AI calls) and AI mode (exactly one call)
 * Optional PMD static analysis for Java
+* Durable knowledge store (`.aimf/knowledge`) with query services
+* Local **CodeStrata** FastMCP server (`aimf mcp serve`)
+* Deterministic **Agent Framework** (`aimf.application.agents`) over application services
 
 ---
 
@@ -295,6 +298,9 @@ mypy src
 | [docs/recommendation-engine.md](docs/recommendation-engine.md) | Deterministic recommendations |
 | [docs/ai-enrichment.md](docs/ai-enrichment.md) | One-call AI narrative |
 | [docs/report-generation.md](docs/report-generation.md) | HTML Report v2 |
+| [docs/knowledge-store.md](docs/knowledge-store.md) | Durable knowledge store + queries |
+| [docs/mcp-server.md](docs/mcp-server.md) | CodeStrata FastMCP server |
+| [docs/agent-framework.md](docs/agent-framework.md) | Agent Framework (Phase 2D) |
 | [examples/README.md](examples/README.md) | Sample commands & expected outputs |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting |

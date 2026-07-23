@@ -68,8 +68,9 @@ Topic docs: [docs/runtime.md](docs/runtime.md) and siblings under [docs/](docs/)
 | AI enrichment | Exactly one Bedrock call; narrative only |
 | Knowledge store | Durable repository identity, snapshots, runs, immutable artifacts (SQLite) |
 | Reporting | HTML Report v2 + JSON artifacts |
-| Application | `AssessmentApplicationService` orchestration; knowledge ports/session |
+| Application | `AssessmentApplicationService` orchestration; knowledge ports/session; Agent Framework |
 | CLI | Config, thin adapters, artifact retention |
+| MCP | FastMCP tools/resources/prompts over application services |
 
 ### Evidence and immutability
 
@@ -180,6 +181,39 @@ Reports are never read back into the store. Persistence finalization failure
 fails the assessment; incomplete runs are never “latest completed.” Full
 recomputation only — no incremental execution yet.
 
+### Query services (Increment 3)
+
+`KnowledgeQueryService` (`aimf.application.knowledge.queries`) is the
+transport-neutral read API for durable knowledge. Future FastMCP, REST, CLI, and
+agent adapters must call this service — not SQLite, blob paths, or report files.
+Authoritative findings/recommendations are Phase 3 stable IDs. Snapshot
+comparison uses persisted manifests. Graph component queries load immutable
+graph JSON in memory with bounded depth (max 3).
+
+### MCP adapter (Phase 2C)
+
+`aimf mcp serve` starts a stdio FastMCP server named **CodeStrata**. Tools and
+resources are thin adapters over `KnowledgeQueryService` and
+`AssessmentApplicationService`. See [docs/mcp-server.md](docs/mcp-server.md).
+
+### Agent Framework (Phase 2D)
+
+`aimf.application.agents` provides deterministic orchestration
+(`AgentOrchestrator`, Knowledge / Assessment / Validation agents) over the same
+application services. MCP and agents are sibling interfaces — agents must not
+call MCP internally. See [docs/agent-framework.md](docs/agent-framework.md).
+
+```text
+CLI / MCP / REST
+        │
+        ├───────────────┐
+        │               │
+        ▼               ▼
+Agent Framework    Application Services
+        │               ▲
+        └───────────────┘
+```
+
 Details: [docs/knowledge-store.md](docs/knowledge-store.md).
 
 ## Repository authentication
@@ -194,8 +228,9 @@ reports. Authentication applies only to remote clones.
 src/aimf/
 ├── cli/                 # Typer: version, scan, assess
 ├── config/
-├── application/         # assessment orchestration; knowledge ports/session
+├── application/         # assessment, knowledge queries, agents
 ├── infrastructure/      # SQLite knowledge store, blobs, Git revision observer
+├── interfaces/          # FastMCP (and future REST) adapters
 ├── models/              # Phase 1 domain DTOs
 ├── domain/              # graphs, findings, recommendations, AI enrichment
 ├── services/            # analysis, inventory, knowledge, assessment

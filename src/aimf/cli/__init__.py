@@ -17,6 +17,7 @@ from aimf.cli.assess import (
     register_assess_command,
     run_assessment,
 )
+from aimf.cli.mcp import mcp_app
 from aimf.config import load_settings
 from aimf.logging_config import configure_logging
 from aimf.output_format import OutputFormat
@@ -191,6 +192,7 @@ def scan(
 
 
 register_assess_command(app)
+app.add_typer(mcp_app, name="mcp")
 
 __all__ = [
     "DEFAULT_ASSESS_MAX_OUTPUT_TOKENS",

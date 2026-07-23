@@ -81,7 +81,7 @@ class AssessmentKnowledgeSession:
         ai_execution_document: dict[str, Any] | None,
         enrichment_result: Any | None,
         configured_branch: str | None,
-    ) -> None:
+    ) -> str:
         if self.run_id is None or self.repository_id is None:
             raise KnowledgeStoreError("Knowledge session is not active")
 
@@ -123,6 +123,7 @@ class AssessmentKnowledgeSession:
             snapshot_id=snapshot.snapshot_id,
             artifacts=artifacts,
         )
+        return snapshot.snapshot_id
 
     def fail(self, *, error_code: str, error_message: str) -> None:
         if self.run_id is None:

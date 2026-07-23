@@ -213,10 +213,77 @@ class KnowledgeSettings(BaseModel):
     """Local engineering knowledge store settings.
 
     The knowledge store is independent of report retention under ``reports/``.
-    Assessment does not open this store automatically until a later increment.
     """
 
     directory: Path = Path(".aimf/knowledge")
+
+
+class McpSettings(BaseModel):
+    """Optional FastMCP server settings.
+
+    Omitted ``[mcp]`` sections use these defaults. The server is a local
+    developer tool (stdio); it is not intended for untrusted public exposure.
+    """
+
+    enabled: bool = True
+    transport: str = "stdio"
+    log_level: str = "INFO"
+
+    @field_validator("transport")
+    @classmethod
+    def validate_transport(cls, value: str) -> str:
+        compact = value.strip().lower()
+        if compact != "stdio":
+            raise ValueError("mcp.transport currently supports only 'stdio'")
+        return compact
+
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, value: str) -> str:
+        compact = value.strip().upper()
+        allowed = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
+        if compact not in allowed:
+            raise ValueError(f"mcp.log_level must be one of {sorted(allowed)}")
+        return compact
+
+
+class AgentsSettings(BaseModel):
+    """Optional Agent Framework bounds.
+
+    Omitted ``[agents]`` sections use conservative defaults. Model-provider
+    settings remain under ``[ai]`` / ``[aws]``.
+    """
+
+    enabled: bool = True
+    max_steps: int = 10
+    max_findings: int = 100
+    max_recommendations: int = 100
+    max_components: int = 100
+    dependency_depth: int = 2
+    stop_on_blocking_validation: bool = True
+    include_ai_context: bool = True
+    fail_on_missing_required_artifact: bool = True
+
+    @field_validator("max_steps")
+    @classmethod
+    def validate_max_steps(cls, value: int) -> int:
+        if value < 1 or value > 20:
+            raise ValueError("agents.max_steps must be between 1 and 20")
+        return value
+
+    @field_validator("max_findings", "max_recommendations", "max_components")
+    @classmethod
+    def validate_positive_limits(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("agent collection limits must be positive")
+        return value
+
+    @field_validator("dependency_depth")
+    @classmethod
+    def validate_dependency_depth(cls, value: int) -> int:
+        if value < 1 or value > 3:
+            raise ValueError("agents.dependency_depth must be between 1 and 3")
+        return value
 
 
 class AimfSettings(BaseModel):
@@ -234,6 +301,8 @@ class AimfSettings(BaseModel):
     )
     aws: AwsSettings = Field(default_factory=AwsSettings)
     ai: AiSettings = Field(default_factory=AiSettings)
+    mcp: McpSettings = Field(default_factory=McpSettings)
+    agents: AgentsSettings = Field(default_factory=AgentsSettings)
 
 
 def load_settings(config_path: Path) -> AimfSettings:

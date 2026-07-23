@@ -1,0 +1,39 @@
+"""Register all CodeStrata MCP tools."""
+
+from __future__ import annotations
+
+from mcp.server.fastmcp import FastMCP
+
+from aimf.application.assessment import AssessmentApplicationService
+from aimf.application.knowledge.queries import KnowledgeQueryService
+from aimf.config import AimfSettings
+from aimf.interfaces.mcp.tools.artifacts import register_artifact_tools
+from aimf.interfaces.mcp.tools.assessments import register_assessment_tools
+from aimf.interfaces.mcp.tools.components import register_component_tools
+from aimf.interfaces.mcp.tools.execution import register_execution_tools
+from aimf.interfaces.mcp.tools.findings import register_finding_tools
+from aimf.interfaces.mcp.tools.recommendations import register_recommendation_tools
+from aimf.interfaces.mcp.tools.repositories import register_repository_tools
+from aimf.interfaces.mcp.tools.snapshots import register_snapshot_tools
+
+
+def register_all_tools(
+    server: FastMCP,
+    *,
+    queries: KnowledgeQueryService,
+    assessment_service: AssessmentApplicationService,
+    settings: AimfSettings | None,
+) -> None:
+    register_repository_tools(server, queries)
+    register_assessment_tools(server, queries)
+    register_snapshot_tools(server, queries)
+    register_finding_tools(server, queries)
+    register_recommendation_tools(server, queries)
+    register_component_tools(server, queries)
+    register_artifact_tools(server, queries)
+    register_execution_tools(
+        server,
+        queries=queries,
+        assessment_service=assessment_service,
+        settings=settings,
+    )

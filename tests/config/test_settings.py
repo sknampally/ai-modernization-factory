@@ -140,3 +140,35 @@ def test_load_settings_reads_knowledge_directory(tmp_path: Path) -> None:
     )
     settings = load_settings(config_file)
     assert settings.knowledge.directory == Path(".aimf/custom-knowledge")
+
+
+def test_load_settings_reads_mcp_defaults(tmp_path: Path) -> None:
+    config_file = tmp_path / "aimf.toml"
+    config_file.write_text(
+        """
+        [repository]
+        path = "examples/sample-js-app"
+        """,
+        encoding="utf-8",
+    )
+    settings = load_settings(config_file)
+    assert settings.mcp.enabled is True
+    assert settings.mcp.transport == "stdio"
+
+
+def test_load_settings_reads_mcp_section(tmp_path: Path) -> None:
+    config_file = tmp_path / "aimf.toml"
+    config_file.write_text(
+        """
+        [repository]
+        path = "examples/sample-js-app"
+
+        [mcp]
+        enabled = true
+        transport = "stdio"
+        log_level = "DEBUG"
+        """,
+        encoding="utf-8",
+    )
+    settings = load_settings(config_file)
+    assert settings.mcp.log_level == "DEBUG"
