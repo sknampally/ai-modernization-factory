@@ -178,8 +178,9 @@ CLI → AssessmentApplicationService
 Schema version 2 indexes repositories, snapshots, assessment runs, and artifact
 metadata. Payloads live under `.aimf/knowledge/blobs/` (SHA-256, atomic write).
 Reports are never read back into the store. Persistence finalization failure
-fails the assessment; incomplete runs are never “latest completed.” Full
-recomputation only — no incremental execution yet.
+fails the assessment; incomplete runs are never “latest completed.” Default
+assessment remains full recomputation; incremental execution is opt-in only
+(see Phase 2F below).
 
 ### Query services (Increment 3)
 
@@ -221,7 +222,72 @@ Agent Framework    Application Services
         └───────────────┘
 ```
 
-Details: [docs/knowledge-store.md](docs/knowledge-store.md).
+### Incremental planning (Phase 2F.1)
+
+`aimf.application.incremental` classifies candidate vs previous manifests, analyzes
+bounded impact, applies a conservative reuse policy, and emits a deterministic
+`IncrementalAssessmentPlan`.
+
+### Incremental execution (Phase 2F.2)
+
+`IncrementalAssessmentExecutor` optionally executes eligible plans via inventory
+merge + stage rebuild through the existing assessment pipeline, or falls back to
+a normal full assessment. **`aimf assess` remains a full rebuild by default**;
+execution requires explicit opt-in.
+
+### Incremental operations (Phase 2F.3)
+
+Post-execution validation, semantic equivalence, metrics, explainability, and
+persisted `IncrementalExecutionRecord` provenance. Controlled rollout via
+`[incremental].rollout_mode` (default `off`; production target `opt_in`).
+
+Thin adapters:
+
+- CLI: `aimf incremental plan|assess|explain`
+- MCP: four additive incremental tools
+
+```text
+IncrementalAssessmentPlan
+        → IncrementalAssessmentExecutor
+        → Complete normal assessment result
+        → Validation + metrics + explanations
+        → IncrementalExecutionRecord → CLI / MCP
+```
+
+Details: [docs/incremental-assessment.md](docs/incremental-assessment.md),
+[docs/knowledge-store.md](docs/knowledge-store.md).
+
+### Enterprise Knowledge Graph (Phase 3)
+
+YAML-declared enterprise architecture (organizations, applications, ownership,
+standards) linked to CodeStrata repositories and assessments. Optional;
+disabled by default. No graph database.
+
+```text
+Enterprise YAML → validate → EnterpriseKnowledgeGraph → CLI / MCP queries
+```
+
+Details: [docs/enterprise-knowledge-graph/README.md](docs/enterprise-knowledge-graph/README.md),
+[ROADMAP.md](ROADMAP.md).
+
+### Shared Rule Platform (Phase 4.1)
+
+Transport-neutral rule infrastructure for future Analysis Intelligence packs.
+Distinct from the Assessment Graph `RuleEngine` used by `aimf assess`.
+Disabled by default; not wired into the default assessment pipeline.
+
+```text
+RuleExecutionContext → Registry → Planner → Executor → Finding mapper
+```
+
+Details: [docs/analysis-intelligence/shared-rule-platform.md](docs/analysis-intelligence/shared-rule-platform.md).
+
+### Rule Platform Integration Bridge (Phase 4.1.1)
+
+`LegacyRuleAdapter` and `RuleExecutionFacade` connect the Assessment Graph
+`RuleEngine` to the Shared Rule Platform without changing `aimf assess`.
+Adapted legacy evaluation preserves Finding IDs. See
+[docs/analysis-intelligence/rule-platform-migration.md](docs/analysis-intelligence/rule-platform-migration.md).
 
 ## Repository authentication
 
@@ -233,9 +299,9 @@ reports. Authentication applies only to remote clones.
 
 ```text
 src/aimf/
-├── cli/                 # Typer: version, scan, assess
+├── cli/                 # Typer: version, scan, assess, agent, incremental, mcp
 ├── config/
-├── application/         # assessment, knowledge queries, agents
+├── application/         # assessment, knowledge queries, agents, incremental planning
 ├── infrastructure/      # SQLite knowledge store, blobs, Git revision observer
 ├── interfaces/          # FastMCP (and future REST) adapters
 ├── models/              # Phase 1 domain DTOs

@@ -1,0 +1,8 @@
+apiVersion: codestrata.io/v1alpha1
+kind: Organization
+metadata:
+  id: acme
+  name: Acme University
+spec:
+  organizationType: university
+  lifecycle: active

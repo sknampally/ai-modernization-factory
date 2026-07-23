@@ -1,0 +1,10 @@
+apiVersion: codestrata.io/v1alpha1
+kind: DataStore
+metadata:
+  id: registration-cache
+  name: Registration Cache
+spec:
+  type: cache
+  technology: redis
+  criticality: medium
+  lifecycle: active

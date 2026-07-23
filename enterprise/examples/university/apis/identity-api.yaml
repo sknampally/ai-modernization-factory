@@ -1,0 +1,11 @@
+apiVersion: codestrata.io/v1alpha1
+kind: API
+metadata:
+  id: identity-api
+  name: Identity API
+spec:
+  apiType: rest
+  protocol: https
+  version: v1
+  lifecycle: active
+  exposure: internal

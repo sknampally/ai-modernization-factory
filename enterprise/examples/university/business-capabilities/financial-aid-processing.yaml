@@ -1,0 +1,9 @@
+apiVersion: codestrata.io/v1alpha1
+kind: BusinessCapability
+metadata:
+  id: financial-aid-processing
+  name: Financial Aid Processing
+spec:
+  businessDomain: finance
+  criticality: high
+  lifecycle: active

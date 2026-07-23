@@ -1,0 +1,12 @@
+apiVersion: codestrata.io/v1alpha1
+kind: Service
+metadata:
+  id: identity-service
+  name: Identity Service
+spec:
+  serviceType: backend
+  application: student-information-system
+  repositories:
+    - student-api
+  owningTeam: student-platform-team
+  lifecycle: active

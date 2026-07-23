@@ -1,0 +1,198 @@
+"""Enterprise Knowledge Graph enums."""
+
+from __future__ import annotations
+
+from enum import StrEnum
+
+
+class EnterpriseEntityKind(StrEnum):
+    ENTERPRISE = "Enterprise"
+    ORGANIZATION = "Organization"
+    BUSINESS_DOMAIN = "BusinessDomain"
+    BUSINESS_CAPABILITY = "BusinessCapability"
+    APPLICATION = "Application"
+    REPOSITORY_REFERENCE = "RepositoryReference"
+    SERVICE = "Service"
+    API = "API"
+    DATA_STORE = "DataStore"
+    MESSAGE_CHANNEL = "MessageChannel"
+    TEAM = "Team"
+    PERSON = "Person"
+    ENVIRONMENT = "Environment"
+    CLOUD_RESOURCE = "CloudResource"
+    TECHNOLOGY_STANDARD = "TechnologyStandard"
+    ARCHITECTURE_STANDARD = "ArchitectureStandard"
+    MODERNIZATION_INITIATIVE = "ModernizationInitiative"
+    # Links to existing CodeStrata entities (graph projection only)
+    CODESTRATA_REPOSITORY = "CodestrataRepository"
+    CODESTRATA_SNAPSHOT = "CodestrataSnapshot"
+    CODESTRATA_ASSESSMENT_RUN = "CodestrataAssessmentRun"
+    CODESTRATA_FINDING = "CodestrataFinding"
+    CODESTRATA_RECOMMENDATION = "CodestrataRecommendation"
+
+
+class EnterpriseRelationshipKind(StrEnum):
+    ORGANIZATION_CONTAINS_ORGANIZATION = "ORGANIZATION_CONTAINS_ORGANIZATION"
+    ORGANIZATION_OWNS_DOMAIN = "ORGANIZATION_OWNS_DOMAIN"
+    DOMAIN_CONTAINS_DOMAIN = "DOMAIN_CONTAINS_DOMAIN"
+    DOMAIN_PROVIDES_CAPABILITY = "DOMAIN_PROVIDES_CAPABILITY"
+    CAPABILITY_CONTAINS_CAPABILITY = "CAPABILITY_CONTAINS_CAPABILITY"
+    APPLICATION_SUPPORTS_CAPABILITY = "APPLICATION_SUPPORTS_CAPABILITY"
+    APPLICATION_BELONGS_TO_DOMAIN = "APPLICATION_BELONGS_TO_DOMAIN"
+    APPLICATION_CONTAINS_SERVICE = "APPLICATION_CONTAINS_SERVICE"
+    APPLICATION_USES_REPOSITORY = "APPLICATION_USES_REPOSITORY"
+    APPLICATION_DEPENDS_ON_APPLICATION = "APPLICATION_DEPENDS_ON_APPLICATION"
+    SERVICE_IMPLEMENTED_BY_REPOSITORY = "SERVICE_IMPLEMENTED_BY_REPOSITORY"
+    SERVICE_EXPOSES_API = "SERVICE_EXPOSES_API"
+    SERVICE_CONSUMES_API = "SERVICE_CONSUMES_API"
+    SERVICE_DEPENDS_ON_SERVICE = "SERVICE_DEPENDS_ON_SERVICE"
+    SERVICE_READS_FROM_DATA_STORE = "SERVICE_READS_FROM_DATA_STORE"
+    SERVICE_WRITES_TO_DATA_STORE = "SERVICE_WRITES_TO_DATA_STORE"
+    SERVICE_PUBLISHES_TO_CHANNEL = "SERVICE_PUBLISHES_TO_CHANNEL"
+    SERVICE_CONSUMES_FROM_CHANNEL = "SERVICE_CONSUMES_FROM_CHANNEL"
+    APPLICATION_DEPLOYED_TO_ENVIRONMENT = "APPLICATION_DEPLOYED_TO_ENVIRONMENT"
+    SERVICE_DEPLOYED_TO_ENVIRONMENT = "SERVICE_DEPLOYED_TO_ENVIRONMENT"
+    RESOURCE_SUPPORTS_APPLICATION = "RESOURCE_SUPPORTS_APPLICATION"
+    RESOURCE_SUPPORTS_SERVICE = "RESOURCE_SUPPORTS_SERVICE"
+    TEAM_OWNS_APPLICATION = "TEAM_OWNS_APPLICATION"
+    TEAM_OWNS_SERVICE = "TEAM_OWNS_SERVICE"
+    TEAM_OWNS_REPOSITORY = "TEAM_OWNS_REPOSITORY"
+    PERSON_OWNS_APPLICATION = "PERSON_OWNS_APPLICATION"
+    PERSON_OWNS_SERVICE = "PERSON_OWNS_SERVICE"
+    APPLICATION_GOVERNED_BY_STANDARD = "APPLICATION_GOVERNED_BY_STANDARD"
+    REPOSITORY_GOVERNED_BY_STANDARD = "REPOSITORY_GOVERNED_BY_STANDARD"
+    SERVICE_GOVERNED_BY_STANDARD = "SERVICE_GOVERNED_BY_STANDARD"
+    INITIATIVE_MODERNIZES_APPLICATION = "INITIATIVE_MODERNIZES_APPLICATION"
+    INITIATIVE_MODERNIZES_SERVICE = "INITIATIVE_MODERNIZES_SERVICE"
+    INITIATIVE_MODERNIZES_REPOSITORY = "INITIATIVE_MODERNIZES_REPOSITORY"
+    INITIATIVE_ADDRESSES_RECOMMENDATION = "INITIATIVE_ADDRESSES_RECOMMENDATION"
+    REPOSITORY_RESOLVES_TO_CODESTRATA_REPOSITORY = "REPOSITORY_RESOLVES_TO_CODESTRATA_REPOSITORY"
+    REPOSITORY_HAS_SNAPSHOT = "REPOSITORY_HAS_SNAPSHOT"
+    SNAPSHOT_HAS_ASSESSMENT = "SNAPSHOT_HAS_ASSESSMENT"
+    ASSESSMENT_PRODUCED_FINDING = "ASSESSMENT_PRODUCED_FINDING"
+    ASSESSMENT_PRODUCED_RECOMMENDATION = "ASSESSMENT_PRODUCED_RECOMMENDATION"
+    FINDING_AFFECTS_APPLICATION = "FINDING_AFFECTS_APPLICATION"
+    FINDING_AFFECTS_SERVICE = "FINDING_AFFECTS_SERVICE"
+    FINDING_AFFECTS_CAPABILITY = "FINDING_AFFECTS_CAPABILITY"
+    RECOMMENDATION_AFFECTS_APPLICATION = "RECOMMENDATION_AFFECTS_APPLICATION"
+    RECOMMENDATION_AFFECTS_SERVICE = "RECOMMENDATION_AFFECTS_SERVICE"
+    RECOMMENDATION_AFFECTS_CAPABILITY = "RECOMMENDATION_AFFECTS_CAPABILITY"
+
+
+class EnterpriseLifecycle(StrEnum):
+    PLANNED = "planned"
+    ACTIVE = "active"
+    STRATEGIC = "strategic"
+    MAINTENANCE = "maintenance"
+    SUNSET = "sunset"
+    RETIRED = "retired"
+    UNKNOWN = "unknown"
+
+
+class EnterpriseCriticality(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+    UNKNOWN = "unknown"
+
+
+class OwnershipKind(StrEnum):
+    BUSINESS = "business"
+    TECHNICAL = "technical"
+    TEAM = "team"
+    SPONSOR = "sponsor"
+
+
+class EnvironmentKind(StrEnum):
+    DEVELOPMENT = "development"
+    TEST = "test"
+    QA = "qa"
+    STAGING = "staging"
+    PRODUCTION = "production"
+    DISASTER_RECOVERY = "disaster_recovery"
+    SANDBOX = "sandbox"
+
+
+class ApplicationKind(StrEnum):
+    CUSTOM = "custom"
+    COTS = "cots"
+    SAAS = "saas"
+    PLATFORM = "platform"
+    INTEGRATION = "integration"
+    UNKNOWN = "unknown"
+
+
+class ServiceKind(StrEnum):
+    BACKEND = "backend"
+    FRONTEND = "frontend"
+    SCHEDULED_JOB = "scheduled_job"
+    INTEGRATION = "integration"
+    DATA_PIPELINE = "data_pipeline"
+    SERVERLESS = "serverless"
+    BATCH = "batch"
+    UNKNOWN = "unknown"
+
+
+class APIKind(StrEnum):
+    REST = "rest"
+    GRAPHQL = "graphql"
+    GRPC = "grpc"
+    SOAP = "soap"
+    EVENT = "event"
+    UNKNOWN = "unknown"
+
+
+class DataStoreKind(StrEnum):
+    RELATIONAL = "relational"
+    DOCUMENT = "document"
+    KEY_VALUE = "key_value"
+    CACHE = "cache"
+    OBJECT_STORE = "object_store"
+    SEARCH = "search"
+    WAREHOUSE = "warehouse"
+    UNKNOWN = "unknown"
+
+
+class CloudResourceKind(StrEnum):
+    KUBERNETES_CLUSTER = "kubernetes_cluster"
+    COMPUTE = "compute"
+    CONTAINER_SERVICE = "container_service"
+    SERVERLESS = "serverless"
+    DATABASE = "database"
+    STORAGE = "storage"
+    API_GATEWAY = "api_gateway"
+    LOAD_BALANCER = "load_balancer"
+    OTHER = "other"
+
+
+class StandardStatus(StrEnum):
+    DRAFT = "draft"
+    APPROVED = "approved"
+    DEPRECATED = "deprecated"
+    RETIRED = "retired"
+
+
+class InitiativeStatus(StrEnum):
+    PROPOSED = "proposed"
+    ACTIVE = "active"
+    BLOCKED = "blocked"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class EnterpriseProvenanceCategory(StrEnum):
+    DECLARED_YAML = "declared_yaml"
+    RESOLVED_REPOSITORY_REGISTRY = "resolved_repository_registry"
+    DERIVED_REPOSITORY_GRAPH = "derived_repository_graph"
+    DERIVED_KNOWLEDGE_GRAPH = "derived_knowledge_graph"
+    DERIVED_ASSESSMENT_GRAPH = "derived_assessment_graph"
+    DERIVED_FINDING = "derived_finding"
+    DERIVED_RECOMMENDATION = "derived_recommendation"
+    SYSTEM_GENERATED = "system_generated"
+
+
+class UnknownFieldPolicy(StrEnum):
+    ERROR = "error"
+    WARN = "warn"
+    IGNORE = "ignore"

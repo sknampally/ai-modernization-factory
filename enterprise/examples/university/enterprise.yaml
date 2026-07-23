@@ -1,0 +1,13 @@
+apiVersion: codestrata.io/v1alpha1
+kind: Enterprise
+metadata:
+  id: acme
+  name: Acme University
+  description: Example enterprise architecture model
+spec:
+  schemaVersion: "1.0"
+  defaultOrganization: acme
+  repositoryResolution:
+    requireRegisteredRepository: true
+  validation:
+    unknownReferences: error

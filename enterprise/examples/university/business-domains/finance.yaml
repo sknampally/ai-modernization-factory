@@ -1,0 +1,9 @@
+apiVersion: codestrata.io/v1alpha1
+kind: BusinessDomain
+metadata:
+  id: finance
+  name: Finance
+spec:
+  owningOrganization: acme
+  criticality: high
+  lifecycle: active

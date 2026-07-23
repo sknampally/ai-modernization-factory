@@ -1,0 +1,9 @@
+apiVersion: codestrata.io/v1alpha1
+kind: BusinessCapability
+metadata:
+  id: student-registration
+  name: Student Registration
+spec:
+  businessDomain: student-services
+  criticality: high
+  lifecycle: strategic

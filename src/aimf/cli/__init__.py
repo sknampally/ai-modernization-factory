@@ -18,7 +18,10 @@ from aimf.cli.assess import (
     register_assess_command,
     run_assessment,
 )
+from aimf.cli.enterprise import enterprise_app
+from aimf.cli.incremental import incremental_app
 from aimf.cli.mcp import mcp_app
+from aimf.cli.rules import rules_app
 from aimf.config import load_settings
 from aimf.logging_config import configure_logging
 from aimf.output_format import OutputFormat
@@ -195,6 +198,9 @@ def scan(
 register_assess_command(app)
 app.add_typer(mcp_app, name="mcp")
 app.add_typer(agent_app, name="agent")
+app.add_typer(incremental_app, name="incremental")
+app.add_typer(enterprise_app, name="enterprise")
+app.add_typer(rules_app, name="rules")
 
 __all__ = [
     "DEFAULT_ASSESS_MAX_OUTPUT_TOKENS",

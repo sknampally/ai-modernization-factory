@@ -1,0 +1,20 @@
+apiVersion: codestrata.io/v1alpha1
+kind: Application
+metadata:
+  id: financial-aid-portal
+  name: Financial Aid Portal
+spec:
+  applicationType: custom
+  lifecycle: active
+  criticality: high
+  businessDomains:
+    - finance
+  capabilities:
+    - financial-aid-processing
+  repositories:
+    - financial-aid-api
+  services:
+    - financial-aid-service
+  owningTeam: finance-apps-team
+  environments:
+    - production

@@ -6,12 +6,19 @@ import json
 
 from mcp.server.fastmcp import FastMCP
 
+from aimf.application.enterprise.query_service import EnterpriseKnowledgeQueryService
 from aimf.application.knowledge.queries import KnowledgeQueryService
 from aimf.interfaces.mcp.errors import call_tool
 from aimf.interfaces.mcp.mapping import to_mcp_payload
+from aimf.interfaces.mcp.resources.enterprise import register_enterprise_resources
 
 
-def register_resources(server: FastMCP, queries: KnowledgeQueryService) -> None:
+def register_resources(
+    server: FastMCP,
+    queries: KnowledgeQueryService,
+    *,
+    enterprise_query_service: EnterpriseKnowledgeQueryService | None = None,
+) -> None:
     @server.resource("codestrata://repositories", mime_type="application/json")
     def repositories() -> str:
         """List registered repositories."""
@@ -73,3 +80,5 @@ def register_resources(server: FastMCP, queries: KnowledgeQueryService) -> None:
             return json.dumps(to_mcp_payload(items), indent=2, ensure_ascii=False)
 
         return call_tool("resource:recommendations", _run)  # type: ignore[return-value]
+
+    register_enterprise_resources(server, query_service=enterprise_query_service)

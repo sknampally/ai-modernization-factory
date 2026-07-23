@@ -1,0 +1,16 @@
+apiVersion: codestrata.io/v1alpha1
+kind: ModernizationInitiative
+metadata:
+  id: student-modernization
+  name: Student Platform Modernization
+spec:
+  status: active
+  priority: high
+  applications:
+    - student-information-system
+  repositories:
+    - student-api
+  capabilities:
+    - student-registration
+  owningTeam: student-platform-team
+  objective: Modernize registration services toward cloud-ready runtimes.

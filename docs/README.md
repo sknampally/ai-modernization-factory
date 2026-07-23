@@ -7,6 +7,10 @@ Canonical topic docs for AIMF v0.1.0:
 | [runtime.md](runtime.md) | End-to-end `aimf assess` runtime |
 | [knowledge-store.md](knowledge-store.md) | Phase 2B knowledge store + query services (Increment 3) |
 | [agent-framework.md](agent-framework.md) | Phase 2D/2E Agent Framework + CLI/MCP adapters |
+| [enterprise-knowledge-graph/README.md](enterprise-knowledge-graph/README.md) | Phase 3 Enterprise Knowledge Graph |
+| [analysis-intelligence/README.md](analysis-intelligence/README.md) | Phase 4 Analysis Intelligence |
+| [capabilities.md](capabilities.md) | Capability status matrix |
+| [roadmap.md](roadmap.md) | Phase roadmap pointer |
 | [mcp-server.md](mcp-server.md) | Phase 2C/2E CodeStrata FastMCP server |
 | [repository-graph.md](repository-graph.md) | Inventory, repository graph, dependencies |
 | [assessment-graph.md](assessment-graph.md) | Assessment graph projection |

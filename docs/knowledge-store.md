@@ -152,10 +152,14 @@ Conflicting optional `legacy_repository_key` aliases are skipped during
 
 ## Deferred
 
-- Thin CLI (`aimf agent …`) and high-level MCP agent tools over AgentOrchestrator
 - REST adapters
-- Incremental graph execution
+- Incremental graph **execution** with opt-in CLI/MCP rollout (Phase 2F complete;
+  default assess path remains full rebuild — see
+  [incremental-assessment.md](incremental-assessment.md))
+- Additive incremental execution records under
+  `{knowledge}/incremental_executions/`
 - Knowledge retention / GC of unreferenced blobs
 - Catalog-level EKG deduplication across repositories
 - Relational graph indexes / graph database
 - Rename detection in snapshot comparison
+- Persisted engine fingerprints on snapshots (2F.1 infers from run metadata)

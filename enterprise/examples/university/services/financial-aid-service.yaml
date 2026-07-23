@@ -1,0 +1,14 @@
+apiVersion: codestrata.io/v1alpha1
+kind: Service
+metadata:
+  id: financial-aid-service
+  name: Financial Aid Service
+spec:
+  serviceType: backend
+  application: financial-aid-portal
+  repositories:
+    - financial-aid-api
+  dataStores:
+    - student-oracle
+  owningTeam: finance-apps-team
+  lifecycle: active

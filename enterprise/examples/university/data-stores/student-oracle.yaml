@@ -1,0 +1,12 @@
+apiVersion: codestrata.io/v1alpha1
+kind: DataStore
+metadata:
+  id: student-oracle
+  name: Student Oracle
+spec:
+  type: relational
+  technology: oracle
+  systemOfRecord: true
+  criticality: critical
+  lifecycle: active
+  dataClassification: confidential

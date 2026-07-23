@@ -1,0 +1,8 @@
+apiVersion: codestrata.io/v1alpha1
+kind: Team
+metadata:
+  id: finance-apps-team
+  name: Finance Apps Team
+spec:
+  organization: acme
+  lifecycle: active

@@ -1,0 +1,19 @@
+apiVersion: codestrata.io/v1alpha1
+kind: Service
+metadata:
+  id: registration-service
+  name: Registration Service
+spec:
+  serviceType: backend
+  application: student-information-system
+  repositories:
+    - student-api
+  apis:
+    - registration-api
+  dataStores:
+    - student-oracle
+  dependsOn:
+    - identity-service
+  owningTeam: student-platform-team
+  criticality: high
+  lifecycle: active

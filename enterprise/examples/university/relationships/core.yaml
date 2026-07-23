@@ -1,0 +1,34 @@
+apiVersion: codestrata.io/v1alpha1
+kind: Relationships
+metadata:
+  id: core-relationships
+  name: Core Relationships
+spec:
+  relationships:
+    - kind: ORGANIZATION_OWNS_DOMAIN
+      source: organization:acme
+      target: domain:student-services
+    - kind: ORGANIZATION_OWNS_DOMAIN
+      source: organization:acme
+      target: domain:finance
+    - kind: DOMAIN_PROVIDES_CAPABILITY
+      source: domain:student-services
+      target: capability:student-registration
+    - kind: DOMAIN_PROVIDES_CAPABILITY
+      source: domain:finance
+      target: capability:financial-aid-processing
+    - kind: SERVICE_CONSUMES_API
+      source: service:registration-service
+      target: api:identity-api
+    - kind: SERVICE_WRITES_TO_DATA_STORE
+      source: service:registration-service
+      target: data-store:student-oracle
+    - kind: TEAM_OWNS_REPOSITORY
+      source: team:student-platform-team
+      target: repository:student-api
+    - kind: APPLICATION_GOVERNED_BY_STANDARD
+      source: application:student-information-system
+      target: technology-standard:spring-standard
+    - kind: INITIATIVE_MODERNIZES_APPLICATION
+      source: initiative:student-modernization
+      target: application:student-information-system

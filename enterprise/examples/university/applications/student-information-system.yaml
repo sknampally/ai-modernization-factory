@@ -1,0 +1,26 @@
+apiVersion: codestrata.io/v1alpha1
+kind: Application
+metadata:
+  id: student-information-system
+  name: Student Information System
+  labels:
+    criticality: high
+spec:
+  applicationType: custom
+  lifecycle: strategic
+  criticality: high
+  businessDomains:
+    - student-services
+  capabilities:
+    - student-registration
+    - admissions
+  repositories:
+    - student-api
+    - registration-ui
+  services:
+    - registration-service
+    - identity-service
+  owningTeam: student-platform-team
+  environments:
+    - production
+    - test

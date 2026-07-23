@@ -208,7 +208,12 @@ when omitted, the factory composes one from the same query/assessment services.
 - No new recommendation / rule / graph engines
 - Review narratives remain deterministic aggregations (no required AI prose)
 
-## Next Phase 2 capability
+## Related Phase 2 capability
 
-**Phase 2F Incremental Scanning** — partial graph/rule recomputation for changed
-repository content, without changing agent→application-service boundaries.
+**Phase 2F** incremental assessment (including 2F.3 validation, telemetry,
+explainability, and `aimf incremental` / MCP tools) is complete for controlled
+opt-in use. Agent workflows are unchanged. See
+[incremental-assessment.md](incremental-assessment.md).
+
+Next major phase after agents: Enterprise Knowledge Graph (Phase 3; optional).
+Analysis Intelligence is Phase 4; GitHub PR review remains Phase 6.

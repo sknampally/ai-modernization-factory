@@ -1,0 +1,9 @@
+apiVersion: codestrata.io/v1alpha1
+kind: BusinessDomain
+metadata:
+  id: student-services
+  name: Student Services
+spec:
+  owningOrganization: acme
+  criticality: high
+  lifecycle: strategic

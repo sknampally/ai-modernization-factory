@@ -18,11 +18,14 @@ from aimf.application.agents.errors import (
     AgentWorkflowBlockedError,
 )
 from aimf.application.assessment import AssessmentCommandError
+from aimf.application.enterprise.errors import EnterpriseApplicationError
+from aimf.application.incremental.errors import IncrementalPlanningError
 from aimf.application.knowledge.errors import (
     KnowledgeStoreError,
     RepositoryIdentityError,
 )
 from aimf.application.knowledge.queries.errors import KnowledgeQueryError
+from aimf.application.rules.errors import RuleApplicationError
 from aimf.interfaces.mcp.security import sanitize_error_message
 
 logger = logging.getLogger("aimf.interfaces.mcp")
@@ -46,6 +49,9 @@ def raise_tool_error(error: BaseException, *, tool_name: str) -> NoReturn:
             AgentEvidenceError,
             AgentWorkflowBlockedError,
             AgentError,
+            IncrementalPlanningError,
+            EnterpriseApplicationError,
+            RuleApplicationError,
             ValueError,
         ),
     ):

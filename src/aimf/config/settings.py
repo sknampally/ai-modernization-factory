@@ -286,6 +286,234 @@ class AgentsSettings(BaseModel):
         return value
 
 
+class IncrementalSettings(BaseModel):
+    """Optional incremental assessment planning and execution bounds.
+
+    ``rollout_mode`` defaults to ``off``. Neither legacy booleans nor rollout
+    activate incremental execution for ``aimf assess``. Hard safety fallbacks
+    cannot be disabled. ``allow_ai_reuse`` must remain false in Phase 2F.3.
+    """
+
+    rollout_mode: str = "off"
+    enabled: bool = False
+    execution_enabled: bool = False
+    max_changed_files: int = 100
+    max_change_ratio: float = 0.30
+    dependency_depth: int = 2
+    max_impacted_components: int = 500
+    max_impacted_findings: int = 500
+    max_impacted_recommendations: int = 500
+    allow_metadata_only_noop: bool = True
+    require_complete_fingerprints: bool = True
+    fallback_on_unknown_impact: bool = True
+    fallback_on_unsupported_language: bool = True
+    fallback_on_engine_change: bool = True
+    allow_selective_scan: bool = True
+    allow_graph_merge: bool = True
+    allow_rule_reuse: bool = True
+    allow_recommendation_reuse: bool = True
+    allow_ai_reuse: bool = False
+    fallback_on_step_failure: bool = True
+    fallback_on_merge_conflict: bool = True
+    fallback_on_validation_failure: bool = True
+    validate_after_execution: bool = True
+    persist_execution_records: bool = True
+    enable_equivalence_check: bool = False
+    max_explanations: int = 500
+    max_equivalence_differences: int = 100
+    fallback_on_metric_inconsistency: bool = True
+
+    @field_validator(
+        "max_changed_files",
+        "max_impacted_components",
+        "max_impacted_findings",
+        "max_impacted_recommendations",
+        "max_explanations",
+        "max_equivalence_differences",
+    )
+    @classmethod
+    def validate_positive_bounds(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("incremental bounds must be positive")
+        return value
+
+    @field_validator("max_change_ratio")
+    @classmethod
+    def validate_change_ratio(cls, value: float) -> float:
+        if value <= 0.0 or value > 1.0:
+            raise ValueError("incremental.max_change_ratio must be in (0.0, 1.0]")
+        return value
+
+    @field_validator("dependency_depth")
+    @classmethod
+    def validate_dependency_depth(cls, value: int) -> int:
+        if value < 1 or value > 3:
+            raise ValueError("incremental.dependency_depth must be between 1 and 3")
+        return value
+
+    @field_validator("rollout_mode")
+    @classmethod
+    def validate_rollout_mode(cls, value: str) -> str:
+        compact = value.strip().lower()
+        allowed = {"off", "plan_only", "opt_in", "default_with_fallback"}
+        if compact not in allowed:
+            raise ValueError(f"incremental.rollout_mode must be one of {sorted(allowed)}")
+        return compact
+
+    @model_validator(mode="before")
+    @classmethod
+    def map_legacy_booleans(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        mode = data.get("rollout_mode")
+        if mode is None or (isinstance(mode, str) and not mode.strip()):
+            if data.get("execution_enabled"):
+                return {**data, "rollout_mode": "opt_in"}
+            if data.get("enabled"):
+                return {**data, "rollout_mode": "plan_only"}
+        return data
+
+    @field_validator("require_complete_fingerprints", "fallback_on_unknown_impact")
+    @classmethod
+    def validate_hard_safety(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError(
+                "incremental.require_complete_fingerprints and "
+                "fallback_on_unknown_impact are hard safety conditions and must be true"
+            )
+        return value
+
+    @field_validator(
+        "fallback_on_step_failure",
+        "fallback_on_merge_conflict",
+        "fallback_on_validation_failure",
+        "fallback_on_metric_inconsistency",
+    )
+    @classmethod
+    def validate_execution_hard_safety(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError("incremental execution fallback hard-safety flags must remain true")
+        return value
+
+    @field_validator("allow_ai_reuse")
+    @classmethod
+    def validate_ai_reuse_disabled(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("incremental.allow_ai_reuse must be false in Phase 2F.3")
+        return value
+
+    @model_validator(mode="after")
+    def validate_rollout_consistency(self) -> IncrementalSettings:
+        mode = self.rollout_mode
+        if mode == "off" and (self.enabled or self.execution_enabled):
+            raise ValueError(
+                "Conflicting incremental settings: rollout_mode=off with "
+                "enabled/execution_enabled true"
+            )
+        if mode == "plan_only" and self.execution_enabled:
+            raise ValueError("Conflicting incremental settings: plan_only with execution_enabled")
+        return self
+
+
+class EnterpriseSettings(BaseModel):
+    """Optional Enterprise Knowledge Graph settings (disabled by default)."""
+
+    enabled: bool = False
+    workspace: str = "enterprise"
+    schema_version: str = "codestrata.io/v1alpha1"
+    persist_graph: bool = True
+    link_repository_assessments: bool = True
+    require_registered_repositories: bool = True
+    allow_unresolved_repositories: bool = False
+    unknown_fields: str = "error"
+    max_manifest_files: int = 5000
+    max_manifest_size_bytes: int = 1_048_576
+    max_yaml_depth: int = 50
+    max_graph_entities: int = 100_000
+    max_graph_relationships: int = 500_000
+    max_query_results: int = 500
+    max_traversal_depth: int = 5
+    max_dependency_paths: int = 100
+    persist_manifest_snapshot: bool = True
+
+    @field_validator(
+        "max_manifest_files",
+        "max_manifest_size_bytes",
+        "max_yaml_depth",
+        "max_graph_entities",
+        "max_graph_relationships",
+        "max_query_results",
+        "max_traversal_depth",
+        "max_dependency_paths",
+    )
+    @classmethod
+    def validate_positive(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("enterprise bounds must be positive")
+        return value
+
+    @field_validator("max_traversal_depth")
+    @classmethod
+    def validate_depth(cls, value: int) -> int:
+        if value > 10:
+            raise ValueError("enterprise.max_traversal_depth cannot exceed 10")
+        return value
+
+    @field_validator("unknown_fields")
+    @classmethod
+    def validate_unknown_fields(cls, value: str) -> str:
+        compact = value.strip().lower()
+        if compact not in {"error", "warn", "ignore"}:
+            raise ValueError("enterprise.unknown_fields must be error|warn|ignore")
+        return compact
+
+    @model_validator(mode="after")
+    def validate_resolution_policy(self) -> EnterpriseSettings:
+        if self.require_registered_repositories and self.allow_unresolved_repositories:
+            # Allowed combination: require attempt but permit unresolved as warning
+            # when allow_unresolved_repositories is true — keep as-is.
+            pass
+        return self
+
+
+class RulesSettings(BaseModel):
+    """Shared Rule Platform settings (disabled by default; Phase 4.1)."""
+
+    enabled: bool = False
+    fail_on_rule_error: bool = False
+    max_rules_per_run: int = 1000
+    max_matches_per_rule: int = 1000
+    max_total_matches: int = 10_000
+    max_evidence_per_match: int = 100
+    default_categories: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "max_rules_per_run",
+        "max_matches_per_rule",
+        "max_total_matches",
+        "max_evidence_per_match",
+    )
+    @classmethod
+    def validate_positive(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("rules bounds must be positive")
+        return value
+
+    @field_validator("max_rules_per_run")
+    @classmethod
+    def validate_max_rules(cls, value: int) -> int:
+        if value > 100_000:
+            raise ValueError("rules.max_rules_per_run cannot exceed 100000")
+        return value
+
+    @field_validator("max_total_matches")
+    @classmethod
+    def validate_max_matches(cls, value: int) -> int:
+        if value > 1_000_000:
+            raise ValueError("rules.max_total_matches cannot exceed 1000000")
+        return value
+
+
 class AimfSettings(BaseModel):
     """Top-level AIMF application settings."""
 
@@ -303,6 +531,9 @@ class AimfSettings(BaseModel):
     ai: AiSettings = Field(default_factory=AiSettings)
     mcp: McpSettings = Field(default_factory=McpSettings)
     agents: AgentsSettings = Field(default_factory=AgentsSettings)
+    incremental: IncrementalSettings = Field(default_factory=IncrementalSettings)
+    enterprise: EnterpriseSettings = Field(default_factory=EnterpriseSettings)
+    rules: RulesSettings = Field(default_factory=RulesSettings)
 
 
 def load_settings(config_path: Path) -> AimfSettings:

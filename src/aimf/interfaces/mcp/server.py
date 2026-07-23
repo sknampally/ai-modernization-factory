@@ -6,6 +6,7 @@ from mcp.server.fastmcp import FastMCP
 
 from aimf.application.agents import AgentOrchestrator
 from aimf.application.assessment import AssessmentApplicationService
+from aimf.application.enterprise.query_service import EnterpriseKnowledgeQueryService
 from aimf.application.knowledge.queries import KnowledgeQueryService
 from aimf.config import AimfSettings
 from aimf.interfaces.mcp.prompts import register_prompts
@@ -28,6 +29,11 @@ def build_mcp_server(
     assessment_service: AssessmentApplicationService,
     settings: AimfSettings | None = None,
     agent_orchestrator: AgentOrchestrator | None = None,
+    incremental_operations: object | None = None,
+    incremental_inspection: object | None = None,
+    enterprise_knowledge_service: object | None = None,
+    enterprise_query_service: object | None = None,
+    rule_analysis_service: object | None = None,
 ) -> FastMCP:
     """Assemble a FastMCP server with tools, resources, and prompts registered."""
 
@@ -41,7 +47,21 @@ def build_mcp_server(
         assessment_service=assessment_service,
         settings=settings,
         agent_orchestrator=agent_orchestrator,
+        incremental_operations=incremental_operations,
+        incremental_inspection=incremental_inspection,
+        enterprise_knowledge_service=enterprise_knowledge_service,
+        enterprise_query_service=enterprise_query_service,
+        rule_analysis_service=rule_analysis_service,
     )
-    register_resources(server, queries)
+    enterprise_queries = (
+        enterprise_query_service
+        if isinstance(enterprise_query_service, EnterpriseKnowledgeQueryService)
+        else None
+    )
+    register_resources(
+        server,
+        queries,
+        enterprise_query_service=enterprise_queries,
+    )
     register_prompts(server, queries)
     return server

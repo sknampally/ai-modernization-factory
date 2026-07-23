@@ -145,6 +145,39 @@ the factory composes an orchestrator from the shared query/assessment services.
 
 CLI sibling: `aimf agent …` (see [agent-framework.md](agent-framework.md)).
 
-## Next Phase 2 step
+## Incremental tools (Phase 2F.3)
 
-**Phase 2F Incremental Scanning** — partial recomputation for changed content.
+Four additive tools (granular + agent tools unchanged):
+
+| Tool | Purpose |
+| ---- | ------- |
+| `create_incremental_assessment_plan` | Plan only |
+| `execute_incremental_assessment` | Opt-in execute + validate + provenance |
+| `get_incremental_execution` | Load execution record |
+| `explain_incremental_execution` | Bounded deterministic explanations |
+
+Requires `[incremental].rollout_mode` of `plan_only` or `opt_in`. Default remains
+`off`. CLI sibling: `aimf incremental …` (see
+[incremental-assessment.md](incremental-assessment.md)).
+
+## Phase 2 status
+
+Phase 2 is complete for controlled opt-in incremental use. Full assessment remains
+the default.
+
+## Enterprise Knowledge Graph (Phase 3)
+
+Additive YAML enterprise architecture tools (optional; disabled by default). See
+[enterprise-knowledge-graph/README.md](enterprise-knowledge-graph/README.md).
+
+MCP tools include workspace validate/build, graph/entity query, neighborhood,
+dependency paths, repository context, finding/recommendation impact, explain,
+and graph version compare. Read-only resources under
+`codestrata://enterprise/...` are registered when the enterprise query service
+is configured.
+
+Analysis Intelligence remains Phase 4; GitHub PR review remains Phase 6.
+
+## Next phase
+
+See [../ROADMAP.md](../ROADMAP.md).

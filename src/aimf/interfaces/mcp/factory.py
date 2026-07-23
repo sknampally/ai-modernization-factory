@@ -27,6 +27,12 @@ def create_mcp_server(
     config_path: Path | None = None,
     knowledge_store: KnowledgeStore | None = None,
     agent_orchestrator: AgentOrchestrator | None = None,
+    incremental_planning_service: object | None = None,
+    incremental_execution_service: object | None = None,
+    incremental_inspection_service: object | None = None,
+    enterprise_knowledge_service: object | None = None,
+    enterprise_query_service: object | None = None,
+    rule_analysis_service: object | None = None,
 ) -> FastMCP:
     """Create a CodeStrata FastMCP server with injectable application services.
 
@@ -54,11 +60,81 @@ def create_mcp_server(
             settings=resolved_settings,
         )
 
+    operations = incremental_execution_service
+    inspection = incremental_inspection_service
+    if operations is None and resolved_settings is not None:
+        from aimf.application.incremental.factory import (
+            AssessmentApplicationServiceRunner,
+            create_incremental_operations_service,
+            create_incremental_planning_service,
+        )
+        from aimf.application.incremental.inspection import IncrementalInspectionService
+        from aimf.application.incremental.provenance import (
+            FileIncrementalExecutionRecordStore,
+        )
+
+        planning = incremental_planning_service or create_incremental_planning_service(
+            query_service=queries,
+            settings=resolved_settings,
+        )
+        runner = AssessmentApplicationServiceRunner(
+            assess,
+            knowledge_store=knowledge_store,
+            config_path=config_path or Path("aimf.toml"),
+        )
+        operations = create_incremental_operations_service(
+            assessment_runner=runner,
+            query_service=queries,
+            planning_service=planning,  # type: ignore[arg-type]
+            settings=resolved_settings,
+        )
+        if inspection is None:
+            store = FileIncrementalExecutionRecordStore(
+                Path(resolved_settings.knowledge.directory) / "incremental_executions"
+            )
+            inspection = IncrementalInspectionService(store)
+
+    enterprise_knowledge = enterprise_knowledge_service
+    enterprise_queries = enterprise_query_service
+    if enterprise_knowledge is None and resolved_settings is not None:
+        from aimf.application.enterprise.factory import (
+            create_enterprise_knowledge_service,
+            create_enterprise_query_service,
+            policy_from_settings,
+        )
+
+        policy = policy_from_settings(resolved_settings).model_copy(
+            update={
+                "allow_unresolved_repositories": True,
+                "require_registered_repositories": False,
+            }
+        )
+        enterprise_knowledge = create_enterprise_knowledge_service(
+            settings=resolved_settings,
+            policy=policy,
+        )
+        if enterprise_queries is None:
+            enterprise_queries = create_enterprise_query_service(
+                settings=resolved_settings,
+                policy=policy,
+            )
+
+    rules_service = rule_analysis_service
+    if rules_service is None:
+        from aimf.application.rules.factory import create_rule_analysis_service
+
+        rules_service = create_rule_analysis_service(settings=resolved_settings)
+
     return build_mcp_server(
         queries=queries,
         assessment_service=assess,
         settings=resolved_settings,
         agent_orchestrator=orchestrator,
+        incremental_operations=operations,
+        incremental_inspection=inspection,
+        enterprise_knowledge_service=enterprise_knowledge,
+        enterprise_query_service=enterprise_queries,
+        rule_analysis_service=rules_service,
     )
 
 

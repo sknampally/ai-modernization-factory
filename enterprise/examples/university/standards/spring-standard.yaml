@@ -1,0 +1,9 @@
+apiVersion: codestrata.io/v1alpha1
+kind: TechnologyStandard
+metadata:
+  id: spring-standard
+  name: Spring Boot Standard
+spec:
+  status: approved
+  approvedTechnology: spring-boot
+  guidance: Prefer current supported Spring Boot LTS releases.

@@ -1,0 +1,9 @@
+apiVersion: codestrata.io/v1alpha1
+kind: BusinessCapability
+metadata:
+  id: admissions
+  name: Admissions
+spec:
+  businessDomain: student-services
+  criticality: medium
+  lifecycle: active

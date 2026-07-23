@@ -208,6 +208,7 @@ class AssessmentApplicationService:
         clock: Callable[[], datetime] | None = None,
         verbose: bool = False,
         knowledge_store: KnowledgeStore | None = None,
+        scanned_repository: Repository | None = None,
     ) -> AssessmentCommandResult:
         """Orchestrate scan → analysis → graph pipeline → optional AI → HTML+JSON reports.
 
@@ -217,6 +218,9 @@ class AssessmentApplicationService:
         2. ``[repository].path`` from configuration
         3. ``[repository].url`` from configuration
         4. Clear actionable error (never a silent demo repository)
+
+        When ``scanned_repository`` is provided, the scan stage is skipped and that
+        repository object is used (Phase 2F.2 incremental stage rebuild).
         """
 
         active_console = console or Console(stderr=False)
@@ -249,12 +253,15 @@ class AssessmentApplicationService:
         stage("Scanning repository")
         scan_started = perf_counter()
         try:
-            repository = _scan_repository(
-                resolved_repo,
-                settings=loaded_settings,
-                branch=resolved_branch,
-                scanner=scanner,
-            )
+            if scanned_repository is not None:
+                repository = scanned_repository
+            else:
+                repository = _scan_repository(
+                    resolved_repo,
+                    settings=loaded_settings,
+                    branch=resolved_branch,
+                    scanner=scanner,
+                )
         except AssessmentCommandError:
             raise
         except (
@@ -345,7 +352,90 @@ class AssessmentApplicationService:
                 f"Knowledge store failure: {sanitize_provider_text(str(error))}"
             ) from error
 
+    def assess_incrementally_if_safe(
+        self,
+        repo: str | None,
+        output_directory: Path,
+        *,
+        previous_run_id: str | None = None,
+        branch: str | None = None,
+        with_ai: bool = False,
+        config_path: Path = Path("aimf.toml"),
+        settings: AimfSettings | None = None,
+        knowledge_store: KnowledgeStore | None = None,
+        candidate: object | None = None,
+        plan: object | None = None,
+        console: Console | None = None,
+    ) -> AssessmentCommandResult:
+        """Explicit opt-in incremental assessment with full-rebuild fallback.
 
+        Does not change ``run()`` defaults. Requires ``[incremental].execution_enabled``.
+        Returns the same :class:`AssessmentCommandResult` contract as ``run()``.
+        """
+
+        from aimf.application.incremental.execution_models import IncrementalExecutionRequest
+        from aimf.application.incremental.execution_policies import (
+            execution_policy_from_settings,
+        )
+        from aimf.application.incremental.factory import (
+            AssessmentApplicationServiceRunner,
+            create_incremental_assessment_executor,
+        )
+        from aimf.application.incremental.models import (
+            CandidateRepositoryState,
+            IncrementalAssessmentPlan,
+        )
+
+        loaded_settings = settings or load_settings(config_path)
+        policy = execution_policy_from_settings(loaded_settings)
+        if not policy.execution_enabled:
+            # Explicit API still falls back to full assessment when execution is off.
+            return self.run(
+                repo,
+                output_directory,
+                mode=(
+                    AssessmentMode.AI_ENHANCED if with_ai else AssessmentMode.DETERMINISTIC
+                ),
+                branch=branch,
+                config_path=config_path,
+                settings=loaded_settings,
+                knowledge_store=knowledge_store,
+                console=console,
+            )
+
+        resolved = resolve_assessment_repository(repo, loaded_settings)
+        typed_candidate = (
+            candidate
+            if isinstance(candidate, CandidateRepositoryState)
+            else None
+        )
+        typed_plan = plan if isinstance(plan, IncrementalAssessmentPlan) else None
+        executor = create_incremental_assessment_executor(
+            assessment_runner=AssessmentApplicationServiceRunner(
+                self,
+                knowledge_store=knowledge_store,
+                console=console,
+                config_path=config_path,
+            ),
+            settings=loaded_settings,
+            policy=policy,
+        )
+        result = executor.execute(
+            IncrementalExecutionRequest(
+                repository=resolved,
+                output_directory=str(output_directory),
+                branch=branch,
+                previous_run_id=previous_run_id,
+                with_ai=with_ai,
+                candidate=typed_candidate,
+                plan=typed_plan,
+                policy=policy,
+                config_path=str(config_path),
+            )
+        )
+        if result.assessment_result is None:
+            raise AssessmentCommandError("Incremental execution produced no assessment result")
+        return cast(AssessmentCommandResult, result.assessment_result)
 
     def _run_assessment_pipeline(
         self,

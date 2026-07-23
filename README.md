@@ -41,6 +41,9 @@ Use it for modernization discovery, client demos, and engineering due diligence.
 * Local **CodeStrata** FastMCP server (`aimf mcp serve`)
 * Deterministic **Agent Framework** (`aimf.application.agents`) over application services
 * Thin **`aimf agent`** CLI and high-level MCP agent tools over `AgentOrchestrator`
+* Incremental assessment with validation, telemetry, explainability, and opt-in CLI/MCP (`aimf.application.incremental`; `rollout_mode=off` by default)
+* Enterprise Knowledge Graph from YAML (`aimf enterprise`; optional, disabled by default)
+* Shared Rule Platform (`aimf rules`; Phase 4.1 infrastructure; disabled by default)
 
 ---
 
@@ -257,18 +260,17 @@ open `report.html` in a browser.
 
 ## Roadmap
 
-**v0.1.0 (this release)** — MVP assessment CLI, graphs, rules, recommendations,
-AI enrichment, HTML Report v2.
+**Phase 2** — Core platform foundation (assessment, knowledge graphs, agents,
+incremental assessment).
 
-**Phase 2 (planned)**
+**Phase 3** — Enterprise Knowledge Graph (YAML workspace; optional; see
+[docs/enterprise-knowledge-graph/](docs/enterprise-knowledge-graph/)).
 
-* Additional static-analysis providers (Semgrep, CodeQL, …)
-* Broader language and lockfile coverage
-* Richer AI structured risk objects (still one-call / no silent retries)
-* Assisted refactoring workflows
-* Hosted / CI integrations
+**Phase 4.1** — Shared Rule Platform (infrastructure; see
+[docs/analysis-intelligence/](docs/analysis-intelligence/)). Packs start at 4.2.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for long-term vision.
+**Phase 4.2+ / 5+** — Analysis Intelligence packs, language expansion, workflow
+intelligence, platform expansion. See [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -302,6 +304,7 @@ mypy src
 | [docs/knowledge-store.md](docs/knowledge-store.md) | Durable knowledge store + queries |
 | [docs/mcp-server.md](docs/mcp-server.md) | CodeStrata FastMCP server |
 | [docs/agent-framework.md](docs/agent-framework.md) | Agent Framework + `aimf agent` / MCP agent tools |
+| [docs/enterprise-knowledge-graph/README.md](docs/enterprise-knowledge-graph/README.md) | Phase 3 Enterprise Knowledge Graph |
 | [examples/README.md](examples/README.md) | Sample commands & expected outputs |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting |
