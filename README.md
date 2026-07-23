@@ -187,14 +187,58 @@ Assessment reports are written under timestamped run directories:
 reports/<repository-name>/<YYYYMMDD-HHMMSS>/
 ├── report.html          # customer-facing assessment
 ├── report.json          # machine-readable assessment
-└── ai-execution.json    # only for --with-ai attempts (internal)
+├── findings.json        # deterministic Assessment Graph rule findings
+├── recommendations.json # deterministic finding → modernization recommendations
+├── ai-execution.json    # only for --with-ai attempts (internal)
+└── graphs/              # deterministic Phase 2 graph artifacts
+    ├── repository-manifest.json
+    ├── repository-graph.json
+    ├── engineering-knowledge-graph.json
+    ├── knowledge-bindings.json
+    ├── assessment-graph.json
+    └── graph-summary.json
 ```
 
 AIMF keeps the latest three completed runs per repository.
 
-**Deterministic analysis** (`--no-ai`, the default) scans the repository, runs analyzers, and writes evidence-based HTML/JSON without calling a cloud model.
+**Deterministic analysis** (`--no-ai`, the default) scans the repository, runs
+analyzers, builds knowledge-graph artifacts, evaluates Assessment Graph rules,
+derives deterministic recommendations from those findings, and writes
+evidence-based HTML/JSON without calling a cloud model.
 
-**`--with-ai`** adds an optional Bedrock interpretation layer over the same normalized evidence. If AI fails, deterministic reports are still written when possible.
+**`--with-ai`** adds an optional Bedrock interpretation layer over the same
+normalized Phase 1 evidence. Graph artifacts, `findings.json`, and
+`recommendations.json` are still written. Full recommendation JSON is not yet
+passed into the AI context. If AI fails, deterministic reports and graphs are
+kept when possible.
+
+### Deterministic findings and recommendations
+
+```text
+Repository Graph → Assessment Graph → Rules → Findings → Recommendations
+→ optional AI / reporting
+```
+
+| Layer | Artifact | Role |
+| ----- | -------- | ---- |
+| Rules | `findings.json` | Deterministic Assessment Graph findings |
+| Recommendations | `recommendations.json` | Actionable steps derived only from findings |
+
+AI enrichment (prioritization narrative, executive summary) remains separate
+under `--with-ai` and does not replace these deterministic artifacts.
+
+### Graph artifacts (brief)
+
+| Artifact | Meaning |
+| -------- | ------- |
+| Repository Graph | Structural view of the assessed repository (files, modules, dependencies, …) |
+| Engineering Knowledge Graph | Reusable engineering concepts from the builtin catalog |
+| Knowledge Bindings | Deterministic links from repository observations to concepts |
+| Assessment Graph | Assessment-scoped projection of those accepted bindings |
+
+These artifacts feed the Rule Engine and Recommendation Engine. They are also
+machine-readable context for future AI-assisted narrative (not yet wired to
+consume recommendation JSON).
 
 ## Troubleshooting
 
@@ -295,7 +339,7 @@ mypy src
 * Optional PMD static analysis for Java
 * Optional Bedrock AI interpretation over normalized evidence
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) and [docs/architecture/assessment-graph.md](docs/architecture/assessment-graph.md) for component details.
+See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/architecture/assessment-graph.md](docs/architecture/assessment-graph.md), and [docs/architecture/assess-runtime-graphs.md](docs/architecture/assess-runtime-graphs.md) for component details.
 
 ## License
 

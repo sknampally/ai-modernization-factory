@@ -95,8 +95,10 @@ def test_property_models_valid_construction_and_serialization() -> None:
         version="6.1.0",
         scope=DependencyScope.COMPILE,
         direct=True,
+        source_file="pom.xml",
     )
     assert dep.to_properties()["version"] == "6.1.0"
+    assert dep.to_properties()["source_file"] == "pom.xml"
 
 
 def test_property_models_reject_blank_and_negative_size() -> None:

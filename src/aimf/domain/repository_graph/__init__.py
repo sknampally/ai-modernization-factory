@@ -1,5 +1,6 @@
 """Language-neutral Repository Graph domain schema and identity helpers."""
 
+from aimf.domain.repository_graph.dependencies import Dependency, DependencyVersion
 from aimf.domain.repository_graph.enums import (
     DependencyScope,
     RepositoryCallableKind,
@@ -37,8 +38,10 @@ from aimf.domain.repository_graph.schema import (
 __all__ = [
     "REPOSITORY_GRAPH_SCHEMA_VERSION",
     "CallableProperties",
+    "Dependency",
     "DependencyProperties",
     "DependencyScope",
+    "DependencyVersion",
     "FileProperties",
     "ModuleProperties",
     "NamespaceProperties",

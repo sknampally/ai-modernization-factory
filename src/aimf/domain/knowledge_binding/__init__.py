@@ -14,6 +14,7 @@ from aimf.domain.knowledge_binding.models import (
     KNOWLEDGE_BINDING_RESULT_VERSION,
     KnowledgeBinding,
     KnowledgeBindingResult,
+    UnmatchedKnowledgeObservation,
 )
 
 __all__ = [
@@ -23,5 +24,6 @@ __all__ = [
     "KnowledgeBindingType",
     "KnowledgeMatchingStrategy",
     "KnowledgeObservationKind",
+    "UnmatchedKnowledgeObservation",
     "build_knowledge_binding_id",
 ]

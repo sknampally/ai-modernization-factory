@@ -7,14 +7,20 @@ Never mutates the Repository Graph or Engineering Knowledge Graph.
 from __future__ import annotations
 
 from aimf.domain.engineering_knowledge.models import EngineeringKnowledgeGraph
+from aimf.domain.graph.models import EvidenceReference
 from aimf.domain.knowledge_binding.enums import KnowledgeMatchingStrategy
 from aimf.domain.knowledge_binding.models import (
     KNOWLEDGE_BINDING_RESULT_VERSION,
+    KnowledgeBinding,
     KnowledgeBindingResult,
+    UnmatchedKnowledgeObservation,
 )
 from aimf.domain.repository_graph.models import RepositoryGraph
 from aimf.services.knowledge_pipeline.matching import match_observations
-from aimf.services.knowledge_pipeline.observations import extract_repository_observations
+from aimf.services.knowledge_pipeline.observations import (
+    RepositoryKnowledgeObservation,
+    extract_repository_observations,
+)
 
 
 class KnowledgePipeline:
@@ -58,6 +64,7 @@ class KnowledgePipeline:
         unmatched = tuple(
             node_id for node_id in considered_ids if node_id.root not in matched_repo_ids
         )
+        unmatched_observations = _unmatched_observations(observations, bindings)
 
         return KnowledgeBindingResult(
             result_version=KNOWLEDGE_BINDING_RESULT_VERSION,
@@ -69,6 +76,7 @@ class KnowledgePipeline:
             bindings=bindings,
             considered_repository_node_ids=considered_ids,
             unmatched_repository_node_ids=unmatched,
+            unmatched_observations=unmatched_observations,
         )
 
 
@@ -79,3 +87,65 @@ def bind_repository_knowledge(
     """Convenience wrapper around :class:`KnowledgePipeline.bind`."""
 
     return KnowledgePipeline().bind(repository_graph, knowledge_graph)
+
+
+def _unmatched_observations(
+    observations: tuple[RepositoryKnowledgeObservation, ...],
+    bindings: tuple[KnowledgeBinding, ...],
+) -> tuple[UnmatchedKnowledgeObservation, ...]:
+    matched_keys = {
+        (
+            binding.repository_node_id.root,
+            binding.observation_kind,
+            binding.matched_key,
+        )
+        for binding in bindings
+    }
+    seen: set[tuple[str, str, str]] = set()
+    unmatched: list[UnmatchedKnowledgeObservation] = []
+    for observation in observations:
+        key = (
+            observation.repository_node.id.root,
+            observation.observation_kind,
+            observation.candidate_key,
+        )
+        if key in matched_keys:
+            continue
+        dedupe_key = (
+            observation.repository_node.id.root,
+            observation.observation_kind.value,
+            observation.candidate_key,
+        )
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        unmatched.append(
+            UnmatchedKnowledgeObservation(
+                repository_node_id=observation.repository_node.id,
+                observation_kind=observation.observation_kind,
+                candidate_key=observation.candidate_key,
+                repository_node_type=observation.repository_node.node_type,
+                evidence=(
+                    EvidenceReference(
+                        evidence_type="repository_graph_observation",
+                        source_id=observation.repository_node.id.root,
+                        symbol_id=observation.repository_node.id,
+                        excerpt=(
+                            f"{observation.observation_kind.value}="
+                            f"{observation.candidate_key} "
+                            f"on {observation.repository_node.node_type}"
+                        ),
+                    ),
+                ),
+            )
+        )
+    return tuple(
+        sorted(
+            unmatched,
+            key=lambda item: (
+                item.repository_node_id.root,
+                item.observation_kind.value,
+                item.candidate_key,
+            ),
+        )
+    )

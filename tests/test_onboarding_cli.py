@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -107,7 +108,31 @@ def test_config_driven_javascript_assessment(tmp_path: Path) -> None:
     html = result.html_report_path.read_text(encoding="utf-8")
     assert "JavaScript" in html or "javascript" in html.lower() or "Node" in html
     assert "spring-petclinic" not in html.lower()
-    assert ".aimf/workspace" not in str(result.run_directory)
+    assert result.graphs_directory is not None
+    assert result.graphs_directory.is_dir()
+    assert (result.graphs_directory / "repository-graph.json").is_file()
+    assert (result.graphs_directory / "knowledge-bindings.json").is_file()
+    assert (result.graphs_directory / "assessment-graph.json").is_file()
+    assert (result.graphs_directory / "graph-summary.json").is_file()
+    bindings = json.loads(
+        (result.graphs_directory / "knowledge-bindings.json").read_text(encoding="utf-8")
+    )
+    matched = {item["matched_key"] for item in bindings["bindings"]}
+    assert "javascript" in matched
+    assert result.knowledge_binding_count is not None
+    assert result.knowledge_binding_count >= 1
+    assert result.findings_artifact_path is not None
+    assert result.findings_artifact_path.is_file()
+    assert result.rule_finding_count is not None
+    assert result.rule_finding_count >= 1
+    assert result.rules_evaluated_count is not None
+    assert result.rules_evaluated_count >= 1
+    assert result.recommendations_artifact_path is not None
+    assert result.recommendations_artifact_path.is_file()
+    assert result.phase3_recommendation_count is not None
+    assert result.phase3_recommendation_count >= 1
+    recommendations = json.loads(result.recommendations_artifact_path.read_text(encoding="utf-8"))
+    assert recommendations["recommendation_count"] == result.phase3_recommendation_count
 
 
 def test_config_driven_javascript_assessment_with_fake_ai(tmp_path: Path) -> None:
@@ -205,7 +230,35 @@ def test_config_driven_javascript_assessment_with_fake_ai(tmp_path: Path) -> Non
     )
     assert result.html_report_path.is_file()
     assert len(provider.calls) == 1
+    assert result.graphs_directory is not None
+    assert (result.graphs_directory / "assessment-graph.json").is_file()
+    assert result.recommendations_artifact_path is not None
+    assert result.recommendations_artifact_path.is_file()
+    assert result.phase3_recommendation_count is not None
+    assert result.phase3_recommendation_count >= 1
     assert "spring-petclinic" not in result.html_report_path.read_text(encoding="utf-8").lower()
+
+
+def test_config_driven_javascript_zero_ai_calls_deterministic(tmp_path: Path) -> None:
+    from aimf.ai.providers.base import AIModelProvider
+    from aimf.ai.providers.models import ModelInvocationOptions, ModelInvocationResult
+
+    class ForbiddenProvider(AIModelProvider):
+        def invoke(self, request, options: ModelInvocationOptions) -> ModelInvocationResult:  # type: ignore[no-untyped-def]
+            raise AssertionError("AI provider must not be called in deterministic mode")
+
+    result = run_assessment(
+        repo=None,
+        output_directory=tmp_path / "reports",
+        mode=AssessmentMode.DETERMINISTIC,
+        settings=_settings(),
+        provider=ForbiddenProvider(),
+        static_analysis_enabled=False,
+    )
+    assert result.ai_executed is False
+    assert result.graphs_directory is not None
+    assert result.recommendations_artifact_path is not None
+    assert result.recommendations_artifact_path.is_file()
 
 
 def test_cli_help_mentions_canonical_workflow() -> None:

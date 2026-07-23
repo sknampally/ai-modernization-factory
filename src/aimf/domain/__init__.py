@@ -33,6 +33,15 @@ from aimf.domain.engineering_knowledge import (
     EngineeringKnowledgeRelationshipIdFactory,
     EngineeringKnowledgeRelationshipType,
 )
+from aimf.domain.findings import (
+    Finding,
+    FindingCategory,
+    FindingEvidence,
+    FindingSeverity,
+    FindingSource,
+    RuleEvaluationResult,
+    build_finding_id,
+)
 from aimf.domain.graph import (
     EvidenceReference,
     GraphGenerationMode,
@@ -54,7 +63,19 @@ from aimf.domain.knowledge_binding import (
     KnowledgeBindingType,
     KnowledgeMatchingStrategy,
     KnowledgeObservationKind,
+    UnmatchedKnowledgeObservation,
     build_knowledge_binding_id,
+)
+from aimf.domain.recommendations import (
+    RECOMMENDATION_RESULT_VERSION,
+    Recommendation,
+    RecommendationAction,
+    RecommendationCategory,
+    RecommendationEvidence,
+    RecommendationPriority,
+    RecommendationResult,
+    RecommendationSource,
+    build_recommendation_id,
 )
 from aimf.domain.repository import (
     REPOSITORY_MANIFEST_VERSION,
@@ -99,6 +120,7 @@ from aimf.domain.repository_graph import (
     RepositoryTypeKind,
     TypeProperties,
 )
+from aimf.domain.rules import Rule, RuleContext, RuleResult
 
 __all__ = [
     "ASSESSMENT_GRAPH_GENERATOR_VERSION",
@@ -134,6 +156,11 @@ __all__ = [
     "EvidenceReference",
     "FileFingerprint",
     "FileProperties",
+    "Finding",
+    "FindingCategory",
+    "FindingEvidence",
+    "FindingSeverity",
+    "FindingSource",
     "GraphGenerationMode",
     "GraphId",
     "GraphMetadata",
@@ -154,7 +181,16 @@ __all__ = [
     "NodeId",
     "Provenance",
     "ProvenanceSource",
+    "RECOMMENDATION_RESULT_VERSION",
+    "Recommendation",
+    "RecommendationAction",
+    "RecommendationCategory",
+    "RecommendationEvidence",
+    "RecommendationPriority",
+    "RecommendationResult",
+    "RecommendationSource",
     "RelationshipIdFactory",
+    "build_recommendation_id",
     "RepositoryCallableKind",
     "RepositoryChangeType",
     "RepositoryEntityReferenceProperties",
@@ -183,9 +219,15 @@ __all__ = [
     "RepositoryRevisionType",
     "RepositorySourceType",
     "RepositoryTypeKind",
+    "Rule",
+    "RuleContext",
+    "RuleEvaluationResult",
+    "RuleResult",
     "TypeProperties",
+    "UnmatchedKnowledgeObservation",
     "build_assessment_graph_id",
     "build_assessment_graph_metadata",
     "build_assessment_source_fingerprint",
+    "build_finding_id",
     "build_knowledge_binding_id",
 ]

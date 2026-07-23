@@ -1061,7 +1061,12 @@ def test_failed_report_write_does_not_trigger_retention(
     active = sorted(path.name for path in repo_dir.iterdir() if path.is_dir())
     assert "archive" not in {path.name for path in repo_dir.iterdir()}
     assert "20260721-100000" in active
-    assert len([name for name in active if name.startswith("20260721-")]) == 4
+    # Graph artifacts are written before HTML/JSON. A failed report write may leave
+    # an incomplete run directory with graphs/, but must not prune older completed runs.
+    assert "20260721-140000" in active
+    assert (repo_dir / "20260721-140000" / "graphs").is_dir()
+    assert not (repo_dir / "20260721-140000" / "report.html").exists()
+    assert len([name for name in active if name.startswith("20260721-")]) == 5
 
 
 def test_artifacts_share_matching_summary_fields(tmp_path: Path) -> None:

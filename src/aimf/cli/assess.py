@@ -53,6 +53,24 @@ from aimf.repository_auth.exceptions import (
 )
 from aimf.services.analysis_service import AnalysisService
 from aimf.services.default_pipeline import create_default_analysis_service
+from aimf.services.graph_assessment import (
+    GraphArtifactWriteResult,
+    GraphAssessmentPipeline,
+    GraphAssessmentPipelineError,
+    format_graph_console_summary,
+    write_graph_artifacts,
+)
+from aimf.services.recommendations import (
+    RecommendationEngine,
+    RecommendationsArtifactWriteResult,
+    write_recommendations_artifact,
+)
+from aimf.services.rule_engine import (
+    FindingsArtifactWriteResult,
+    RuleEngine,
+    format_rule_console_summary,
+    write_findings_artifact,
+)
 from aimf.services.scanners.github_repository_scanner import GitHubRepositoryScanner
 from aimf.services.scanners.local_repository_scanner import LocalRepositoryScanner
 from aimf.static_analysis.exceptions import StaticAnalysisProviderError
@@ -121,6 +139,17 @@ class AssessmentCommandResult(BaseModel):
     model_id: str | None = None
     latency_ms: float | None = Field(default=None, ge=0.0)
     duration_ms: float | None = Field(default=None, ge=0.0)
+    graphs_directory: Path | None = None
+    knowledge_binding_count: int | None = Field(default=None, ge=0)
+    repository_graph_node_count: int | None = Field(default=None, ge=0)
+    repository_graph_relationship_count: int | None = Field(default=None, ge=0)
+    assessment_graph_node_count: int | None = Field(default=None, ge=0)
+    assessment_graph_relationship_count: int | None = Field(default=None, ge=0)
+    rule_finding_count: int | None = Field(default=None, ge=0)
+    rules_evaluated_count: int | None = Field(default=None, ge=0)
+    findings_artifact_path: Path | None = None
+    phase3_recommendation_count: int | None = Field(default=None, ge=0)
+    recommendations_artifact_path: Path | None = None
 
     @model_validator(mode="after")
     def populate_report_path_alias(self) -> AssessmentCommandResult:
@@ -157,11 +186,14 @@ def run_assessment(
     agent: ModernizationAssessmentAgent | None = None,
     scanner: _RepositoryScanner | None = None,
     context_builder: LLMAnalysisContextBuilder | None = None,
+    graph_pipeline: GraphAssessmentPipeline | None = None,
+    rule_engine: RuleEngine | None = None,
+    recommendation_engine: RecommendationEngine | None = None,
     console: Console | None = None,
     clock: Callable[[], datetime] | None = None,
     verbose: bool = False,
 ) -> AssessmentCommandResult:
-    """Orchestrate scan → analysis → optional AI assessment → HTML+JSON reports.
+    """Orchestrate scan → analysis → graph pipeline → optional AI → HTML+JSON reports.
 
     Repository selection precedence:
 
@@ -253,6 +285,73 @@ def run_assessment(
         warn(message)
     _print_static_analysis_success(active_console, analysis_result)
 
+    stage("Building knowledge graphs")
+    graph_started = perf_counter()
+    active_graph_pipeline = graph_pipeline or GraphAssessmentPipeline()
+    try:
+        graph_pipeline_result = active_graph_pipeline.run(repository)
+    except GraphAssessmentPipelineError as error:
+        raise AssessmentCommandError(sanitize_provider_text(str(error))) from error
+    except Exception as error:  # noqa: BLE001 - CLI boundary
+        raise AssessmentCommandError(
+            f"[graph_pipeline] Graph assessment pipeline failed: "
+            f"{sanitize_provider_text(str(error))}"
+        ) from error
+
+    # Create the run directory before AI so graph artifacts persist even when AI fails.
+    generated_at = now()
+    run_timestamp = format_report_run_timestamp(generated_at)
+    report_paths = create_report_paths(
+        analysis_result,
+        output_directory,
+        timestamp=run_timestamp,
+        create_directory=True,
+    )
+    try:
+        graph_artifacts = write_graph_artifacts(
+            graph_pipeline_result,
+            report_paths.run_directory,
+        )
+    except GraphAssessmentPipelineError as error:
+        raise AssessmentCommandError(sanitize_provider_text(str(error))) from error
+    graph_elapsed_ms = round((perf_counter() - graph_started) * 1000, 2)
+    _ = graph_elapsed_ms
+    for line in format_graph_console_summary(graph_artifacts.summary):
+        active_console.print(line)
+
+    stage("Evaluating assessment rules")
+    active_rule_engine = rule_engine or RuleEngine()
+    active_recommendation_engine = recommendation_engine or RecommendationEngine()
+    try:
+        rule_evaluation = active_rule_engine.evaluate_pipeline_result(graph_pipeline_result)
+        findings_artifact = write_findings_artifact(
+            rule_evaluation,
+            report_paths.run_directory,
+        )
+    except Exception as error:  # noqa: BLE001 - CLI boundary
+        raise AssessmentCommandError(
+            f"[rule_engine] Rule evaluation failed: {sanitize_provider_text(str(error))}"
+        ) from error
+    try:
+        recommendation_result = active_recommendation_engine.evaluate_pipeline_result(
+            pipeline_result=graph_pipeline_result,
+            evaluation=rule_evaluation,
+        )
+        recommendations_artifact = write_recommendations_artifact(
+            recommendation_result,
+            report_paths.run_directory,
+        )
+    except Exception as error:  # noqa: BLE001 - CLI boundary
+        raise AssessmentCommandError(
+            f"[recommendation_engine] Recommendation evaluation failed: "
+            f"{sanitize_provider_text(str(error))}"
+        ) from error
+    for line in format_rule_console_summary(
+        rule_evaluation,
+        recommendation_count=recommendation_result.recommendation_count,
+    ):
+        active_console.print(line)
+
     analysis_context: LLMAnalysisContext | None = None
     assessment_result: ModernizationAssessmentResult | None = None
     ai_ms: float | None = None
@@ -342,14 +441,9 @@ def run_assessment(
             ai_attempt = ai_attempt.model_copy(update={"latency_ms": ai_ms})
 
     stage("Generating HTML and JSON reports")
+    # Reuse the run directory created before optional AI so graph artifacts remain
+    # alongside HTML/JSON for the same assessment run.
     generated_at = now()
-    run_timestamp = format_report_run_timestamp(generated_at)
-    report_paths = create_report_paths(
-        analysis_result,
-        output_directory,
-        timestamp=run_timestamp,
-        create_directory=False,
-    )
     provisional_total = round((perf_counter() - total_started) * 1000, 2)
     report_input = ModernizationReportInput(
         analysis_result=analysis_result,
@@ -425,6 +519,11 @@ def run_assessment(
         ai_status=ai_status,
         ai_attempt=ai_attempt,
         duration_ms=total_ms,
+        graph_artifacts=graph_artifacts,
+        rule_evaluation=rule_evaluation,
+        findings_artifact=findings_artifact,
+        recommendation_result=recommendation_result,
+        recommendations_artifact=recommendations_artifact,
     )
     _print_success_summary(active_console, result)
     return result
@@ -897,8 +996,37 @@ def _build_command_result(
     ai_status: AIExecutionStatus,
     ai_attempt: AIAttemptInfo | None,
     duration_ms: float | None,
+    graph_artifacts: GraphArtifactWriteResult | None = None,
+    rule_evaluation: object | None = None,
+    findings_artifact: FindingsArtifactWriteResult | None = None,
+    recommendation_result: object | None = None,
+    recommendations_artifact: RecommendationsArtifactWriteResult | None = None,
 ) -> AssessmentCommandResult:
     deterministic_recommendation_count = len(analysis_result.recommendations)
+    graph_fields: dict[str, object] = {}
+    if graph_artifacts is not None:
+        summary = graph_artifacts.summary
+        graph_fields = {
+            "graphs_directory": graph_artifacts.directory,
+            "knowledge_binding_count": summary.binding_count,
+            "repository_graph_node_count": summary.repository_node_count,
+            "repository_graph_relationship_count": summary.repository_relationship_count,
+            "assessment_graph_node_count": summary.assessment_node_count,
+            "assessment_graph_relationship_count": summary.assessment_relationship_count,
+        }
+    if rule_evaluation is not None:
+        graph_fields["rule_finding_count"] = getattr(rule_evaluation, "finding_count", 0)
+        graph_fields["rules_evaluated_count"] = len(getattr(rule_evaluation, "rules_evaluated", ()))
+    if findings_artifact is not None:
+        graph_fields["findings_artifact_path"] = findings_artifact.path
+    if recommendation_result is not None:
+        graph_fields["phase3_recommendation_count"] = getattr(
+            recommendation_result,
+            "recommendation_count",
+            0,
+        )
+    if recommendations_artifact is not None:
+        graph_fields["recommendations_artifact_path"] = recommendations_artifact.path
     if (
         mode == AssessmentMode.AI_ENHANCED
         and ai_status == AIExecutionStatus.SUCCEEDED
@@ -923,6 +1051,7 @@ def _build_command_result(
             model_id=metadata.model_id,
             latency_ms=metadata.latency_ms,
             duration_ms=duration_ms,
+            **graph_fields,  # type: ignore[arg-type]
         )
 
     return AssessmentCommandResult(
@@ -942,6 +1071,7 @@ def _build_command_result(
         model_id=ai_attempt.model_id if ai_attempt is not None else None,
         latency_ms=ai_attempt.latency_ms if ai_attempt is not None else None,
         duration_ms=duration_ms,
+        **graph_fields,  # type: ignore[arg-type]
     )
 
 
@@ -1028,6 +1158,20 @@ def _print_success_summary(console: Console, result: AssessmentCommandResult) ->
     console.print(f"Findings: {result.findings_count}")
     console.print(f"Technologies: {result.technologies_count}")
     console.print(f"Deterministic recommendations: {result.recommendations_count}")
+    if result.graphs_directory is not None:
+        console.print(f"Graph artifacts: {_display_path(result.graphs_directory)}")
+        if result.knowledge_binding_count is not None:
+            console.print(f"Knowledge bindings: {result.knowledge_binding_count}")
+    if result.rule_finding_count is not None:
+        console.print(f"Rule findings: {result.rule_finding_count}")
+    if result.findings_artifact_path is not None:
+        console.print(f"Findings artifact: {_display_path(result.findings_artifact_path)}")
+    if result.phase3_recommendation_count is not None:
+        console.print(f"Graph recommendations: {result.phase3_recommendation_count}")
+    if result.recommendations_artifact_path is not None:
+        console.print(
+            f"Recommendations artifact: {_display_path(result.recommendations_artifact_path)}"
+        )
     if result.mode == AssessmentMode.AI_ENHANCED and not result.ai_executed:
         console.print("AI status: fallback (validated AI result not included)")
         if result.model_id:

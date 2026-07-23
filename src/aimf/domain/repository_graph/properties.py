@@ -186,13 +186,14 @@ class DependencyProperties(_RepositoryPropertyModel):
     version: str | None = None
     scope: DependencyScope = DependencyScope.UNKNOWN
     direct: bool = True
+    source_file: str | None = None
 
     @field_validator("ecosystem", "name", mode="before")
     @classmethod
     def normalize_required_strings(cls, value: object) -> str:
         return require_nonblank(str(value), label="dependency field")
 
-    @field_validator("namespace", "version", mode="before")
+    @field_validator("namespace", "version", "source_file", mode="before")
     @classmethod
     def normalize_optional_strings(cls, value: object) -> str | None:
         if value is None:

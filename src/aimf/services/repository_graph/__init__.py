@@ -14,7 +14,10 @@ from aimf.services.repository_graph.enums import (
     RepositoryExtractionScope,
 )
 from aimf.services.repository_graph.extractors import (
+    MavenDependencyExtractor,
+    PackageJsonDependencyExtractor,
     PathBasedModuleResolver,
+    RepositoryDependencyExtractor,
     RepositoryStructureExtractor,
 )
 from aimf.services.repository_graph.protocol import RepositoryGraphExtractor
@@ -27,7 +30,10 @@ from aimf.services.repository_graph.results import (
 __all__ = [
     "ExtractionDiagnostic",
     "ExtractionDiagnosticSeverity",
+    "MavenDependencyExtractor",
+    "PackageJsonDependencyExtractor",
     "PathBasedModuleResolver",
+    "RepositoryDependencyExtractor",
     "RepositoryExtractionContext",
     "RepositoryExtractionResult",
     "RepositoryExtractionScope",
