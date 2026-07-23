@@ -21,9 +21,11 @@ Rule Engine → Findings (findings.json)
      ↓
 Recommendation Engine → Recommendations (recommendations.json)
      ↓
+AI Enrichment (optional, one provider call) → ai-enrichment.json
+     ↓
 Artifact Writer (reports/<repo>/<run>/graphs/)
      ↓
-Existing Report / Optional AI
+Existing Report / Optional AI observability (ai-execution.json)
 ```
 
 ## Coexistence
@@ -40,9 +42,10 @@ Phase 2/3 adds graph-based knowledge context for the same assessment run:
 * **Assessment Graph** — assessment-scoped reference projection of accepted bindings
 * **Rule Engine** — deterministic findings from Assessment Graph context
 * **Recommendation Engine** — deterministic actions derived from those findings
+* **AI Enrichment** — optional narrative over findings + recommendations (one call)
 
-AI enrichment remains optional and separate; recommendation JSON is not yet passed
-into the AI context.
+AI enrichment remains optional and separate; it does not mutate deterministic
+artifacts. Full graph JSON is not sent to the model.
 
 ## Boundaries
 

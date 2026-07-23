@@ -13,7 +13,7 @@ Recommendation Engine (deterministic finding → action mappings)
         ↓
 Recommendations (recommendations.json)
         ↓
-optional AI / reporting (separate; not fed full recommendations JSON yet)
+optional AI enrichment (ai-enrichment.json; one provider call)
 ```
 
 The Recommendation Engine consumes Phase 3 findings and read-only graph
@@ -23,7 +23,9 @@ Assessment Graph, bindings, or findings. It never calls AI.
 Phase 3 ``aimf.domain.recommendations.Recommendation`` is distinct from:
 
 - Phase 1 ``aimf.models`` / ``ModernizationRecommendationEngine`` outputs
-- AI ``aimf.ai.recommendations`` narratives produced under ``--with-ai``
+- AI enrichment narratives in ``aimf.domain.ai_enrichment`` / ``ai-enrichment.json``
+- Legacy Phase 1 report contract ``aimf.ai.recommendations`` (bridged for HTML/JSON)
 
-Deterministic recommendations are implemented now. Future AI-enriched
-prioritization or narrative remains optional and separate.
+Deterministic recommendations remain the source of truth. AI enrichment is
+optional, interpretive only, and must not modify ``recommendations.json``.
+See ``docs/architecture/ai-enrichment.md``.

@@ -167,6 +167,13 @@ def test_config_driven_javascript_assessment_with_fake_ai(tmp_path: Path) -> Non
             options: ModelInvocationOptions,
         ) -> ModelInvocationResult:
             self.calls.append(request)
+            grounding: list[str] = []
+            for finding in request.analysis_context.findings:
+                candidate = finding.rule_id or finding.finding_id
+                if candidate:
+                    grounding = [candidate]
+                    break
+            finding_count = len(request.analysis_context.findings)
             recommendation = AIRecommendationResult(
                 executive_summary="Executive summary for sample JS app.",
                 overall_assessment="Overall assessment for sample JS app.",
@@ -178,10 +185,10 @@ def test_config_driven_javascript_assessment_with_fake_ai(tmp_path: Path) -> Non
                         description="Track npm dependency updates.",
                         rationale="Sample app already uses a modern stack.",
                         priority=AIRecommendationPriority.MEDIUM,
-                        effort=AIRecommendationEffort.LOW,
+                        effort=AIRecommendationEffort.SMALL,
                         impact=AIRecommendationImpact.MEDIUM,
                         confidence=AIRecommendationConfidence.HIGH,
-                        related_finding_ids=[],
+                        related_finding_ids=grounding,
                         suggested_actions=["Review package.json regularly"],
                         dependencies=[],
                     )
@@ -196,10 +203,12 @@ def test_config_driven_javascript_assessment_with_fake_ai(tmp_path: Path) -> Non
                     )
                 ],
                 evidence_coverage=EvidenceCoverage(
-                    total_findings=0,
-                    findings_considered=0,
-                    findings_referenced=0,
-                    coverage_percentage=0.0,
+                    total_findings=finding_count,
+                    findings_considered=finding_count,
+                    findings_referenced=len(grounding),
+                    coverage_percentage=(
+                        round(100.0 * len(grounding) / finding_count, 2) if finding_count else 0.0
+                    ),
                 ),
                 limitations=["Fixture provider; no Bedrock call"],
             )
@@ -236,6 +245,7 @@ def test_config_driven_javascript_assessment_with_fake_ai(tmp_path: Path) -> Non
     assert result.recommendations_artifact_path.is_file()
     assert result.phase3_recommendation_count is not None
     assert result.phase3_recommendation_count >= 1
+    assert (result.run_directory / "ai-enrichment.json").is_file()
     assert "spring-petclinic" not in result.html_report_path.read_text(encoding="utf-8").lower()
 
 
@@ -259,6 +269,7 @@ def test_config_driven_javascript_zero_ai_calls_deterministic(tmp_path: Path) ->
     assert result.graphs_directory is not None
     assert result.recommendations_artifact_path is not None
     assert result.recommendations_artifact_path.is_file()
+    assert not (result.run_directory / "ai-enrichment.json").exists()
 
 
 def test_cli_help_mentions_canonical_workflow() -> None:

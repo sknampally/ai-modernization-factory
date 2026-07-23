@@ -375,6 +375,7 @@ def test_local_repository_assessment_success(tmp_path: Path) -> None:
     assert result.duration_ms is not None
     assert result.duration_ms >= 0
     assert len(provider.calls) == 1
+    assert (result.run_directory / "ai-enrichment.json").is_file()
     html = result.html_report_path.read_text(encoding="utf-8")
     assert "Repository System Intelligence" in html
     assert "Deterministic Recommendations" in html
@@ -496,6 +497,8 @@ def test_deterministic_orchestration_order(tmp_path: Path) -> None:
     assert positions == sorted(positions)
     assert "Building AI context" not in joined
     assert "Running modernization assessment" not in joined
+    assert "Building AI enrichment context" not in joined
+    assert "Running AI enrichment" not in joined
     assert "Assessment mode: Deterministic" in joined
     assert "Deterministic recommendations:" in joined
     assert "Model ID:" not in joined
@@ -509,12 +512,14 @@ def test_ai_enhanced_orchestration_order(tmp_path: Path) -> None:
         "Scanning repository",
         "Detecting technologies",
         "Running deterministic analysis",
-        "Building AI context",
-        "Running modernization assessment",
+        "Building AI enrichment context",
+        "Running AI enrichment",
         "Generating HTML and JSON reports",
     ]
     positions = [joined.index(stage) for stage in stages]
     assert positions == sorted(positions)
+    assert "Building AI context" not in joined
+    assert "Running modernization assessment" not in joined
     assert "Assessment mode: AI Enhanced" in joined
     assert "Deterministic recommendations:" in joined
     assert "Model ID:" in joined
@@ -641,6 +646,7 @@ def test_ai_provider_failure_retains_deterministic_report(tmp_path: Path) -> Non
     assert document["assessment"]["summary"]["finding_count"] >= 1
     assert document["assessment"]["ai"]["status"] == "provider_failed"
     assert document["assessment"]["ai"]["recommendations"] == []
+    assert not (result.run_directory / "ai-enrichment.json").exists()
     html = result.html_report_path.read_text(encoding="utf-8")
     assert "Repository System Intelligence" in html
     assert "Deterministic Findings" in html

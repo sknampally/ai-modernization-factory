@@ -89,6 +89,7 @@ if TYPE_CHECKING:
     from aimf.ai.contracts.models import LLMAnalysisContext
     from aimf.ai.prompts import ModernizationPromptBuilder
     from aimf.ai.providers.base import AIModelProvider
+    from aimf.domain.ai_enrichment import AiEnrichmentResult
 
 DEFAULT_ASSESS_OUTPUT_DIRECTORY = Path("reports")
 DEFAULT_ASSESS_REPORT_TITLE = "Modernization Assessment"
@@ -361,7 +362,11 @@ def run_assessment(
     ai_execution_document: dict[str, object] | None = None
 
     if mode == AssessmentMode.AI_ENHANCED:
-        from aimf.ai.prompts.models import DEFAULT_MAX_CONTEXT_CHARACTERS
+        from aimf.ai.enrichment import DEFAULT_MAX_CONTEXT_CHARACTERS
+        from aimf.ai.enrichment.artifacts import (
+            AI_ENRICHMENT_FILENAME,
+            try_write_ai_enrichment_artifact,
+        )
 
         resolved_model_id = resolve_bedrock_model_id(
             cli_model_id=model_id,
@@ -373,8 +378,14 @@ def run_assessment(
             else DEFAULT_MAX_CONTEXT_CHARACTERS
         )
         ai_started = perf_counter()
+        enrichment_result: AiEnrichmentResult | None = None
         try:
-            analysis_context, assessment_result, ai_attempt = _run_ai_assessment(
+            (
+                analysis_context,
+                assessment_result,
+                ai_attempt,
+                enrichment_result,
+            ) = _run_ai_assessment(
                 analysis_result=analysis_result,
                 settings=loaded_settings,
                 resolved_model_id=resolved_model_id,
@@ -385,6 +396,9 @@ def run_assessment(
                 prompt_builder=prompt_builder,
                 agent=agent,
                 context_builder=context_builder,
+                rule_evaluation=rule_evaluation,
+                recommendation_result=recommendation_result,
+                repository_graph=graph_pipeline_result.repository_graph,
                 stage=stage,
             )
             ai_status = AIExecutionStatus.SUCCEEDED
@@ -395,6 +409,17 @@ def run_assessment(
                 assessment_result=assessment_result,
                 failure_message=None,
             )
+            if enrichment_result is not None:
+                written_enrichment = try_write_ai_enrichment_artifact(
+                    enrichment_result,
+                    report_paths.run_directory,
+                )
+                if written_enrichment is None:
+                    warn(
+                        "AI enrichment artifact could not be written; "
+                        "customer HTML and JSON reports were kept. "
+                        f"Expected file: {AI_ENRICHMENT_FILENAME}"
+                    )
         except AssessmentCommandError as error:
             ai_status = error.ai_status or AIExecutionStatus.PROVIDER_FAILED
             ai_attempt = error.ai_attempt
@@ -643,19 +668,26 @@ def _run_ai_assessment(
     prompt_builder: ModernizationPromptBuilder | None,
     agent: ModernizationAssessmentAgent | None,
     context_builder: LLMAnalysisContextBuilder | None,
+    rule_evaluation: object,
+    recommendation_result: object,
+    repository_graph: object | None,
     stage: Callable[[str], None],
-) -> tuple[LLMAnalysisContext, ModernizationAssessmentResult, AIAttemptInfo]:
-    from aimf.ai.agents import (
-        AgentConfigurationError,
-        AgentError,
-        AgentExecutionError,
-        AgentExecutionOptions,
-        AgentValidationError,
-        ModernizationAssessmentAgent,
+) -> tuple[
+    LLMAnalysisContext,
+    ModernizationAssessmentResult,
+    AIAttemptInfo,
+    AiEnrichmentResult,
+]:
+    from aimf.ai.enrichment import (
+        AiEnrichmentPromptBuilder,
+        AiEnrichmentPromptOptions,
+        AiEnrichmentService,
     )
-    from aimf.ai.contracts import LLMAnalysisContextBuilder
-    from aimf.ai.contracts.budget import AIContextBudgetError
-    from aimf.ai.prompts import ModernizationPromptBuilder, PromptBuildOptions
+    from aimf.ai.enrichment.context import (
+        AiEnrichmentBudgetError,
+        AiEnrichmentContextLimits,
+    )
+    from aimf.ai.enrichment.prompt import AiEnrichmentPromptBuildError
     from aimf.ai.providers.exceptions import (
         AIProviderError,
         AIProviderTimeoutError,
@@ -663,86 +695,78 @@ def _run_ai_assessment(
         AIResponseValidationError,
     )
     from aimf.ai.providers.models import ModelInvocationOptions
+    from aimf.domain.findings import RuleEvaluationResult
+    from aimf.domain.recommendations import RecommendationResult
+    from aimf.domain.repository_graph import RepositoryGraph
 
-    stage("Building AI context")
-    builder = context_builder or LLMAnalysisContextBuilder()
-    try:
-        analysis_context = builder.build(analysis_result)
-    except AIContextBudgetError as error:
-        raise AssessmentCommandError(
-            f"AI context budget failure: {sanitize_provider_text(str(error))}",
-            ai_status=AIExecutionStatus.PROVIDER_FAILED,
-            customer_message=customer_failure_message(AIExecutionStatus.PROVIDER_FAILED),
-            ai_attempt=AIAttemptInfo(
-                model_id=resolved_model_id,
-                stages_completed=stages_for_status(AIExecutionStatus.PROVIDER_FAILED),
-                failure_code=failure_code_for_status(AIExecutionStatus.PROVIDER_FAILED),
-                failure_detail=sanitize_provider_text(str(error)),
-            ),
-        ) from error
-    except Exception as error:  # noqa: BLE001 - CLI boundary
-        raise AssessmentCommandError(
-            f"Failed to build AI context: {sanitize_provider_text(str(error))}",
-            ai_status=AIExecutionStatus.PROVIDER_FAILED,
-            customer_message=customer_failure_message(AIExecutionStatus.PROVIDER_FAILED),
-            ai_attempt=AIAttemptInfo(
-                model_id=resolved_model_id,
-                stages_completed=stages_for_status(AIExecutionStatus.PROVIDER_FAILED),
-                failure_code=failure_code_for_status(AIExecutionStatus.PROVIDER_FAILED),
-                failure_detail=sanitize_provider_text(str(error)),
-            ),
-        ) from error
+    _ = prompt_builder  # Phase 1 prompt builder unused; enrichment has its own prompt.
+    _ = agent  # Legacy agent path replaced by single-call enrichment service.
 
-    stage("Running modernization assessment")
-    active_prompt_builder = prompt_builder or ModernizationPromptBuilder()
+    stage("Building AI enrichment context")
     try:
         active_provider = provider or _create_bedrock_provider(settings)
     except AIProviderError as error:
         raise _map_provider_error(error, model_id=resolved_model_id) from error
-    active_agent = agent or ModernizationAssessmentAgent(
+
+    if not isinstance(rule_evaluation, RuleEvaluationResult):
+        raise AssessmentCommandError(
+            "AI enrichment requires RuleEvaluationResult",
+            ai_status=AIExecutionStatus.PROVIDER_FAILED,
+            customer_message=customer_failure_message(AIExecutionStatus.PROVIDER_FAILED),
+        )
+    if not isinstance(recommendation_result, RecommendationResult):
+        raise AssessmentCommandError(
+            "AI enrichment requires RecommendationResult",
+            ai_status=AIExecutionStatus.PROVIDER_FAILED,
+            customer_message=customer_failure_message(AIExecutionStatus.PROVIDER_FAILED),
+        )
+    graph = repository_graph if isinstance(repository_graph, RepositoryGraph) else None
+
+    stage("Running AI enrichment")
+    service = AiEnrichmentService(
         active_provider,
-        prompt_builder=active_prompt_builder,
+        prompt_builder=AiEnrichmentPromptBuilder(),
+        context_builder=context_builder,
     )
-    options = AgentExecutionOptions(
-        model_options=ModelInvocationOptions(
-            model_id=resolved_model_id,
-            temperature=temperature,
-            max_output_tokens=max_output_tokens,
-        ),
-        prompt_options=PromptBuildOptions(
-            max_context_characters=context_limit,
-        ),
+    model_options = ModelInvocationOptions(
+        model_id=resolved_model_id,
+        temperature=temperature,
+        max_output_tokens=max_output_tokens,
     )
+    prompt_options = AiEnrichmentPromptOptions(max_context_characters=context_limit)
+    context_limits = AiEnrichmentContextLimits(max_context_characters=context_limit)
 
     try:
-        assessment_result = active_agent.run(analysis_context, options)
-    except AgentValidationError as error:
-        cause = error.__cause__
-        if isinstance(cause, (AIResponseValidationError, AIResponseParsingError)):
-            raise _map_response_contract_error(cause, model_id=resolved_model_id) from error
+        run = service.run(
+            analysis_result=analysis_result,
+            rule_evaluation=rule_evaluation,
+            recommendation_result=recommendation_result,
+            repository_graph=graph,
+            model_options=model_options,
+            context_limits=context_limits,
+            prompt_options=prompt_options,
+        )
+    except AiEnrichmentBudgetError as error:
         raise AssessmentCommandError(
-            f"Recommendation validation failure: {sanitize_provider_text(str(error))}",
-            ai_status=AIExecutionStatus.VALIDATION_FAILED,
-            customer_message=customer_failure_message(AIExecutionStatus.VALIDATION_FAILED),
+            f"AI enrichment context budget failure: {sanitize_provider_text(str(error))}",
+            ai_status=AIExecutionStatus.PROVIDER_FAILED,
+            customer_message=customer_failure_message(AIExecutionStatus.PROVIDER_FAILED),
             ai_attempt=AIAttemptInfo(
                 model_id=resolved_model_id,
-                stages_completed=stages_for_status(AIExecutionStatus.VALIDATION_FAILED),
-                failure_code=failure_code_for_status(AIExecutionStatus.VALIDATION_FAILED),
+                stages_completed=stages_for_status(AIExecutionStatus.PROVIDER_FAILED),
+                failure_code=failure_code_for_status(AIExecutionStatus.PROVIDER_FAILED),
                 failure_detail=sanitize_provider_text(str(error)),
             ),
-            execution_document=build_ai_execution_document(
-                status=AIExecutionStatus.VALIDATION_FAILED,
-                attempt=AIAttemptInfo(
-                    model_id=resolved_model_id,
-                    stages_completed=stages_for_status(AIExecutionStatus.VALIDATION_FAILED),
-                    failure_code=failure_code_for_status(AIExecutionStatus.VALIDATION_FAILED),
-                    failure_detail=sanitize_provider_text(str(error)),
-                ),
-                analysis_context=analysis_context,
-                raw_model_text=None,
-                parsed_model_response=None,
-                accepted_ai_result=None,
-                failure_message=customer_failure_message(AIExecutionStatus.VALIDATION_FAILED),
+        ) from error
+    except AiEnrichmentPromptBuildError as error:
+        raise AssessmentCommandError(
+            f"AI enrichment prompt failure: {sanitize_provider_text(str(error))}",
+            ai_status=AIExecutionStatus.PROVIDER_FAILED,
+            customer_message=customer_failure_message(AIExecutionStatus.PROVIDER_FAILED),
+            ai_attempt=AIAttemptInfo(
+                model_id=resolved_model_id,
+                stages_completed=stages_for_status(AIExecutionStatus.PROVIDER_FAILED),
+                failure_code=failure_code_for_status(AIExecutionStatus.PROVIDER_FAILED),
                 failure_detail=sanitize_provider_text(str(error)),
             ),
         ) from error
@@ -763,39 +787,9 @@ def _run_ai_assessment(
         raise _map_response_contract_error(error, model_id=resolved_model_id) from error
     except AIProviderError as error:
         raise _map_provider_error(error, model_id=resolved_model_id) from error
-    except (AgentConfigurationError, AgentExecutionError, AgentError) as error:
-        cause = error.__cause__
-        if isinstance(cause, AIProviderTimeoutError):
-            raise AssessmentCommandError(
-                f"Bedrock timeout or throttling: {sanitize_provider_text(str(cause))}",
-                ai_status=AIExecutionStatus.PROVIDER_FAILED,
-                customer_message=customer_failure_message(AIExecutionStatus.PROVIDER_FAILED),
-                ai_attempt=AIAttemptInfo(
-                    provider="bedrock",
-                    model_id=resolved_model_id,
-                    stages_completed=stages_for_status(AIExecutionStatus.PROVIDER_FAILED),
-                    failure_code=failure_code_for_status(AIExecutionStatus.PROVIDER_FAILED),
-                    failure_detail=sanitize_provider_text(str(cause)),
-                ),
-            ) from error
-        if isinstance(cause, (AIResponseValidationError, AIResponseParsingError)):
-            raise _map_response_contract_error(cause, model_id=resolved_model_id) from error
-        if isinstance(cause, AIProviderError):
-            raise _map_provider_error(cause, model_id=resolved_model_id) from error
-        raise AssessmentCommandError(
-            sanitize_provider_text(str(error)),
-            ai_status=AIExecutionStatus.PROVIDER_FAILED,
-            customer_message=customer_failure_message(AIExecutionStatus.PROVIDER_FAILED),
-            ai_attempt=AIAttemptInfo(
-                model_id=resolved_model_id,
-                stages_completed=stages_for_status(AIExecutionStatus.PROVIDER_FAILED),
-                failure_code=failure_code_for_status(AIExecutionStatus.PROVIDER_FAILED),
-                failure_detail=sanitize_provider_text(str(error)),
-            ),
-        ) from error
     except Exception as error:  # noqa: BLE001 - CLI boundary
         raise AssessmentCommandError(
-            f"Modernization assessment failed: {sanitize_provider_text(str(error))}",
+            f"AI enrichment failed: {sanitize_provider_text(str(error))}",
             ai_status=AIExecutionStatus.PROVIDER_FAILED,
             customer_message=customer_failure_message(AIExecutionStatus.PROVIDER_FAILED),
             ai_attempt=AIAttemptInfo(
@@ -807,10 +801,11 @@ def _run_ai_assessment(
         ) from error
 
     attempt = attempt_info_from_metadata(
-        assessment_result.model_metadata,
+        run.assessment_result.model_metadata,
         status=AIExecutionStatus.SUCCEEDED,
     )
-    return analysis_context, assessment_result, attempt
+    enrichment: AiEnrichmentResult = run.enrichment
+    return run.analysis_context, run.assessment_result, attempt, enrichment
 
 
 def _map_response_contract_error(

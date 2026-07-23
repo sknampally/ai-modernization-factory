@@ -189,6 +189,7 @@ reports/<repository-name>/<YYYYMMDD-HHMMSS>/
 ├── report.json          # machine-readable assessment
 ├── findings.json        # deterministic Assessment Graph rule findings
 ├── recommendations.json # deterministic finding → modernization recommendations
+├── ai-enrichment.json   # optional AI narrative (--with-ai only, on success)
 ├── ai-execution.json    # only for --with-ai attempts (internal)
 └── graphs/              # deterministic Phase 2 graph artifacts
     ├── repository-manifest.json
@@ -206,26 +207,29 @@ analyzers, builds knowledge-graph artifacts, evaluates Assessment Graph rules,
 derives deterministic recommendations from those findings, and writes
 evidence-based HTML/JSON without calling a cloud model.
 
-**`--with-ai`** adds an optional Bedrock interpretation layer over the same
-normalized Phase 1 evidence. Graph artifacts, `findings.json`, and
-`recommendations.json` are still written. Full recommendation JSON is not yet
-passed into the AI context. If AI fails, deterministic reports and graphs are
-kept when possible.
+**`--with-ai`** adds one Bedrock enrichment call over compact context built from
+deterministic findings, recommendations, and a repository/technology summary.
+It writes `ai-enrichment.json` on success. Full graph JSON is not sent to the
+model. Deterministic `findings.json` / `recommendations.json` are never modified
+by AI. If AI fails, deterministic reports and graphs are kept and the CLI
+completes with a warning (non-zero exit is not used for AI enrichment failure).
 
 ### Deterministic findings and recommendations
 
 ```text
 Repository Graph → Assessment Graph → Rules → Findings → Recommendations
-→ optional AI / reporting
+→ optional AI enrichment / reporting
 ```
 
 | Layer | Artifact | Role |
 | ----- | -------- | ---- |
 | Rules | `findings.json` | Deterministic Assessment Graph findings |
 | Recommendations | `recommendations.json` | Actionable steps derived only from findings |
+| AI enrichment | `ai-enrichment.json` | Concise narrative over findings + recommendations |
 
-AI enrichment (prioritization narrative, executive summary) remains separate
-under `--with-ai` and does not replace these deterministic artifacts.
+AI enrichment is interpretive only. Traceability uses referenced finding and
+recommendation IDs from the compact context allowlists. Exactly one provider
+call runs in `--with-ai` mode; deterministic mode makes zero provider calls.
 
 ### Graph artifacts (brief)
 
