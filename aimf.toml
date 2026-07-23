@@ -21,6 +21,11 @@ path = "examples/sample-js-app"
 directory = ".aimf/workspace"
 clean_before_clone = true
 
+# Engineering knowledge store (Increment 1). Not opened by assess yet.
+# Independent of report retention under reports/.
+[knowledge]
+directory = ".aimf/knowledge"
+
 [static_analysis]
 # PMD is Java-oriented. Keep enabled=false for non-Java samples, or enable for Java repos.
 enabled = false

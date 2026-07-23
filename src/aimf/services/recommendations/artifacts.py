@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from aimf.domain.recommendations import RecommendationResult
+from aimf.services.artifact_serialization import dumps_stable_json, recommendations_payload
 
 RECOMMENDATIONS_FILENAME = "recommendations.json"
 
@@ -31,22 +30,7 @@ def write_recommendations_artifact(
 
     run_directory.mkdir(parents=True, exist_ok=True)
     path = run_directory / RECOMMENDATIONS_FILENAME
-    payload: dict[str, Any] = {
-        "providers_evaluated": list(result.providers_evaluated),
-        "providers_skipped": list(result.providers_skipped),
-        "recommendation_count": result.recommendation_count,
-        "recommendations": [item.model_dump(mode="json") for item in result.recommendations],
-        "unmatched_finding_ids": list(result.unmatched_finding_ids),
-        "version": result.version,
-    }
-    text = json.dumps(
-        payload,
-        indent=2,
-        sort_keys=True,
-        ensure_ascii=False,
-        allow_nan=False,
-    )
-    path.write_text(text + "\n", encoding="utf-8")
+    path.write_text(dumps_stable_json(recommendations_payload(result)), encoding="utf-8")
     return RecommendationsArtifactWriteResult(
         path=path,
         recommendation_count=result.recommendation_count,

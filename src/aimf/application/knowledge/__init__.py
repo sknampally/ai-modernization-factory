@@ -1,0 +1,75 @@
+"""Application-layer engineering knowledge persistence contracts."""
+
+from aimf.application.knowledge.errors import (
+    KnowledgeArtifactNotFoundError,
+    KnowledgeStoreCorruptionError,
+    KnowledgeStoreError,
+    KnowledgeStoreVersionError,
+    RepositoryAliasConflictError,
+    RepositoryIdentityConflictError,
+    RepositoryIdentityError,
+    RepositoryLockTimeoutError,
+    RepositoryNotFoundError,
+)
+from aimf.application.knowledge.identity import (
+    NormalizedAlias,
+    NormalizedRepositoryIdentity,
+    build_github_canonical_key,
+    build_local_canonical_key,
+    normalize_github_url_alias,
+    normalize_identity_hints,
+    normalize_local_path_alias,
+)
+from aimf.application.knowledge.models import (
+    AssessmentRunRecord,
+    AssessmentRunStatus,
+    KnowledgeArtifactKind,
+    KnowledgeArtifactRecord,
+    RepositoryAliasRecord,
+    RepositoryAliasType,
+    RepositoryIdentityHints,
+    RepositoryRecord,
+    RepositorySnapshotRecord,
+    StagedKnowledgeArtifact,
+)
+from aimf.application.knowledge.ports import (
+    AssessmentRunStore,
+    KnowledgeStore,
+    RepositoryRegistry,
+    SnapshotStore,
+)
+from aimf.application.knowledge.session import AssessmentKnowledgeSession
+
+__all__ = [
+    "AssessmentKnowledgeSession",
+    "AssessmentRunRecord",
+    "AssessmentRunStatus",
+    "AssessmentRunStore",
+    "KnowledgeArtifactKind",
+    "KnowledgeArtifactNotFoundError",
+    "KnowledgeArtifactRecord",
+    "KnowledgeStore",
+    "KnowledgeStoreCorruptionError",
+    "KnowledgeStoreError",
+    "KnowledgeStoreVersionError",
+    "NormalizedAlias",
+    "NormalizedRepositoryIdentity",
+    "RepositoryAliasConflictError",
+    "RepositoryAliasRecord",
+    "RepositoryAliasType",
+    "RepositoryIdentityConflictError",
+    "RepositoryIdentityError",
+    "RepositoryIdentityHints",
+    "RepositoryLockTimeoutError",
+    "RepositoryNotFoundError",
+    "RepositoryRecord",
+    "RepositoryRegistry",
+    "RepositorySnapshotRecord",
+    "SnapshotStore",
+    "StagedKnowledgeArtifact",
+    "build_github_canonical_key",
+    "build_local_canonical_key",
+    "normalize_github_url_alias",
+    "normalize_identity_hints",
+    "normalize_local_path_alias",
+]

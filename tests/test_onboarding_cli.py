@@ -76,15 +76,15 @@ def test_resolve_assessment_repository_missing_raises_actionable_error() -> None
             "static_analysis": {"enabled": False},
         }
     )
-    from aimf.cli import assess as assess_module
+    from aimf.application.assessment import service as assess_service
 
-    original = assess_module.configured_repository_source
+    original = assess_service.configured_repository_source
     try:
-        assess_module.configured_repository_source = lambda _settings: None  # type: ignore[assignment]
+        assess_service.configured_repository_source = lambda _settings: None  # type: ignore[assignment]
         with pytest.raises(AssessmentCommandError, match="No repository configured"):
             resolve_assessment_repository(None, settings)
     finally:
-        assess_module.configured_repository_source = original
+        assess_service.configured_repository_source = original
 
 
 def test_resolve_assessment_repository_empty_cli_uses_config() -> None:
@@ -389,21 +389,21 @@ enabled = false
         encoding="utf-8",
     )
     # Empty --repo should fall back to url; to force missing, omit both via patch:
-    from aimf.cli import assess as assess_module
+    from aimf.application.assessment import service as assess_service
 
-    original = assess_module.configured_repository_source
+    original = assess_service.configured_repository_source
 
     def _none(_settings: AimfSettings) -> None:
         return None
 
-    assess_module.configured_repository_source = _none  # type: ignore[assignment]
+    assess_service.configured_repository_source = _none  # type: ignore[assignment]
     try:
         result = runner.invoke(
             app,
             ["assess", "--config", str(config), "--output", str(tmp_path / "out")],
         )
     finally:
-        assess_module.configured_repository_source = original
+        assess_service.configured_repository_source = original
 
     assert result.exit_code != 0
     assert "No repository configured" in result.output

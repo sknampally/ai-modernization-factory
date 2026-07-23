@@ -192,7 +192,7 @@ def test_execution_artifact_write_failure_warns_but_does_not_fail_assessment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "aimf.cli.assess.try_write_ai_execution_artifact",
+        "aimf.application.assessment.service.try_write_ai_execution_artifact",
         lambda *_a, **_k: None,
     )
     console = RecordingConsole()

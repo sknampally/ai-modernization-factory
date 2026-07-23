@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -92,26 +91,35 @@ def write_graph_artifacts(
 ) -> GraphArtifactWriteResult:
     """Persist deterministic graph JSON under ``run_directory/graphs``."""
 
+    # Lazy import avoids a cycle with aimf.services.artifact_serialization.
+    from aimf.services.artifact_serialization import (
+        assessment_graph_payload,
+        dumps_stable_json,
+        engineering_knowledge_graph_payload,
+        graph_summary_payload,
+        knowledge_bindings_payload,
+        repository_graph_payload,
+        repository_manifest_payload,
+    )
+
     try:
         graphs_directory = run_directory / GRAPH_ARTIFACT_DIRECTORY_NAME
         graphs_directory.mkdir(parents=True, exist_ok=True)
         summary = build_graph_artifact_summary(result)
 
         payloads: dict[str, Any] = {
-            REPOSITORY_MANIFEST_FILENAME: result.manifest.model_dump(mode="json"),
-            REPOSITORY_GRAPH_FILENAME: result.repository_graph.snapshot.model_dump(mode="json"),
-            ENGINEERING_KNOWLEDGE_GRAPH_FILENAME: (
-                result.knowledge_graph.snapshot.model_dump(mode="json")
-            ),
-            KNOWLEDGE_BINDINGS_FILENAME: result.binding_result.model_dump(mode="json"),
-            ASSESSMENT_GRAPH_FILENAME: result.assessment_graph.snapshot.model_dump(mode="json"),
-            GRAPH_SUMMARY_FILENAME: summary.model_dump(mode="json"),
+            REPOSITORY_MANIFEST_FILENAME: repository_manifest_payload(result.manifest),
+            REPOSITORY_GRAPH_FILENAME: repository_graph_payload(result),
+            ENGINEERING_KNOWLEDGE_GRAPH_FILENAME: engineering_knowledge_graph_payload(result),
+            KNOWLEDGE_BINDINGS_FILENAME: knowledge_bindings_payload(result),
+            ASSESSMENT_GRAPH_FILENAME: assessment_graph_payload(result),
+            GRAPH_SUMMARY_FILENAME: graph_summary_payload(result),
         }
 
         written: list[str] = []
         for filename, payload in payloads.items():
             path = graphs_directory / filename
-            _write_stable_json(path, payload)
+            path.write_text(dumps_stable_json(payload), encoding="utf-8")
             written.append(filename)
 
         return GraphArtifactWriteResult(
@@ -144,14 +152,3 @@ def format_graph_console_summary(summary: GraphArtifactSummary) -> tuple[str, ..
             f"{summary.assessment_relationship_count} relationships"
         ),
     )
-
-
-def _write_stable_json(path: Path, payload: Any) -> None:
-    text = json.dumps(
-        payload,
-        indent=2,
-        sort_keys=True,
-        ensure_ascii=False,
-        allow_nan=False,
-    )
-    path.write_text(text + "\n", encoding="utf-8")

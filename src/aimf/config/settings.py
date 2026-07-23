@@ -209,12 +209,25 @@ class AiSettings(BaseModel):
         return compact
 
 
+class KnowledgeSettings(BaseModel):
+    """Local engineering knowledge store settings.
+
+    The knowledge store is independent of report retention under ``reports/``.
+    Assessment does not open this store automatically until a later increment.
+    """
+
+    directory: Path = Path(".aimf/knowledge")
+
+
 class AimfSettings(BaseModel):
     """Top-level AIMF application settings."""
 
     repository: RepositorySettings
     workspace: WorkspaceSettings = Field(
         default_factory=WorkspaceSettings,
+    )
+    knowledge: KnowledgeSettings = Field(
+        default_factory=KnowledgeSettings,
     )
     static_analysis: StaticAnalysisSettings = Field(
         default_factory=StaticAnalysisSettings,

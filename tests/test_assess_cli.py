@@ -448,7 +448,10 @@ def test_deterministic_mode_does_not_construct_ai_components(
         calls.append("agent")
         raise AssertionError("agent must not be constructed")
 
-    monkeypatch.setattr("aimf.cli.assess._create_bedrock_provider", _boom_provider)
+    monkeypatch.setattr(
+        "aimf.application.assessment.service._create_bedrock_provider",
+        _boom_provider,
+    )
     monkeypatch.setattr(
         "aimf.ai.prompts.ModernizationPromptBuilder",
         _boom_prompt,
@@ -670,7 +673,10 @@ def test_report_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     def _boom(*_args: Any, **_kwargs: Any) -> tuple[Path, Path]:
         raise ModernizationReportValidationError("bad report")
 
-    monkeypatch.setattr("aimf.cli.assess.write_modernization_assessment_reports", _boom)
+    monkeypatch.setattr(
+        "aimf.application.assessment.service.write_modernization_assessment_reports",
+        _boom,
+    )
     with pytest.raises(AssessmentCommandError, match="Report validation or write failure"):
         _run(tmp_path, mode=AssessmentMode.DETERMINISTIC, model_id=None)
 
@@ -682,7 +688,10 @@ def test_report_write_failure_exits_nonzero(
     def _boom(*_args: Any, **_kwargs: Any) -> tuple[Path, Path]:
         raise OSError("disk full")
 
-    monkeypatch.setattr("aimf.cli.assess.write_modernization_assessment_reports", _boom)
+    monkeypatch.setattr(
+        "aimf.application.assessment.service.write_modernization_assessment_reports",
+        _boom,
+    )
     with pytest.raises(AssessmentCommandError, match="Report validation or write failure"):
         _run(tmp_path, mode=AssessmentMode.DETERMINISTIC, model_id=None)
 
@@ -797,7 +806,10 @@ def test_verbose_error_mode_includes_traceback(
     def _boom(*_args: Any, **_kwargs: Any) -> tuple[Path, Path]:
         raise OSError("disk full")
 
-    monkeypatch.setattr("aimf.cli.assess.write_modernization_assessment_reports", _boom)
+    monkeypatch.setattr(
+        "aimf.application.assessment.service.write_modernization_assessment_reports",
+        _boom,
+    )
     config = tmp_path / "aimf.toml"
     config.write_text(
         """
@@ -1026,7 +1038,10 @@ def test_retention_cleanup_failure_does_not_fail_assessment(
     def _boom(*_args: Any, **_kwargs: Any) -> list[Path]:
         raise OSError("cannot delete")
 
-    monkeypatch.setattr("aimf.cli.assess.prune_excess_report_runs", _boom)
+    monkeypatch.setattr(
+        "aimf.application.assessment.service.prune_excess_report_runs",
+        _boom,
+    )
     result, _, _ = _run(tmp_path, mode=AssessmentMode.DETERMINISTIC, model_id=None)
     assert result.html_report_path.is_file()
     assert result.json_report_path.is_file()
@@ -1036,7 +1051,7 @@ def test_failed_report_write_does_not_trigger_retention(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from aimf.cli import assess as assess_module
+    from aimf.application.assessment import service as assess_service
 
     repo_dir = tmp_path / "reports" / "sample-app"
     for timestamp in [
@@ -1055,7 +1070,7 @@ def test_failed_report_write_does_not_trigger_retention(
         raise OSError("disk full")
 
     monkeypatch.setattr(
-        assess_module,
+        assess_service,
         "write_modernization_assessment_reports",
         fail_write,
     )

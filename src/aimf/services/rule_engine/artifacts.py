@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from aimf.domain.findings import RuleEvaluationResult
+from aimf.services.artifact_serialization import dumps_stable_json, findings_payload
 
 FINDINGS_FILENAME = "findings.json"
 
@@ -31,20 +30,7 @@ def write_findings_artifact(
 
     run_directory.mkdir(parents=True, exist_ok=True)
     path = run_directory / FINDINGS_FILENAME
-    payload: dict[str, Any] = {
-        "finding_count": evaluation.finding_count,
-        "findings": [item.model_dump(mode="json") for item in evaluation.findings],
-        "rules_evaluated": list(evaluation.rules_evaluated),
-        "rules_skipped": list(evaluation.rules_skipped),
-    }
-    text = json.dumps(
-        payload,
-        indent=2,
-        sort_keys=True,
-        ensure_ascii=False,
-        allow_nan=False,
-    )
-    path.write_text(text + "\n", encoding="utf-8")
+    path.write_text(dumps_stable_json(findings_payload(evaluation)), encoding="utf-8")
     return FindingsArtifactWriteResult(
         path=path,
         finding_count=evaluation.finding_count,

@@ -66,8 +66,10 @@ Topic docs: [docs/runtime.md](docs/runtime.md) and siblings under [docs/](docs/)
 | Rule Engine | Deterministic Phase 3 findings |
 | Recommendation Engine | Deterministic Phase 3 recommendations |
 | AI enrichment | Exactly one Bedrock call; narrative only |
+| Knowledge store | Durable repository identity, snapshots, runs, immutable artifacts (SQLite) |
 | Reporting | HTML Report v2 + JSON artifacts |
-| CLI | Config, orchestration, artifact retention |
+| Application | `AssessmentApplicationService` orchestration; knowledge ports/session |
+| CLI | Config, thin adapters, artifact retention |
 
 ### Evidence and immutability
 
@@ -160,6 +162,26 @@ Presentation-only view-model + renderer. Sections separate deterministic finding
 and recommendations from optional AI enrichment. See
 [docs/report-generation.md](docs/report-generation.md).
 
+## Knowledge store (Phase 2B)
+
+`AssessmentApplicationService` persists completed assessments side-by-side with
+existing report artifacts:
+
+```text
+CLI → AssessmentApplicationService
+        → full assessment pipeline (unchanged)
+        → KnowledgeStore (snapshots, runs, content-addressed blobs)
+        → existing report generation
+```
+
+Schema version 2 indexes repositories, snapshots, assessment runs, and artifact
+metadata. Payloads live under `.aimf/knowledge/blobs/` (SHA-256, atomic write).
+Reports are never read back into the store. Persistence finalization failure
+fails the assessment; incomplete runs are never “latest completed.” Full
+recomputation only — no incremental execution yet.
+
+Details: [docs/knowledge-store.md](docs/knowledge-store.md).
+
 ## Repository authentication
 
 Private GitHub access uses credential **references** in config (`token_env`),
@@ -172,6 +194,8 @@ reports. Authentication applies only to remote clones.
 src/aimf/
 ├── cli/                 # Typer: version, scan, assess
 ├── config/
+├── application/         # assessment orchestration; knowledge ports/session
+├── infrastructure/      # SQLite knowledge store, blobs, Git revision observer
 ├── models/              # Phase 1 domain DTOs
 ├── domain/              # graphs, findings, recommendations, AI enrichment
 ├── services/            # analysis, inventory, knowledge, assessment
@@ -190,7 +214,8 @@ Secrets belong in environment / `.env` (gitignored), never in committed config.
 ## Retention
 
 Completed assess/scan runs keep the latest **three** per repository name; older
-run directories are pruned after successful writes.
+run directories are pruned after successful writes. Report retention does **not**
+delete knowledge-store rows or blobs (knowledge retention is deferred).
 
 ## Out of scope for v0.1.0
 
