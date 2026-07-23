@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 
+from aimf.application.agents import AgentOrchestrator
 from aimf.application.assessment import AssessmentApplicationService
 from aimf.application.knowledge.queries import KnowledgeQueryService
 from aimf.config import AimfSettings
@@ -15,8 +16,9 @@ CODESSTRATA_MCP_NAME = "CodeStrata"
 CODESSTRATA_MCP_INSTRUCTIONS = (
     "CodeStrata modernization knowledge server. Query durable assessment "
     "knowledge and optionally run assessments. Prefer list/get/explain tools "
-    "over raw reports. Agents and other adapters should call application "
-    "services directly rather than nesting through this MCP server."
+    "for precise queries; use *_with_agents tools for bounded multi-step "
+    "workflows. Agents and other adapters should call application services "
+    "directly rather than nesting through this MCP server."
 )
 
 
@@ -25,6 +27,7 @@ def build_mcp_server(
     queries: KnowledgeQueryService,
     assessment_service: AssessmentApplicationService,
     settings: AimfSettings | None = None,
+    agent_orchestrator: AgentOrchestrator | None = None,
 ) -> FastMCP:
     """Assemble a FastMCP server with tools, resources, and prompts registered."""
 
@@ -37,6 +40,7 @@ def build_mcp_server(
         queries=queries,
         assessment_service=assessment_service,
         settings=settings,
+        agent_orchestrator=agent_orchestrator,
     )
     register_resources(server, queries)
     register_prompts(server, queries)

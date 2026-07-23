@@ -7,6 +7,16 @@ from typing import NoReturn
 
 from mcp.server.fastmcp.exceptions import ToolError
 
+from aimf.application.agents.errors import (
+    AgentConfigurationError,
+    AgentDependencyError,
+    AgentError,
+    AgentEvidenceError,
+    AgentExecutionError,
+    AgentStepError,
+    AgentValidationError,
+    AgentWorkflowBlockedError,
+)
 from aimf.application.assessment import AssessmentCommandError
 from aimf.application.knowledge.errors import (
     KnowledgeStoreError,
@@ -28,6 +38,14 @@ def raise_tool_error(error: BaseException, *, tool_name: str) -> NoReturn:
             AssessmentCommandError,
             KnowledgeStoreError,
             RepositoryIdentityError,
+            AgentConfigurationError,
+            AgentDependencyError,
+            AgentExecutionError,
+            AgentStepError,
+            AgentValidationError,
+            AgentEvidenceError,
+            AgentWorkflowBlockedError,
+            AgentError,
             ValueError,
         ),
     ):

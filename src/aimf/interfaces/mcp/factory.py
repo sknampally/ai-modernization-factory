@@ -7,6 +7,7 @@ from typing import cast
 
 from mcp.server.fastmcp import FastMCP
 
+from aimf.application.agents import AgentOrchestrator, create_agent_orchestrator
 from aimf.application.assessment import AssessmentApplicationService
 from aimf.application.knowledge.ports import KnowledgeStore
 from aimf.application.knowledge.queries import KnowledgeQueryService
@@ -25,6 +26,7 @@ def create_mcp_server(
     settings: AimfSettings | None = None,
     config_path: Path | None = None,
     knowledge_store: KnowledgeStore | None = None,
+    agent_orchestrator: AgentOrchestrator | None = None,
 ) -> FastMCP:
     """Create a CodeStrata FastMCP server with injectable application services.
 
@@ -44,10 +46,19 @@ def create_mcp_server(
             queries = create_knowledge_query_service(settings=resolved_settings)
 
     assess = assessment_service or AssessmentApplicationService()
+    orchestrator = agent_orchestrator
+    if orchestrator is None:
+        orchestrator = create_agent_orchestrator(
+            query_service=queries,
+            assessment_service=assess,
+            settings=resolved_settings,
+        )
+
     return build_mcp_server(
         queries=queries,
         assessment_service=assess,
         settings=resolved_settings,
+        agent_orchestrator=orchestrator,
     )
 
 

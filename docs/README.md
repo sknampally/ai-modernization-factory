@@ -6,8 +6,8 @@ Canonical topic docs for AIMF v0.1.0:
 | -------- | ----------- |
 | [runtime.md](runtime.md) | End-to-end `aimf assess` runtime |
 | [knowledge-store.md](knowledge-store.md) | Phase 2B knowledge store + query services (Increment 3) |
-| [mcp-server.md](mcp-server.md) | Phase 2C CodeStrata FastMCP server |
-| [agent-framework.md](agent-framework.md) | Phase 2D Agent Framework (deterministic orchestration) |
+| [agent-framework.md](agent-framework.md) | Phase 2D/2E Agent Framework + CLI/MCP adapters |
+| [mcp-server.md](mcp-server.md) | Phase 2C/2E CodeStrata FastMCP server |
 | [repository-graph.md](repository-graph.md) | Inventory, repository graph, dependencies |
 | [assessment-graph.md](assessment-graph.md) | Assessment graph projection |
 | [rule-engine.md](rule-engine.md) | Deterministic findings |

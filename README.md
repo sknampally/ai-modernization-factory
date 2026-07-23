@@ -40,6 +40,7 @@ Use it for modernization discovery, client demos, and engineering due diligence.
 * Durable knowledge store (`.aimf/knowledge`) with query services
 * Local **CodeStrata** FastMCP server (`aimf mcp serve`)
 * Deterministic **Agent Framework** (`aimf.application.agents`) over application services
+* Thin **`aimf agent`** CLI and high-level MCP agent tools over `AgentOrchestrator`
 
 ---
 
@@ -300,7 +301,7 @@ mypy src
 | [docs/report-generation.md](docs/report-generation.md) | HTML Report v2 |
 | [docs/knowledge-store.md](docs/knowledge-store.md) | Durable knowledge store + queries |
 | [docs/mcp-server.md](docs/mcp-server.md) | CodeStrata FastMCP server |
-| [docs/agent-framework.md](docs/agent-framework.md) | Agent Framework (Phase 2D) |
+| [docs/agent-framework.md](docs/agent-framework.md) | Agent Framework + `aimf agent` / MCP agent tools |
 | [examples/README.md](examples/README.md) | Sample commands & expected outputs |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting |

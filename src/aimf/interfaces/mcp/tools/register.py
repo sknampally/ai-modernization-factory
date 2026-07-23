@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 
+from aimf.application.agents import AgentOrchestrator
 from aimf.application.assessment import AssessmentApplicationService
 from aimf.application.knowledge.queries import KnowledgeQueryService
 from aimf.config import AimfSettings
+from aimf.interfaces.mcp.tools.agents import register_agent_tools
 from aimf.interfaces.mcp.tools.artifacts import register_artifact_tools
 from aimf.interfaces.mcp.tools.assessments import register_assessment_tools
 from aimf.interfaces.mcp.tools.components import register_component_tools
@@ -23,6 +25,7 @@ def register_all_tools(
     queries: KnowledgeQueryService,
     assessment_service: AssessmentApplicationService,
     settings: AimfSettings | None,
+    agent_orchestrator: AgentOrchestrator | None = None,
 ) -> None:
     register_repository_tools(server, queries)
     register_assessment_tools(server, queries)
@@ -37,3 +40,11 @@ def register_all_tools(
         assessment_service=assessment_service,
         settings=settings,
     )
+    if agent_orchestrator is not None:
+        register_agent_tools(
+            server,
+            orchestrator=agent_orchestrator,
+            queries=queries,
+            assessment_service=assessment_service,
+            settings=settings,
+        )

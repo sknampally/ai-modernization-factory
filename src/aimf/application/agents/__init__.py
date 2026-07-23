@@ -54,7 +54,7 @@ from aimf.application.agents.planner import (
     AgentPlanStep,
     DeterministicAgentPlanner,
 )
-from aimf.application.agents.policies import AgentExecutionPolicy
+from aimf.application.agents.policies import AgentExecutionPolicy, resolve_agent_policy
 from aimf.application.agents.validation_agent import ValidationAgent
 
 __all__ = [
@@ -102,4 +102,5 @@ __all__ = [
     "create_assessment_agent",
     "create_knowledge_agent",
     "create_validation_agent",
+    "resolve_agent_policy",
 ]

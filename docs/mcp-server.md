@@ -21,7 +21,7 @@ KnowledgeStore ports → SQLite + verified blobs
 
 MCP never executes SQL, opens blob files, or reads `report.json` / `report.html`.
 
-Sibling adapters (CLI, future REST, future Agent Framework) call the same
+Sibling adapters (CLI, REST, Agent Framework CLI/MCP tools) call the same
 application services. Agents must **not** call the MCP server internally.
 
 ## Dependency
@@ -123,8 +123,28 @@ This server is a **local developer tool**.
 `run_assessment` calls `AssessmentApplicationService`, persists knowledge through
 the existing store, and returns concise IDs + counts for follow-up query tools.
 
+## Agent workflow tools (Phase 2E)
+
+Five additive high-level tools call `AgentOrchestrator` (same application
+services as granular tools):
+
+| Tool | Workflow |
+| ---- | -------- |
+| `review_repository_with_agents` | Repository review |
+| `assess_repository_with_agents` | Assess + validate |
+| `validate_assessment_with_agents` | Validation |
+| `compare_snapshots_with_agents` | Snapshot comparison |
+| `review_modernization_with_agents` | Modernization review |
+
+Granular tools remain for precise queries. Agent tools return bounded workflow
+packages (status, IDs, summaries, steps, validation). Full evidence and HTML are
+not returned. Blocking validation is a structured result.
+
+Factory: `create_mcp_server(..., agent_orchestrator=optional)`. When omitted,
+the factory composes an orchestrator from the shared query/assessment services.
+
+CLI sibling: `aimf agent …` (see [agent-framework.md](agent-framework.md)).
+
 ## Next Phase 2 step
 
-Thin optional CLI / MCP adapters over the Phase 2D Agent Framework (already
-implemented under `aimf.application.agents`). See
-[agent-framework.md](agent-framework.md).
+**Phase 2F Incremental Scanning** — partial recomputation for changed content.

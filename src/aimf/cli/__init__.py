@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 
 from aimf import __version__
+from aimf.cli.agent import agent_app
 from aimf.cli.assess import (
     DEFAULT_ASSESS_MAX_OUTPUT_TOKENS,
     DEFAULT_ASSESS_OUTPUT_DIRECTORY,
@@ -193,6 +194,7 @@ def scan(
 
 register_assess_command(app)
 app.add_typer(mcp_app, name="mcp")
+app.add_typer(agent_app, name="agent")
 
 __all__ = [
     "DEFAULT_ASSESS_MAX_OUTPUT_TOKENS",

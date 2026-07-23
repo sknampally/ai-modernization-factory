@@ -196,12 +196,19 @@ graph JSON in memory with bounded depth (max 3).
 resources are thin adapters over `KnowledgeQueryService` and
 `AssessmentApplicationService`. See [docs/mcp-server.md](docs/mcp-server.md).
 
-### Agent Framework (Phase 2D)
+### Agent Framework (Phase 2D / 2E)
 
 `aimf.application.agents` provides deterministic orchestration
 (`AgentOrchestrator`, Knowledge / Assessment / Validation agents) over the same
-application services. MCP and agents are sibling interfaces — agents must not
-call MCP internally. See [docs/agent-framework.md](docs/agent-framework.md).
+application services. Phase 2E adds thin adapters:
+
+- CLI: `aimf agent review|assess|validate|compare|modernization-review`
+- MCP: five `*_with_agents` tools
+
+MCP and agents are sibling interfaces — agents must not call MCP internally.
+Existing `aimf assess` and the 20 granular MCP tools remain unchanged.
+
+See [docs/agent-framework.md](docs/agent-framework.md).
 
 ```text
 CLI / MCP / REST

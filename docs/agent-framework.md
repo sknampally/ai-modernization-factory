@@ -151,32 +151,64 @@ result = orchestrator.review_repository(
 Tests should inject fake services. Importing `aimf.application.agents` does not
 open a database or call Bedrock.
 
-## Optional CLI / MCP integration
+## CLI / MCP adapters (Phase 2E)
 
-**Deferred in this increment** to keep the framework independently usable and
-avoid broadening the surface area:
+Thin transport adapters call `AgentOrchestrator` only — no duplicated workflow
+logic.
 
-- `aimf agent review|assess|validate` CLI commands
-- high-level MCP tools (`review_repository_with_agents`, …)
+### CLI: `aimf agent`
 
-Existing `aimf assess` and the 20 MCP tools remain unchanged. When added later,
-those adapters must call `AgentOrchestrator` only — no duplicated workflow logic.
+| Command | Workflow |
+| ------- | -------- |
+| `aimf agent review --repository <id>` | Repository review |
+| `aimf agent assess --repository <path-or-url>` | Assess + retrieve + validate |
+| `aimf agent validate --run-id <id>` | Assessment validation |
+| `aimf agent compare --previous-snapshot … --current-snapshot …` | Snapshot comparison |
+| `aimf agent modernization-review --repository <id>` | Modernization review |
+
+Common options: `--config`, `--json`. Review also accepts bound overrides
+(`--max-findings`, `--dependency-depth`, …) within hard framework limits.
+
+**`aimf assess` vs `aimf agent assess`**
+
+- `aimf assess` — direct `AssessmentApplicationService` entry (reports + persistence)
+- `aimf agent assess` — orchestrated assessment plus prior context, persisted IDs,
+  validation, evidence summaries, and workflow steps
+
+Exit codes: `0` completed, `1` blocked (validation), `2` configuration/execution failure.
+
+### MCP: high-level agent tools
+
+Additive tools on the CodeStrata FastMCP server:
+
+- `review_repository_with_agents`
+- `assess_repository_with_agents`
+- `validate_assessment_with_agents`
+- `compare_snapshots_with_agents`
+- `review_modernization_with_agents`
+
+Granular tools (20) remain for precise queries. Agent tools return bounded
+multi-step workflow results. Blocking validation is returned as a structured
+result, not necessarily as an MCP protocol error.
+
+`create_mcp_server(..., agent_orchestrator=…)` accepts an injected orchestrator;
+when omitted, the factory composes one from the same query/assessment services.
 
 ## Security
 
 - No credentials, AWS profiles, SQL, blob paths, or stack traces in agent results
 - Unexpected exceptions are wrapped as agent errors
 - Structured logs include workflow/run/repository IDs and statuses only
+- Adapters do not enable shell/SQL/blob/report access
 
 ## Current limitations
 
 - No LLM planner (extension point only: `AgentPlanner`)
 - No autonomous loops or retries
 - No new recommendation / rule / graph engines
-- Optional CLI and MCP agent tools deferred
 - Review narratives remain deterministic aggregations (no required AI prose)
 
 ## Next Phase 2 capability
 
-Likely: thin CLI/MCP adapters over the Agent Framework, then incremental scanning
-or PR-oriented review — without changing agent→application-service boundaries.
+**Phase 2F Incremental Scanning** — partial graph/rule recomputation for changed
+repository content, without changing agent→application-service boundaries.

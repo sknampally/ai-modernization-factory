@@ -56,3 +56,43 @@ def policy_from_settings(settings: object | None) -> AgentExecutionPolicy:
         )
     except (TypeError, ValueError, ValidationError) as error:
         raise AgentConfigurationError(f"Invalid agents configuration: {error}") from error
+
+
+def resolve_agent_policy(
+    settings: object | None = None,
+    *,
+    base: AgentExecutionPolicy | None = None,
+    max_findings: int | None = None,
+    max_recommendations: int | None = None,
+    max_components: int | None = None,
+    dependency_depth: int | None = None,
+    max_steps: int | None = None,
+    stop_on_blocking_validation: bool | None = None,
+) -> AgentExecutionPolicy:
+    """Resolve policy with request overrides after settings defaults.
+
+    Precedence: hard Field bounds → explicit overrides → ``[agents]`` / base →
+    framework defaults. Overrides outside hard bounds raise
+    :class:`AgentConfigurationError`.
+    """
+
+    policy = base if base is not None else policy_from_settings(settings)
+    updates: dict[str, object] = {}
+    if max_findings is not None:
+        updates["max_findings"] = max_findings
+    if max_recommendations is not None:
+        updates["max_recommendations"] = max_recommendations
+    if max_components is not None:
+        updates["max_components"] = max_components
+    if dependency_depth is not None:
+        updates["dependency_depth"] = dependency_depth
+    if max_steps is not None:
+        updates["max_steps"] = max_steps
+    if stop_on_blocking_validation is not None:
+        updates["stop_on_blocking_validation"] = stop_on_blocking_validation
+    if not updates:
+        return policy
+    try:
+        return AgentExecutionPolicy(**{**policy.model_dump(), **updates})
+    except (TypeError, ValueError, ValidationError) as error:
+        raise AgentConfigurationError(f"Invalid agent policy override: {error}") from error
