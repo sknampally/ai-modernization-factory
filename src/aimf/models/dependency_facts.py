@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Self, TypeVar
+from typing import Self
 
 from pydantic import BaseModel, Field
-
-T = TypeVar("T")
 
 
 class DependencyManifest(BaseModel):
@@ -20,6 +18,7 @@ class DependencyManifest(BaseModel):
 
     has_version_management: bool = False
     version_management_source: str | None = None
+
 
 class Dependency(BaseModel):
     """A direct dependency declared by the repository."""
@@ -37,6 +36,7 @@ class Dependency(BaseModel):
 
     version_managed: bool = False
     version_source: str | None = None
+
 
 class DependencyFacts(BaseModel):
     """Structured dependency information for a repository."""
@@ -92,12 +92,10 @@ class DependencyFacts(BaseModel):
                 "dependency_count": len(dependencies),
                 "direct_dependency_count": len(dependencies),
                 "development_dependency_count": sum(
-                    dependency.scope == "development"
-                    for dependency in dependencies
+                    dependency.scope == "development" for dependency in dependencies
                 ),
                 "test_dependency_count": sum(
-                    dependency.scope == "test"
-                    for dependency in dependencies
+                    dependency.scope == "test" for dependency in dependencies
                 ),
                 "outdated_dependencies": _merge_unique(
                     self.outdated_dependencies,
@@ -143,7 +141,7 @@ def _merge_unique(left: list[str], right: list[str]) -> list[str]:
     return list(dict.fromkeys([*left, *right]))
 
 
-def _merge_models(
+def _merge_models[T](
     left: list[T],
     right: list[T],
     key: Callable[[T], object],

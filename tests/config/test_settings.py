@@ -86,12 +86,28 @@ def test_load_settings_reads_static_analysis_configuration(
     assert settings.static_analysis.pmd.timeout_seconds == 60
 
 
-def test_load_settings_rejects_missing_file(
-    tmp_path: Path,
-) -> None:
-    """Configuration loader should reject nonexistent files."""
+def test_load_settings_accepts_local_repository_path(tmp_path: Path) -> None:
+    config_file = tmp_path / "aimf.toml"
+    config_file.write_text(
+        """
+        [repository]
+        path = "examples/sample-js-app"
+        """,
+        encoding="utf-8",
+    )
+    settings = load_settings(config_file)
+    assert settings.repository.path == "examples/sample-js-app"
+    assert settings.repository.url is None
 
-    missing_file = tmp_path / "missing.toml"
 
-    with pytest.raises(FileNotFoundError):
-        load_settings(missing_file)
+def test_load_settings_rejects_empty_repository_section(tmp_path: Path) -> None:
+    config_file = tmp_path / "aimf.toml"
+    config_file.write_text(
+        """
+        [repository]
+        branch = "main"
+        """,
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Configure repository"):
+        load_settings(config_file)

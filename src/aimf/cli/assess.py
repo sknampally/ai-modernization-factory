@@ -16,7 +16,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from rich.console import Console
 
 from aimf.ai.providers.parsing import sanitize_provider_text
-from aimf.config import AimfSettings, load_settings
+from aimf.config import AimfSettings, configured_repository_source, load_settings
+from aimf.config.settings import (
+    is_github_repository_source as is_github_repository_source_settings,
+)
 from aimf.logging_config import configure_logging
 from aimf.models import AnalysisResult, Repository
 from aimf.reporters.report_paths import (
@@ -48,7 +51,6 @@ from aimf.repository_auth.exceptions import (
     RepositoryAccessError,
     UnsupportedRepositoryUrlError,
 )
-from aimf.repository_auth.github_urls import parse_github_repository_url
 from aimf.services.analysis_service import AnalysisService
 from aimf.services.default_pipeline import create_default_analysis_service
 from aimf.services.scanners.github_repository_scanner import GitHubRepositoryScanner
@@ -133,7 +135,7 @@ class _RepositoryScanner(Protocol):
 
 
 def run_assessment(
-    repo: str,
+    repo: str | None,
     output_directory: Path,
     *,
     mode: AssessmentMode = AssessmentMode.DETERMINISTIC,
@@ -159,7 +161,15 @@ def run_assessment(
     clock: Callable[[], datetime] | None = None,
     verbose: bool = False,
 ) -> AssessmentCommandResult:
-    """Orchestrate scan → analysis → optional AI assessment → HTML+JSON reports."""
+    """Orchestrate scan → analysis → optional AI assessment → HTML+JSON reports.
+
+    Repository selection precedence:
+
+    1. Explicit ``repo`` / ``--repo`` argument
+    2. ``[repository].path`` from configuration
+    3. ``[repository].url`` from configuration
+    4. Clear actionable error (never a silent demo repository)
+    """
 
     active_console = console or Console(stderr=False)
     now = clock or (lambda: datetime.now(UTC))
@@ -184,14 +194,15 @@ def run_assessment(
         except ValueError as error:
             raise AssessmentCommandError(sanitize_provider_text(str(error))) from error
 
+    resolved_repo = resolve_assessment_repository(repo, loaded_settings)
     resolved_branch = branch if branch is not None else loaded_settings.repository.branch
-    repository_reference = _safe_repository_reference(repo)
+    repository_reference = _safe_repository_reference(resolved_repo)
 
     stage("Scanning repository")
     scan_started = perf_counter()
     try:
         repository = _scan_repository(
-            repo,
+            resolved_repo,
             settings=loaded_settings,
             branch=resolved_branch,
             scanner=scanner,
@@ -460,14 +471,39 @@ def modernization_json_report_filename(repository_name: str) -> str:
     return f"{modernization_report_basename(repository_name)}.json"
 
 
+def resolve_assessment_repository(
+    cli_repo: str | None,
+    settings: AimfSettings,
+) -> str:
+    """Resolve the repository source for ``aimf assess``.
+
+    Precedence: explicit CLI ``--repo``, then ``repository.path``, then
+    ``repository.url``. Never falls back to a hardcoded demo repository.
+    """
+
+    if cli_repo is not None and cli_repo.strip():
+        return cli_repo.strip()
+
+    configured = configured_repository_source(settings)
+    if configured:
+        return configured
+
+    raise AssessmentCommandError(
+        "No repository configured.\n\n"
+        "Fix one of the following:\n"
+        "  1. Pass --repo /path/to/repository (local path or GitHub URL)\n"
+        "  2. Set [repository].path in aimf.toml for a local checkout\n"
+        "  3. Set [repository].url in aimf.toml for a GitHub repository\n\n"
+        "Examples:\n"
+        "  aimf assess --repo /path/to/repository\n"
+        "  aimf assess --config aimf.toml"
+    )
+
+
 def is_github_repository_source(repo: str) -> bool:
     """Return whether the repo argument is a GitHub URL."""
 
-    try:
-        parse_github_repository_url(repo)
-    except UnsupportedRepositoryUrlError:
-        return False
-    return True
+    return is_github_repository_source_settings(repo)
 
 
 def _resolve_pmd_for_assessment(
@@ -918,7 +954,10 @@ def _scan_repository(
 ) -> Repository:
     compact = repo.strip()
     if not compact:
-        raise AssessmentCommandError("Invalid repository path or URL: repository is empty")
+        raise AssessmentCommandError(
+            "Invalid repository path or URL: repository is empty.\n\n"
+            "Fix: pass --repo /path/to/repo or configure [repository] in aimf.toml."
+        )
 
     if scanner is not None:
         return scanner.scan(compact)
@@ -933,6 +972,17 @@ def _scan_repository(
         return github_scanner.scan(compact)
 
     path = Path(compact)
+    if not path.exists():
+        raise AssessmentCommandError(
+            f"Repository path does not exist: {path}\n\n"
+            "Fix: create or clone the repository, update [repository].path in "
+            "aimf.toml, or pass a valid --repo path."
+        )
+    if not path.is_dir():
+        raise AssessmentCommandError(
+            f"Repository path is not a directory: {path}\n\n"
+            "Fix: point --repo or [repository].path at the repository root."
+        )
     return LocalRepositoryScanner().scan(path)
 
 
@@ -1017,13 +1067,17 @@ def register_assess_command(app: typer.Typer) -> None:
     @app.command("assess")
     def assess(
         repo: Annotated[
-            str,
+            str | None,
             typer.Option(
                 "--repo",
                 "-r",
-                help="Local repository path or GitHub repository URL.",
+                help=(
+                    "Local repository path or GitHub URL. Overrides "
+                    "repository.path / repository.url from --config. "
+                    "Required when neither is set in configuration."
+                ),
             ),
-        ],
+        ] = None,
         output: Annotated[
             Path,
             typer.Option(
@@ -1139,14 +1193,22 @@ def register_assess_command(app: typer.Typer) -> None:
             ),
         ] = False,
     ) -> None:
-        """Run modernization assessment and write HTML and JSON reports."""
+        """Assess a repository and write HTML + JSON reports.
+
+        Canonical workflow:
+
+            aimf assess --config aimf.toml --output reports --with-ai
+
+        Repository selection: --repo, then repository.path, then
+        repository.url from the config file.
+        """
 
         configure_logging(level="DEBUG" if verbose else "WARNING")
 
         if model_id and model_id.strip() and not with_ai:
             typer.secho(
-                "--model-id requires --with-ai. Deterministic assessment is the "
-                "default and does not use a model.",
+                "--model-id requires --with-ai.\n\n"
+                "Fix: add --with-ai, or omit --model-id for deterministic assessment.",
                 fg=typer.colors.RED,
                 err=True,
             )

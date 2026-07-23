@@ -1,5 +1,24 @@
 """Domain-layer packages for AIMF (Phase 2+)."""
 
+from aimf.domain.assessment_graph import (
+    ASSESSMENT_GRAPH_GENERATOR_VERSION,
+    ASSESSMENT_GRAPH_SCHEMA_VERSION,
+    AssessmentBindingProperties,
+    AssessmentGraph,
+    AssessmentGraphSchema,
+    AssessmentGraphSchemaError,
+    AssessmentNodeFactory,
+    AssessmentNodeIdFactory,
+    AssessmentNodeType,
+    AssessmentRelationshipFactory,
+    AssessmentRelationshipIdFactory,
+    AssessmentRelationshipType,
+    KnowledgeConceptReferenceProperties,
+    RepositoryEntityReferenceProperties,
+    build_assessment_graph_id,
+    build_assessment_graph_metadata,
+    build_assessment_source_fingerprint,
+)
 from aimf.domain.engineering_knowledge import (
     ENGINEERING_KNOWLEDGE_GRAPH_SCHEMA_VERSION,
     EngineeringKnowledgeCatalogMetadata,
@@ -27,6 +46,15 @@ from aimf.domain.graph import (
     NodeId,
     Provenance,
     ProvenanceSource,
+)
+from aimf.domain.knowledge_binding import (
+    KNOWLEDGE_BINDING_RESULT_VERSION,
+    KnowledgeBinding,
+    KnowledgeBindingResult,
+    KnowledgeBindingType,
+    KnowledgeMatchingStrategy,
+    KnowledgeObservationKind,
+    build_knowledge_binding_id,
 )
 from aimf.domain.repository import (
     REPOSITORY_MANIFEST_VERSION,
@@ -73,9 +101,22 @@ from aimf.domain.repository_graph import (
 )
 
 __all__ = [
+    "ASSESSMENT_GRAPH_GENERATOR_VERSION",
+    "ASSESSMENT_GRAPH_SCHEMA_VERSION",
     "ENGINEERING_KNOWLEDGE_GRAPH_SCHEMA_VERSION",
+    "KNOWLEDGE_BINDING_RESULT_VERSION",
     "REPOSITORY_GRAPH_SCHEMA_VERSION",
     "REPOSITORY_MANIFEST_VERSION",
+    "AssessmentBindingProperties",
+    "AssessmentGraph",
+    "AssessmentGraphSchema",
+    "AssessmentGraphSchemaError",
+    "AssessmentNodeFactory",
+    "AssessmentNodeIdFactory",
+    "AssessmentNodeType",
+    "AssessmentRelationshipFactory",
+    "AssessmentRelationshipIdFactory",
+    "AssessmentRelationshipType",
     "CallableProperties",
     "DependencyProperties",
     "DependencyScope",
@@ -102,6 +143,12 @@ __all__ = [
     "GraphStatus",
     "GraphType",
     "HashAlgorithm",
+    "KnowledgeBinding",
+    "KnowledgeBindingResult",
+    "KnowledgeBindingType",
+    "KnowledgeConceptReferenceProperties",
+    "KnowledgeMatchingStrategy",
+    "KnowledgeObservationKind",
     "ModuleProperties",
     "NamespaceProperties",
     "NodeId",
@@ -110,6 +157,7 @@ __all__ = [
     "RelationshipIdFactory",
     "RepositoryCallableKind",
     "RepositoryChangeType",
+    "RepositoryEntityReferenceProperties",
     "RepositoryFileChange",
     "RepositoryFileEntry",
     "RepositoryFileKind",
@@ -136,4 +184,8 @@ __all__ = [
     "RepositorySourceType",
     "RepositoryTypeKind",
     "TypeProperties",
+    "build_assessment_graph_id",
+    "build_assessment_graph_metadata",
+    "build_assessment_source_fingerprint",
+    "build_knowledge_binding_id",
 ]

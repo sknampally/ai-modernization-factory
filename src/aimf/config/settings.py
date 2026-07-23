@@ -7,26 +7,62 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from aimf.config.dotenv import load_dotenv
+from aimf.repository_auth.exceptions import UnsupportedRepositoryUrlError
 from aimf.repository_auth.github_urls import parse_github_repository_url
 from aimf.repository_auth.models import RepositoryAuthenticationConfig
 
 
 class RepositorySettings(BaseModel):
-    """Configuration for the repository being analyzed."""
+    """Configuration for the repository being analyzed.
 
-    url: str
+    Provide at least one of:
+
+    * ``url`` — GitHub HTTPS/SSH URL (required for ``aimf scan``)
+    * ``path`` — local filesystem path (supported by ``aimf assess``)
+    """
+
+    url: str | None = None
+    path: str | None = None
     branch: str | None = None
     authentication: RepositoryAuthenticationConfig | None = None
 
     @field_validator("url")
     @classmethod
-    def validate_repository_url(cls, value: str) -> str:
+    def validate_repository_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         compact = value.strip()
         if not compact:
             raise ValueError("repository.url must be a nonempty GitHub URL")
         # Validate shape at configuration load time; do not resolve credentials.
         parse_github_repository_url(compact)
         return compact
+
+    @field_validator("path")
+    @classmethod
+    def validate_repository_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        compact = value.strip()
+        if not compact:
+            raise ValueError("repository.path must be a nonempty local path")
+        if "://" in compact:
+            raise ValueError(
+                "repository.path must be a local filesystem path, not a URL. "
+                "Use repository.url for GitHub repositories."
+            )
+        return compact
+
+    @model_validator(mode="after")
+    def require_url_or_path(self) -> RepositorySettings:
+        if self.url is None and self.path is None:
+            raise ValueError(
+                "Configure repository.url (GitHub) or repository.path (local). "
+                'Example: path = "examples/sample-js-app" or '
+                'url = "https://github.com/org/repo"'
+            )
+        return self
 
 
 class WorkspaceSettings(BaseModel):
@@ -188,15 +224,57 @@ class AimfSettings(BaseModel):
 
 
 def load_settings(config_path: Path) -> AimfSettings:
-    """Load AIMF settings from a TOML configuration file."""
+    """Load AIMF settings from a TOML configuration file.
 
-    if not config_path.exists():
-        raise FileNotFoundError(f"Configuration file does not exist: {config_path}")
+    Automatically loads a nearby ``.env`` file (if present) before reading
+    configuration so environment-variable references such as
+    ``AIMF_GITHUB_TOKEN`` resolve without requiring ``source .env``.
+    """
 
-    if not config_path.is_file():
-        raise ValueError(f"Configuration path is not a file: {config_path}")
+    resolved_config = config_path.expanduser()
+    load_dotenv(start_directory=resolved_config.parent)
+    load_dotenv(start_directory=Path.cwd())
 
-    with config_path.open("rb") as config_file:
+    if not resolved_config.exists():
+        raise FileNotFoundError(
+            f"Configuration file does not exist: {resolved_config}\n\n"
+            "Fix: create aimf.toml in the project root (see README), or pass "
+            "--config /path/to/aimf.toml"
+        )
+
+    if not resolved_config.is_file():
+        raise ValueError(f"Configuration path is not a file: {resolved_config}")
+
+    with resolved_config.open("rb") as config_file:
         config_data = tomllib.load(config_file)
 
-    return AimfSettings.model_validate(config_data)
+    try:
+        return AimfSettings.model_validate(config_data)
+    except Exception as error:
+        raise ValueError(
+            f"Invalid configuration in {resolved_config}: {error}\n\n"
+            "Fix: check [repository] url/path and other settings against the README."
+        ) from error
+
+
+def configured_repository_source(settings: AimfSettings) -> str | None:
+    """Return the configured assess/scan repository source, if any.
+
+    Preference for configuration-only resolution: local ``path``, then ``url``.
+    """
+
+    if settings.repository.path:
+        return settings.repository.path
+    if settings.repository.url:
+        return settings.repository.url
+    return None
+
+
+def is_github_repository_source(source: str) -> bool:
+    """Return whether ``source`` is a GitHub repository URL."""
+
+    try:
+        parse_github_repository_url(source)
+    except UnsupportedRepositoryUrlError:
+        return False
+    return True

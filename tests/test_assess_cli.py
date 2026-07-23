@@ -1147,7 +1147,7 @@ def test_load_settings_reads_bedrock_configuration(tmp_path: Path) -> None:
 
 
 def test_invalid_local_repository_path(tmp_path: Path) -> None:
-    with pytest.raises(AssessmentCommandError, match="Invalid repository path or URL"):
+    with pytest.raises(AssessmentCommandError, match="Repository path does not exist"):
         run_assessment(
             repo=str(tmp_path / "missing"),
             output_directory=tmp_path / "out",

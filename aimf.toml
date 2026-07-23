@@ -1,8 +1,13 @@
 [repository]
-url = "https://github.com/spring-projects/spring-petclinic"
-branch = "main"
+# Local sample app shipped with AIMF for onboarding (no network required).
+# Replace with your own repository:
+#   path = "/absolute/or/relative/path/to/your-repo"
+# Or clone from GitHub (also required for `aimf scan`):
+#   url = "https://github.com/YOUR_ORG/YOUR_REPO"
+#   branch = "main"
+path = "examples/sample-js-app"
 
-# Optional private-repository authentication (disabled by default).
+# Optional private-repository authentication (for GitHub URL clones).
 # Never place token values in this file.
 #
 # [repository.authentication]
@@ -17,7 +22,8 @@ directory = ".aimf/workspace"
 clean_before_clone = true
 
 [static_analysis]
-enabled = true
+# PMD is Java-oriented. Keep enabled=false for non-Java samples, or enable for Java repos.
+enabled = false
 fail_on_provider_error = false
 
 [static_analysis.pmd]
@@ -33,7 +39,7 @@ minimum_priority = 5
 timeout_seconds = 120
 
 # Optional AWS session for --with-ai (preferred over exporting AWS_PROFILE / AWS_REGION).
-# After `aws configure sso` and `aws sso login --profile aimf`, AIMF uses this profile.
+# After `aws sso login --profile <profile-name>`, set profile below (or export AWS_PROFILE).
 [aws]
 profile = "aimf"
 region = "us-east-1"

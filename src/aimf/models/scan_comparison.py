@@ -109,15 +109,9 @@ class ScanComparison(BaseModel):
     resolved_findings: list[ComparedFinding] = Field(default_factory=list)
     unchanged_findings: list[ComparedFinding] = Field(default_factory=list)
     severity_changes: list[SeverityChange] = Field(default_factory=list)
-    new_recommendations: list[ComparedRecommendation] = Field(
-        default_factory=list
-    )
-    resolved_recommendations: list[ComparedRecommendation] = Field(
-        default_factory=list
-    )
-    unchanged_recommendations: list[ComparedRecommendation] = Field(
-        default_factory=list
-    )
+    new_recommendations: list[ComparedRecommendation] = Field(default_factory=list)
+    resolved_recommendations: list[ComparedRecommendation] = Field(default_factory=list)
+    unchanged_recommendations: list[ComparedRecommendation] = Field(default_factory=list)
     priority_changes: list[PriorityChange] = Field(default_factory=list)
     fact_changes: list[FactChange] = Field(default_factory=list)
     summary: ComparisonSummary = Field(default_factory=ComparisonSummary)

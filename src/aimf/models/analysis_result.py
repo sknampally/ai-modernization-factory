@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
@@ -32,7 +32,7 @@ class AnalysisResult(BaseModel):
     comparison: ScanComparison | None = None
     executive_summary: str | None = None
     modernization_score: float | None = Field(default=None, ge=0.0, le=100.0)
-    started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    started_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
     analyzer_version: str | None = None
     ruleset_version: str | None = None

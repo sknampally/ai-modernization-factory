@@ -41,7 +41,11 @@ configure_logging()
 
 app = typer.Typer(
     name="aimf",
-    help="Analyze and modernize legacy enterprise applications.",
+    help=(
+        "Analyze and modernize legacy enterprise applications.\n\n"
+        "Canonical assessment workflow:\n"
+        "  aimf assess --config aimf.toml --output reports --with-ai"
+    ),
     no_args_is_help=True,
 )
 
@@ -88,9 +92,27 @@ def scan(
         ),
     ] = False,
 ) -> None:
-    """Clone and analyze the configured GitHub repository."""
+    """Clone and analyze the GitHub repository configured in aimf.toml."""
 
-    settings = load_settings(config)
+    try:
+        settings = load_settings(config)
+    except (FileNotFoundError, ValueError, OSError) as error:
+        typer.secho(str(error), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from error
+
+    if not settings.repository.url:
+        typer.secho(
+            "aimf scan requires [repository].url in the configuration file.\n\n"
+            "Fix: set a GitHub URL in aimf.toml, for example:\n"
+            "  [repository]\n"
+            '  url = "https://github.com/YOUR_ORG/YOUR_REPO"\n'
+            '  branch = "main"\n\n'
+            "For a local checkout, use:\n"
+            "  aimf assess --repo /path/to/repo --output reports",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1)
 
     scanner = GitHubRepositoryScanner(
         workspace_directory=settings.workspace.directory,
@@ -102,7 +124,13 @@ def scan(
     try:
         repository = scanner.scan(settings.repository.url)
     except RepositoryAccessError as error:
-        typer.secho(str(error), fg=typer.colors.RED, err=True)
+        typer.secho(
+            f"{error}\n\n"
+            "Fix: verify the repository URL, network access, and authentication "
+            "(AIMF_GITHUB_TOKEN or SSH agent). See README troubleshooting.",
+            fg=typer.colors.RED,
+            err=True,
+        )
         raise typer.Exit(code=1) from error
 
     analysis_service = create_default_analysis_service(settings)

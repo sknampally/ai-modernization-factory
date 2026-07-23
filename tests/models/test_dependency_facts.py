@@ -48,12 +48,6 @@ def test_merge_removes_duplicate_manifests() -> None:
         manifest_type="manifest",
     )
 
-    result = DependencyFacts(
-        manifests=[manifest]
-    ).merge(
-        DependencyFacts(
-            manifests=[manifest]
-        )
-    )
+    result = DependencyFacts(manifests=[manifest]).merge(DependencyFacts(manifests=[manifest]))
 
     assert result.manifests == [manifest]

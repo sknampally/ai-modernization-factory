@@ -6,7 +6,6 @@ from typing import Self
 
 from pydantic import BaseModel, Field
 
-
 _CANONICAL_TECHNOLOGY_NAMES = {
     "maven": "Maven",
     "gradle": "Gradle",

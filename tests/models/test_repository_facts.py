@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from rich.console import Console
+
 from aimf.models import (
     AnalysisResult,
     ArchitectureFacts,
@@ -25,7 +27,6 @@ from aimf.services.analyzers import (
     RepositoryMetricsAnalyzer,
     SecurityAnalyzer,
 )
-from rich.console import Console
 
 
 def test_repository_facts_default_construction() -> None:

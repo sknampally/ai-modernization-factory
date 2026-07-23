@@ -29,9 +29,7 @@ class Evidence(BaseModel):
             and self.end_line_number is not None
             and self.end_line_number < self.line_number
         ):
-            raise ValueError(
-                "end_line_number must be greater than or equal to line_number"
-            )
+            raise ValueError("end_line_number must be greater than or equal to line_number")
 
         if (
             self.column_number is not None
@@ -41,8 +39,6 @@ class Evidence(BaseModel):
             and self.line_number == self.end_line_number
             and self.end_column_number < self.column_number
         ):
-            raise ValueError(
-                "end_column_number must be greater than or equal to column_number"
-            )
+            raise ValueError("end_column_number must be greater than or equal to column_number")
 
         return self

@@ -1,4 +1,4 @@
-"""Public domain models for AI Modernization Factory."""
+"""Public application models for AI Modernization Factory (Phase 1 pipeline DTOs)."""
 
 from aimf.models.analysis_result import AnalysisResult
 from aimf.models.analyzer_result import AnalyzerResult

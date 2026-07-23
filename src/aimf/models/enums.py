@@ -1,9 +1,9 @@
-"""Enumerations shared by the AI Modernization Factory domain models."""
+"""Enumerations shared by the AI Modernization Factory application models."""
 
-from enum import Enum
+from enum import StrEnum
 
 
-class TechnologyCategory(str, Enum):
+class TechnologyCategory(StrEnum):
     """Categories used to classify detected technologies."""
 
     LANGUAGE = "language"
@@ -19,7 +19,7 @@ class TechnologyCategory(str, Enum):
     OTHER = "other"
 
 
-class FindingCategory(str, Enum):
+class FindingCategory(StrEnum):
     """Categories used to classify repository findings."""
 
     TECHNOLOGY = "technology"
@@ -37,7 +37,7 @@ class FindingCategory(str, Enum):
     OTHER = "other"
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
     """Severity assigned to a finding."""
 
     INFO = "info"
@@ -47,7 +47,7 @@ class Severity(str, Enum):
     CRITICAL = "critical"
 
 
-class FindingSource(str, Enum):
+class FindingSource(StrEnum):
     """Indicates how a finding was produced."""
 
     DETERMINISTIC = "deterministic"
@@ -58,7 +58,7 @@ class FindingSource(str, Enum):
     EXTERNAL_TOOL = "external_tool"
 
 
-class Priority(str, Enum):
+class Priority(StrEnum):
     """Priority assigned to a recommendation."""
 
     LOW = "low"
@@ -67,7 +67,7 @@ class Priority(str, Enum):
     CRITICAL = "critical"
 
 
-class Effort(str, Enum):
+class Effort(StrEnum):
     """Estimated implementation effort for a recommendation."""
 
     SMALL = "small"
@@ -77,7 +77,7 @@ class Effort(str, Enum):
     UNKNOWN = "unknown"
 
 
-class Risk(str, Enum):
+class Risk(StrEnum):
     """Risk associated with deferring a recommendation."""
 
     LOW = "low"
@@ -85,7 +85,7 @@ class Risk(str, Enum):
     HIGH = "high"
 
 
-class RecommendationCategory(str, Enum):
+class RecommendationCategory(StrEnum):
     """Categories used to classify modernization recommendations."""
 
     SECURITY = "security"
