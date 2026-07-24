@@ -33,3 +33,6 @@ Static repository analysis **cannot reliably determine**:
 - Enterprise criticality → declared, not proven by CodeStrata
 - Current Engineering Assessment avoids fabricated composite health scores; future
   dimension scores must follow [scoring.md](scoring.md) and this limitations doc
+
+Architecture assessment limitations are structured and distinct from findings (Phase 4.2.4).
+Customer reports present section-level limitations prominently when architecture reporting is enabled (Phase 4.2.5).

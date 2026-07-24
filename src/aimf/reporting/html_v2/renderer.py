@@ -13,6 +13,7 @@ from aimf.reporting.branding import (
     BRAND_VERSION,
     logo_data_uri,
 )
+from aimf.reporting.architecture.models import ArchitectureReportSection
 from aimf.reporting.html_v2.models import (
     AiEnrichmentView,
     FindingView,
@@ -82,6 +83,18 @@ class HtmlReportRenderer:
                 note="Deterministic recommendations derived from findings.",
             ),
         ]
+        if view.architecture_report is not None:
+            parts.append(
+                _section(
+                    "Architecture Assessment",
+                    _render_architecture(view.architecture_report),
+                    section_id="architecture-assessment",
+                    note=(
+                        "Deterministic architecture assessment presentation. "
+                        "Does not invent scores, business impact, or strengths."
+                    ),
+                )
+            )
         if view.ai_enrichment is not None:
             parts.append(
                 _section(
@@ -467,6 +480,114 @@ def _render_recommendation_card(item: RecommendationView, *, compact: bool) -> s
         f"{chips}"
         f"{detail}"
         "</article>"
+    )
+
+
+def _render_architecture(section: ArchitectureReportSection) -> str:
+    metrics = "".join(
+        "<div class='card'>"
+        f"<div class='label'>{escape_html(item.label)}</div>"
+        f"<div class='value'>{escape_html(item.value)}</div>"
+        f"{f'<p class=\"muted\">{escape_html(item.note)}</p>' if item.note else ''}"
+        "</div>"
+        for item in section.key_metrics
+    )
+    conclusions = "".join(
+        "<article class='card'>"
+        f"<h4>{escape_html(item.title)}</h4>"
+        f"<p>{escape_html(item.summary)}</p>"
+        "<p class='muted'>"
+        f"Materiality: {escape_html(item.materiality)} · "
+        f"Confidence: {escape_html(item.confidence)} · "
+        f"Business impact: {escape_html(item.business_impact)} · "
+        f"Wave: {escape_html(item.modernization_relevance)}"
+        "</p>"
+        f"<p class='muted'>{escape_html(item.severity_summary)}</p>"
+        f"<p class='muted'>Scope: {escape_html(', '.join(item.affected_scope) or '—')}</p>"
+        "</article>"
+        for item in section.conclusions
+    ) or "<p class='muted'>No architecture conclusions were generated.</p>"
+    recommendations = "".join(
+        "<article class='card'>"
+        f"<h4>{escape_html(item.title)}</h4>"
+        f"<p><strong>Objective:</strong> {escape_html(item.objective)}</p>"
+        f"<p>{escape_html(item.rationale)}</p>"
+        f"<p class='muted'>Wave: {escape_html(item.modernization_wave)}</p>"
+        "</article>"
+        for item in section.recommendation_groups
+    ) or "<p class='muted'>No consolidated architecture recommendation groups.</p>"
+    findings = "".join(
+        "<tr>"
+        f"<td>{escape_html(item.title)}</td>"
+        f"<td>{escape_html(item.severity)}</td>"
+        f"<td>{escape_html(item.confidence)}</td>"
+        f"<td>{escape_html(', '.join(item.affected_scope) or '—')}</td>"
+        f"<td>{'Yes' if item.linked_to_conclusion else 'No'}</td>"
+        "</tr>"
+        for item in section.findings
+    )
+    findings_table = (
+        "<table><thead><tr>"
+        "<th>Finding</th><th>Severity</th><th>Confidence</th>"
+        "<th>Scope</th><th>Linked conclusion</th>"
+        "</tr></thead><tbody>"
+        f"{findings}</tbody></table>"
+        if findings
+        else "<p class='muted'>No visible architecture findings.</p>"
+    )
+    coverage = "".join(
+        "<tr>"
+        f"<td>{escape_html(item.label)}</td>"
+        f"<td>{escape_html(item.status)}</td>"
+        f"<td>{escape_html(item.display)}</td>"
+        "</tr>"
+        for item in section.coverage_summary
+    )
+    coverage_table = (
+        "<table><thead><tr><th>Area</th><th>Status</th><th>Detail</th></tr></thead>"
+        f"<tbody>{coverage}</tbody></table>"
+        if coverage
+        else "<p class='muted'>Coverage details unavailable.</p>"
+    )
+    limitations = "".join(
+        f"<li><strong>{escape_html(item.category)}</strong> — {escape_html(item.summary)}</li>"
+        for item in section.limitations
+    ) or "<li>None recorded.</li>"
+    trace = (
+        f"<p>{escape_html(section.traceability_summary.summary)}</p>"
+        "<details><summary>Sample relationships</summary><ul>"
+        + "".join(
+            "<li>"
+            f"{escape_html(edge.relation)}: "
+            f"<code>{escape_html(edge.source_id)}</code> → "
+            f"<code>{escape_html(edge.target_id)}</code>"
+            "</li>"
+            for edge in section.traceability_summary.sample_edges
+        )
+        + "</ul></details>"
+    )
+    pack = (
+        f"{escape_html(section.architecture_pack_id or '—')}@"
+        f"{escape_html(section.architecture_pack_version or '—')}"
+    )
+    return (
+        f"<p><strong>Status:</strong> {escape_html(section.status_label)} — "
+        f"{escape_html(section.status_summary)}</p>"
+        f"<p><strong>Pack:</strong> {pack}</p>"
+        f"<p>{escape_html(section.executive_summary)}</p>"
+        f"<div class='grid'>{metrics}</div>"
+        "<h3>Architecture conclusions</h3>"
+        f"{conclusions}"
+        "<h3>Recommended actions</h3>"
+        f"{recommendations}"
+        "<h3>Supporting findings</h3>"
+        f"{findings_table}"
+        "<h3>Coverage</h3>"
+        f"{coverage_table}"
+        "<h3>Limitations</h3>"
+        f"<ul>{limitations}</ul>"
+        "<h3>Traceability</h3>"
+        f"{trace}"
     )
 
 

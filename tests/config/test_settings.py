@@ -172,3 +172,61 @@ def test_load_settings_reads_mcp_section(tmp_path: Path) -> None:
     )
     settings = load_settings(config_file)
     assert settings.mcp.log_level == "DEBUG"
+
+
+def test_language_evidence_pipeline_disabled_by_default(tmp_path: Path) -> None:
+    config_file = tmp_path / "aimf.toml"
+    config_file.write_text(
+        """
+        [repository]
+        path = "."
+        """,
+        encoding="utf-8",
+    )
+    settings = load_settings(config_file)
+    assert settings.evidence.language.enabled is False
+    assert settings.evidence.language.providers.auto_detect is True
+    assert settings.evidence.language.python.enabled is True
+
+
+def test_architecture_conclusions_disabled_by_default(tmp_path: Path) -> None:
+    config_file = tmp_path / "aimf.toml"
+    config_file.write_text(
+        """
+        [repository]
+        path = "."
+        """,
+        encoding="utf-8",
+    )
+    settings = load_settings(config_file)
+    assert settings.analysis.architecture_conclusions.enabled is False
+    assert settings.analysis.architecture_conclusions.policies.positive_boundary_conformance is False
+
+
+def test_architecture_assessment_section_disabled_by_default(tmp_path: Path) -> None:
+    config_file = tmp_path / "aimf.toml"
+    config_file.write_text(
+        """
+        [repository]
+        path = "."
+        """,
+        encoding="utf-8",
+    )
+    settings = load_settings(config_file)
+    assert settings.assessment.sections.architecture.enabled is False
+    assert settings.assessment.sections.architecture.include_findings is True
+    assert settings.assessment.sections.architecture.include_conclusions is True
+
+
+def test_architecture_report_section_disabled_by_default(tmp_path: Path) -> None:
+    config_file = tmp_path / "aimf.toml"
+    config_file.write_text(
+        """
+        [repository]
+        path = "."
+        """,
+        encoding="utf-8",
+    )
+    settings = load_settings(config_file)
+    assert settings.report.sections.architecture.enabled is False
+    assert settings.report.sections.architecture.include_executive_summary is True

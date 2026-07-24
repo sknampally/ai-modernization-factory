@@ -185,8 +185,11 @@ def test_enterprise_context_optional() -> None:
 
 def test_production_service_hides_fixtures() -> None:
     service = create_rule_analysis_service(include_fixture_rules=True)
-    assert service.list_rules(include_non_production=False) == ()
-    assert service.list_rules(include_non_production=True)
+    production = service.list_rules(include_non_production=False)
+    assert production
+    assert all(not str(view.metadata.rule_id).startswith("fixture.") for view in production)
+    all_rules = service.list_rules(include_non_production=True)
+    assert any(str(view.metadata.rule_id).startswith("fixture.") for view in all_rules)
 
 
 def test_fail_on_rule_error_policy() -> None:

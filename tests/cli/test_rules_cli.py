@@ -1,6 +1,8 @@
-"""CLI tests for aimf rules (Phase 4.1)."""
+"""CLI tests for aimf rules (Phase 4.1 / 4.2)."""
 
 from __future__ import annotations
+
+import json
 
 from typer.testing import CliRunner
 
@@ -16,10 +18,30 @@ def test_rules_help() -> None:
     assert "inspect" in result.stdout
 
 
-def test_rules_list_empty_production() -> None:
+def test_rules_list_includes_architecture_pack() -> None:
     result = runner.invoke(app, ["rules", "list", "--json"])
     assert result.exit_code == 0
-    assert '"rules": []' in result.stdout or '"rules":[]' in result.stdout.replace(" ", "")
+    payload = json.loads(result.stdout)
+    assert payload["rules"]
+    assert any(
+        item["rule_id"] == "architecture.dependency-cycle" for item in payload["rules"]
+    )
+
+
+def test_rules_list_category_architecture() -> None:
+    result = runner.invoke(app, ["rules", "list", "--category", "architecture", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload.get("pack", {}).get("pack_id") == "architecture.core"
+    assert all(item["category"] == "architecture" for item in payload["rules"])
+
+
+def test_rules_inspect_architecture_rule() -> None:
+    result = runner.invoke(app, ["rules", "inspect", "architecture.dependency-cycle", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["rule_id"] == "architecture.dependency-cycle"
+    assert payload["production"] is True
 
 
 def test_rules_inspect_unknown() -> None:

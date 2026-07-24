@@ -33,13 +33,26 @@ def create_rule_analysis_service(
     registry: RuleRegistry | None = None,
     suppressions: tuple[RuleSuppression, ...] = (),
     include_fixture_rules: bool = False,
+    include_architecture_pack: bool = True,
 ) -> RuleAnalysisService:
-    """Create a service. Production registry is empty until Phase 4.2+ packs register."""
+    """Create a service with optional Architecture Intelligence pack registration.
+
+    Architecture rules are registered for CLI/MCP discovery even when the pack is
+    disabled for assess. Execution remains gated by ``rules.enabled`` and
+    ``rules.architecture.enabled``.
+    """
 
     resolved = registry or RuleRegistry()
+    if include_architecture_pack and resolved.size == 0:
+        from aimf.application.rules.architecture.registration import register_architecture_pack
+
+        register_architecture_pack(
+            resolved,
+            settings=settings.rules if settings is not None else None,
+            production=True,
+        )
     if include_fixture_rules:
         from aimf.application.rules.fixtures import fixture_rules
 
         resolved.register_collection(fixture_rules(), production=False)  # type: ignore[arg-type]
-    _ = settings  # policy applied at context build time by callers
     return RuleAnalysisService(registry=resolved, suppressions=suppressions)

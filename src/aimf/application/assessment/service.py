@@ -150,6 +150,20 @@ class AssessmentCommandResult(BaseModel):
     findings_artifact_path: Path | None = None
     phase3_recommendation_count: int | None = Field(default=None, ge=0)
     recommendations_artifact_path: Path | None = None
+    architecture_conclusion_count: int | None = Field(default=None, ge=0)
+    architecture_conclusions_artifact_path: Path | None = None
+    architecture_assessment_status: str | None = None
+    architecture_assessment_finding_count: int | None = Field(default=None, ge=0)
+    architecture_assessment_artifact_path: Path | None = None
+    architecture_report_enabled: bool | None = None
+    architecture_report_status: str | None = None
+    architecture_report_section_version: str | None = None
+    architecture_report_finding_count: int | None = Field(default=None, ge=0)
+    architecture_report_conclusion_count: int | None = Field(default=None, ge=0)
+    architecture_report_recommendation_group_count: int | None = Field(
+        default=None, ge=0
+    )
+    architecture_report_adapter_ms: float | None = Field(default=None, ge=0.0)
     knowledge_repository_id: str | None = None
     knowledge_run_id: str | None = None
     knowledge_snapshot_id: str | None = None
@@ -540,12 +554,168 @@ class AssessmentApplicationService:
         stage("Evaluating assessment rules")
         active_rule_engine = rule_engine or RuleEngine()
         active_recommendation_engine = recommendation_engine or RecommendationEngine()
+        architecture_conclusions_artifact = None
+        architecture_conclusion_count = None
+        architecture_assessment_artifact = None
+        architecture_assessment_status = None
+        architecture_assessment_finding_count = None
+        architecture_section_for_report = None
         try:
             rule_evaluation = active_rule_engine.evaluate_pipeline_result(graph_pipeline_result)
+            from aimf.application.rules.architecture.assessment import (
+                architecture_pack_enabled,
+                evaluate_architecture_pack_detailed,
+                merge_rule_evaluations,
+            )
+
+            architecture_pack_result = None
+            if architecture_pack_enabled(loaded_settings):
+                architecture_pack_result = evaluate_architecture_pack_detailed(
+                    pipeline_result=graph_pipeline_result,
+                    settings=loaded_settings,
+                    repository_root=Path(repository.path),
+                )
+                rule_evaluation = merge_rule_evaluations(
+                    rule_evaluation,
+                    architecture_pack_result.evaluation,
+                )
             findings_artifact = write_findings_artifact(
                 rule_evaluation,
                 report_paths.run_directory,
             )
+            from aimf.application.architecture.assessment.artifacts import (
+                write_architecture_assessment_artifact,
+            )
+            from aimf.application.architecture.assessment.factory import (
+                architecture_assessment_section_enabled,
+                architecture_assessment_section_settings,
+                configuration_fingerprint_payload,
+                create_architecture_assessment_assembler,
+            )
+            from aimf.application.architecture.conclusions.factory import (
+                architecture_conclusions_enabled,
+                create_architecture_conclusion_service,
+                enabled_policy_ids,
+            )
+
+            conclusion_result = None
+            if architecture_conclusions_enabled(loaded_settings):
+                conclusion_service = create_architecture_conclusion_service(
+                    loaded_settings
+                )
+                conclusion_result = conclusion_service.build(
+                    repository_id=str(
+                        getattr(repository, "name", None) or repository.path
+                    ),
+                    findings=rule_evaluation.findings,
+                    enabled_policy_ids=enabled_policy_ids(loaded_settings),
+                    extraction_coverage=(
+                        architecture_pack_result.extraction_coverage
+                        if architecture_pack_result is not None
+                        else None
+                    ),
+                    classification_coverage=(
+                        architecture_pack_result.classification_coverage
+                        if architecture_pack_result is not None
+                        else None
+                    ),
+                    graph_fingerprint=(
+                        architecture_pack_result.graph_fingerprint
+                        if architecture_pack_result is not None
+                        else ""
+                    ),
+                    enterprise_context_present=False,
+                )
+                conclusions_path = (
+                    report_paths.run_directory / "architecture_conclusions.json"
+                )
+                conclusions_path.write_text(
+                    conclusion_result.model_dump_json(indent=2),
+                    encoding="utf-8",
+                )
+                architecture_conclusions_artifact = conclusions_path
+                architecture_conclusion_count = len(conclusion_result.conclusions)
+
+            if architecture_assessment_section_enabled(loaded_settings):
+                section_cfg = architecture_assessment_section_settings(loaded_settings)
+                pack_on = architecture_pack_enabled(loaded_settings)
+                conclusions_on = architecture_conclusions_enabled(loaded_settings)
+                assembler = create_architecture_assessment_assembler()
+                if not pack_on:
+                    architecture_section = assembler.assemble_disabled(
+                        repository_id=str(
+                            getattr(repository, "name", None) or repository.path
+                        ),
+                        reason="architecture_pack_disabled",
+                    )
+                else:
+                    architecture_section = assembler.assemble(
+                        repository_id=str(
+                            getattr(repository, "name", None) or repository.path
+                        ),
+                        findings=rule_evaluation.findings,
+                        conclusion_result=conclusion_result,
+                        pack_enabled=True,
+                        conclusions_enabled=conclusions_on,
+                        include_findings=section_cfg.include_findings,
+                        include_conclusions=section_cfg.include_conclusions,
+                        include_recommendation_groups=(
+                            section_cfg.include_recommendation_groups
+                        ),
+                        include_coverage=section_cfg.include_coverage,
+                        include_limitations=section_cfg.include_limitations,
+                        include_traceability=section_cfg.include_traceability,
+                        include_execution_summary=section_cfg.include_execution_summary,
+                        extraction_coverage=(
+                            architecture_pack_result.extraction_coverage
+                            if architecture_pack_result is not None
+                            else None
+                        ),
+                        classification_coverage=(
+                            architecture_pack_result.classification_coverage
+                            if architecture_pack_result is not None
+                            else None
+                        ),
+                        graph_fingerprint=(
+                            architecture_pack_result.graph_fingerprint
+                            if architecture_pack_result is not None
+                            else ""
+                        ),
+                        evidence_fingerprint=(
+                            architecture_pack_result.evidence_fingerprint
+                            if architecture_pack_result is not None
+                            else ""
+                        ),
+                        evidence_pipeline=(
+                            architecture_pack_result.evidence_pipeline
+                            if architecture_pack_result is not None
+                            else "legacy_view_builder"
+                        ),
+                        configuration_payload=configuration_fingerprint_payload(
+                            loaded_settings,
+                            pack_enabled=True,
+                            conclusions_enabled=conclusions_on,
+                        ),
+                        architecture_rules_planned=len(
+                            architecture_pack_result.evaluation.rules_evaluated
+                        )
+                        if architecture_pack_result is not None
+                        else 7,
+                        rules_executed=len(
+                            architecture_pack_result.evaluation.rules_evaluated
+                        )
+                        if architecture_pack_result is not None
+                        else 0,
+                        enterprise_context_used=False,
+                    )
+                assessment_write = write_architecture_assessment_artifact(
+                    architecture_section,
+                    report_paths.run_directory,
+                )
+                architecture_assessment_artifact = assessment_write.path
+                architecture_assessment_status = architecture_section.status.value
+                architecture_assessment_finding_count = assessment_write.finding_count
+                architecture_section_for_report = architecture_section
         except Exception as error:  # noqa: BLE001 - application boundary
             raise AssessmentCommandError(
                 f"[rule_engine] Rule evaluation failed: {sanitize_provider_text(str(error))}"
@@ -694,6 +864,75 @@ class AssessmentApplicationService:
         include_ai_enrichment = (
             enrichment_result is not None and ai_status == AIExecutionStatus.SUCCEEDED
         )
+        architecture_report_section = None
+        architecture_report_enabled = loaded_settings.report.sections.architecture.enabled
+        architecture_report_status = None
+        architecture_report_section_version = None
+        architecture_report_finding_count = None
+        architecture_report_conclusion_count = None
+        architecture_report_recommendation_group_count = None
+        architecture_report_adapter_ms = None
+        include_architecture_assessment_artifact = (
+            architecture_assessment_artifact is not None
+        )
+        report_architecture_cfg = loaded_settings.report.sections.architecture
+        if (
+            report_architecture_cfg.enabled
+            and architecture_section_for_report is not None
+        ):
+            from aimf.reporting.architecture.adapter import ArchitectureReportAdapter
+
+            adapter_started = perf_counter()
+            try:
+                architecture_report_section = ArchitectureReportAdapter().adapt(
+                    architecture_section_for_report,
+                    include_executive_summary=(
+                        report_architecture_cfg.include_executive_summary
+                    ),
+                    include_metrics=report_architecture_cfg.include_metrics,
+                    include_conclusions=report_architecture_cfg.include_conclusions,
+                    include_recommendation_groups=(
+                        report_architecture_cfg.include_recommendation_groups
+                    ),
+                    include_findings=report_architecture_cfg.include_findings,
+                    include_coverage=report_architecture_cfg.include_coverage,
+                    include_limitations=report_architecture_cfg.include_limitations,
+                    include_traceability=report_architecture_cfg.include_traceability,
+                    include_strengths=report_architecture_cfg.include_strengths,
+                )
+                architecture_report_adapter_ms = round(
+                    (perf_counter() - adapter_started) * 1000, 2
+                )
+                architecture_report_status = architecture_report_section.status
+                architecture_report_section_version = (
+                    architecture_report_section.section_version
+                )
+                architecture_report_finding_count = len(
+                    architecture_report_section.findings
+                )
+                architecture_report_conclusion_count = len(
+                    architecture_report_section.conclusions
+                )
+                architecture_report_recommendation_group_count = len(
+                    architecture_report_section.recommendation_groups
+                )
+            except Exception as error:  # noqa: BLE001 - isolate report adapter failures
+                architecture_report_section = None
+                architecture_report_adapter_ms = round(
+                    (perf_counter() - adapter_started) * 1000, 2
+                )
+                architecture_report_status = "failed"
+                warn(
+                    "Architecture report section could not be built; "
+                    "remaining report content was kept. "
+                    f"Details: {sanitize_provider_text(str(error))}"
+                )
+        elif report_architecture_cfg.enabled:
+            architecture_report_status = "unavailable"
+            warn(
+                "Architecture report section enabled, but no architecture assessment "
+                "section was available for this run."
+            )
         report_input = ModernizationReportInput(
             analysis_result=analysis_result,
             assessment_mode=mode,
@@ -722,9 +961,10 @@ class AssessmentApplicationService:
             report_artifacts=default_report_artifacts(
                 include_ai_enrichment=include_ai_enrichment,
                 include_ai_execution=ai_execution_document is not None,
+                include_architecture_assessment=include_architecture_assessment_artifact,
             ),
+            architecture_report=architecture_report_section,
         )
-
         try:
             written_paths = write_modernization_assessment_reports(
                 report_input,
@@ -781,6 +1021,20 @@ class AssessmentApplicationService:
             findings_artifact=findings_artifact,
             recommendation_result=recommendation_result,
             recommendations_artifact=recommendations_artifact,
+            architecture_conclusion_count=architecture_conclusion_count,
+            architecture_conclusions_artifact=architecture_conclusions_artifact,
+            architecture_assessment_status=architecture_assessment_status,
+            architecture_assessment_finding_count=architecture_assessment_finding_count,
+            architecture_assessment_artifact=architecture_assessment_artifact,
+            architecture_report_enabled=architecture_report_enabled,
+            architecture_report_status=architecture_report_status,
+            architecture_report_section_version=architecture_report_section_version,
+            architecture_report_finding_count=architecture_report_finding_count,
+            architecture_report_conclusion_count=architecture_report_conclusion_count,
+            architecture_report_recommendation_group_count=(
+                architecture_report_recommendation_group_count
+            ),
+            architecture_report_adapter_ms=architecture_report_adapter_ms,
         )
         _print_success_summary(active_console, result)
         try:
@@ -1325,6 +1579,18 @@ def _build_command_result(
     findings_artifact: FindingsArtifactWriteResult | None = None,
     recommendation_result: object | None = None,
     recommendations_artifact: RecommendationsArtifactWriteResult | None = None,
+    architecture_conclusion_count: int | None = None,
+    architecture_conclusions_artifact: Path | None = None,
+    architecture_assessment_status: str | None = None,
+    architecture_assessment_finding_count: int | None = None,
+    architecture_assessment_artifact: Path | None = None,
+    architecture_report_enabled: bool | None = None,
+    architecture_report_status: str | None = None,
+    architecture_report_section_version: str | None = None,
+    architecture_report_finding_count: int | None = None,
+    architecture_report_conclusion_count: int | None = None,
+    architecture_report_recommendation_group_count: int | None = None,
+    architecture_report_adapter_ms: float | None = None,
 ) -> AssessmentCommandResult:
     deterministic_recommendation_count = len(analysis_result.recommendations)
     graph_fields: dict[str, object] = {}
@@ -1351,6 +1617,44 @@ def _build_command_result(
         )
     if recommendations_artifact is not None:
         graph_fields["recommendations_artifact_path"] = recommendations_artifact.path
+    if architecture_conclusion_count is not None:
+        graph_fields["architecture_conclusion_count"] = architecture_conclusion_count
+    if architecture_conclusions_artifact is not None:
+        graph_fields["architecture_conclusions_artifact_path"] = (
+            architecture_conclusions_artifact
+        )
+    if architecture_assessment_status is not None:
+        graph_fields["architecture_assessment_status"] = architecture_assessment_status
+    if architecture_assessment_finding_count is not None:
+        graph_fields["architecture_assessment_finding_count"] = (
+            architecture_assessment_finding_count
+        )
+    if architecture_assessment_artifact is not None:
+        graph_fields["architecture_assessment_artifact_path"] = (
+            architecture_assessment_artifact
+        )
+    if architecture_report_enabled is not None:
+        graph_fields["architecture_report_enabled"] = architecture_report_enabled
+    if architecture_report_status is not None:
+        graph_fields["architecture_report_status"] = architecture_report_status
+    if architecture_report_section_version is not None:
+        graph_fields["architecture_report_section_version"] = (
+            architecture_report_section_version
+        )
+    if architecture_report_finding_count is not None:
+        graph_fields["architecture_report_finding_count"] = (
+            architecture_report_finding_count
+        )
+    if architecture_report_conclusion_count is not None:
+        graph_fields["architecture_report_conclusion_count"] = (
+            architecture_report_conclusion_count
+        )
+    if architecture_report_recommendation_group_count is not None:
+        graph_fields["architecture_report_recommendation_group_count"] = (
+            architecture_report_recommendation_group_count
+        )
+    if architecture_report_adapter_ms is not None:
+        graph_fields["architecture_report_adapter_ms"] = architecture_report_adapter_ms
     if (
         mode == AssessmentMode.AI_ENHANCED
         and ai_status == AIExecutionStatus.SUCCEEDED
@@ -1495,6 +1799,31 @@ def _print_success_summary(console: Console, result: AssessmentCommandResult) ->
     if result.recommendations_artifact_path is not None:
         console.print(
             f"Recommendations artifact: {_display_path(result.recommendations_artifact_path)}"
+        )
+    if result.architecture_assessment_status is not None:
+        console.print(
+            f"Architecture assessment: {result.architecture_assessment_status}"
+        )
+    if result.architecture_assessment_finding_count is not None:
+        console.print(
+            f"Architecture assessment findings: {result.architecture_assessment_finding_count}"
+        )
+    if result.architecture_assessment_artifact_path is not None:
+        console.print(
+            "Architecture assessment artifact: "
+            f"{_display_path(result.architecture_assessment_artifact_path)}"
+        )
+    if result.architecture_report_enabled:
+        console.print(
+            "Architecture report section: "
+            f"{result.architecture_report_status or 'unavailable'}"
+        )
+    if result.architecture_conclusion_count is not None:
+        console.print(f"Architecture conclusions: {result.architecture_conclusion_count}")
+    if result.architecture_conclusions_artifact_path is not None:
+        console.print(
+            "Architecture conclusions artifact: "
+            f"{_display_path(result.architecture_conclusions_artifact_path)}"
         )
     if result.mode == AssessmentMode.AI_ENHANCED and not result.ai_executed:
         console.print("AI status: fallback (validated AI result not included)")

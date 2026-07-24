@@ -45,6 +45,11 @@ Use it for modernization discovery, client demos, and engineering due diligence.
 * Enterprise Knowledge Graph from YAML (`aimf enterprise`; optional, disabled by default)
 * Shared Rule Platform (`aimf rules`; Phase 4.1 infrastructure; disabled by default)
 * Assessment Framework methodology (Phase 4.1.2; docs only — scoring/CTO report not wired)
+* Architecture Intelligence initial pack (`architecture.core` v1.0.0; Phase 4.2.1 / 4.2.1a; discoverable via `aimf rules list --category architecture`; assess merge opt-in)
+* Language Evidence Provider Foundation (Phase 4.2.2; `aimf evidence`; disabled by default)
+* Architecture Conclusions (Phase 4.2.3; `aimf architecture conclusions`; disabled by default)
+* Architecture Assessment Integration (Phase 4.2.4; `architecture-assessment.json`; disabled by default)
+* Architecture CTO Report Integration (Phase 4.2.5; optional `assessment.architecture` in `report.json` / HTML; disabled by default)
 
 ---
 

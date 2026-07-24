@@ -1,4 +1,4 @@
-"""Additive MCP tools for Shared Rule Platform (Phase 4.1)."""
+"""Additive MCP tools for Shared Rule Platform (Phase 4.1 / 4.2)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from mcp.server.fastmcp import FastMCP
 
 from aimf.application.rules.analysis_service import RuleAnalysisService
 from aimf.application.rules.errors import RuleApplicationError
-from aimf.cli.rules_mapping import map_explanation, map_rule_view
 from aimf.interfaces.mcp.tools._common import require_nonblank, run_bounded
 
 
@@ -18,21 +17,45 @@ def register_rules_tools(
     rule_analysis_service: RuleAnalysisService | None,
 ) -> None:
     @server.tool(name="list_shared_rules", structured_output=True)
-    def list_shared_rules() -> dict[str, Any]:
+    def list_shared_rules(category: str | None = None) -> dict[str, Any]:
         def _run() -> dict[str, Any]:
+            # Lazy import avoids aimf.cli ↔ mcp circular import at module load.
+            from aimf.cli.rules_mapping import map_rule_view
+            from aimf.domain.rules.enums import RuleCategory
+
             if rule_analysis_service is None:
                 raise RuleApplicationError(
                     "Rule analysis service is not configured",
                     reason_code="rules_service_missing",
                 )
-            views = rule_analysis_service.list_rules(include_non_production=False)
-            return {"rules": [map_rule_view(view) for view in views]}
+
+            resolved_category: RuleCategory | None = None
+            if category and category.strip():
+                try:
+                    resolved_category = RuleCategory(category.strip().lower())
+                except ValueError as error:
+                    raise RuleApplicationError(
+                        f"Unknown category: {category}",
+                        reason_code="invalid_category",
+                    ) from error
+            views = rule_analysis_service.list_rules(
+                category=resolved_category,
+                include_non_production=False,
+            )
+            payload: dict[str, Any] = {"rules": [map_rule_view(view) for view in views]}
+            if resolved_category is RuleCategory.ARCHITECTURE:
+                from aimf.application.rules.architecture.pack import ArchitectureRulePack
+
+                payload["pack"] = ArchitectureRulePack().to_dict()
+            return payload
 
         return run_bounded("list_shared_rules", _run)
 
     @server.tool(name="get_shared_rule", structured_output=True)
     def get_shared_rule(rule_id: str) -> dict[str, Any]:
         def _run() -> dict[str, Any]:
+            from aimf.cli.rules_mapping import map_rule_view
+
             if rule_analysis_service is None:
                 raise RuleApplicationError(
                     "Rule analysis service is not configured",
@@ -54,6 +77,8 @@ def register_rules_tools(
     @server.tool(name="explain_shared_rule_metadata", structured_output=True)
     def explain_shared_rule_metadata(rule_id: str) -> dict[str, Any]:
         def _run() -> dict[str, Any]:
+            from aimf.cli.rules_mapping import map_explanation
+
             if rule_analysis_service is None:
                 raise RuleApplicationError(
                     "Rule analysis service is not configured",
@@ -81,12 +106,26 @@ def register_rules_tools(
                     reason_code="rules_service_missing",
                 )
             views = rule_analysis_service.list_rules(include_non_production=False)
+            from aimf.application.rules.architecture.pack import ArchitectureRulePack
+            from aimf.domain.rules.enums import RuleCategory
+
+            architecture_views = [
+                view
+                for view in views
+                if view.metadata.category is RuleCategory.ARCHITECTURE
+            ]
+            pack = ArchitectureRulePack()
             return {
                 "enabled_by_default": False,
                 "production_rule_count": len(views),
-                "wired_into_assess": False,
-                "phase": "4.1",
-                "note": "Shared Rule Platform infrastructure only; packs deferred to 4.2+",
+                "architecture_rule_count": len(architecture_views),
+                "architecture_pack": pack.to_dict(),
+                "wired_into_assess": "opt-in via rules.enabled + rules.architecture.enabled",
+                "phase": "4.2.1",
+                "note": (
+                    "Architecture Intelligence initial pack is discoverable; "
+                    "assess merge remains disabled by default."
+                ),
             }
 
         return run_bounded("get_shared_rule_platform_summary", _run)

@@ -79,3 +79,6 @@ later, it must be documented, deterministic, and testable.
 Phase 3 `Finding` models emphasize evidence tuples and severity. Confidence may
 appear in Shared Rule matches and metadata today. Future production wiring must
 remain backward compatible and must not alter existing finding IDs.
+
+Architecture assessment coverage and confidence remain separate from severity (Phase 4.2.4).
+Report presentation preserves these distinctions and does not invent business impact (Phase 4.2.5).

@@ -293,8 +293,45 @@ Adapted legacy evaluation preserves Finding IDs. See
 
 Methodology for dimensions, rule taxonomy, evidence/confidence, scoring design,
 business impact vs severity, modernization waves, and CTO report structure.
-Documentation only—no production scoring or rule packs. See
+Documentation only—no production scoring. See
 [docs/assessment-framework/README.md](docs/assessment-framework/README.md).
+
+### Architecture Intelligence (Phase 4.2.1 / 4.2.1a / 4.2.2)
+
+Initial production pack `architecture.core` (v1.0.0) registers seven SharedRules.
+Phase **4.2.1a** hardens precision: architectural-unit selection (nested packages
+collapsed), dependency normalization (parent/child, type-only, init/registration),
+separated extraction vs classification coverage, and tighter coupling/direction
+applicability. Discoverable via `aimf rules` / MCP. Merged into `aimf assess`
+only when `[rules] enabled` and `[rules.architecture] enabled`.
+
+Phase **4.2.2** adds Language Evidence Providers that collect and normalize
+language facts for reuse by shared architecture rules. The provider pipeline is
+**disabled by default** (`[evidence.language] enabled = false`); when disabled,
+assessment behavior is unchanged.
+
+```text
+paths + source texts → ArchitectureAnalysisView
+        → RuleExecutionFacade.execute_shared
+        → RuleFindingMapper → Finding (merged with legacy RuleEngine)
+
+opt-in:
+providers → AggregatedLanguageEvidence → ArchitectureAnalysisView
+```
+
+Details: [docs/analysis-intelligence/architecture/README.md](docs/analysis-intelligence/architecture/README.md)
+and [docs/analysis-intelligence/evidence-providers/README.md](docs/analysis-intelligence/evidence-providers/README.md).
+
+Phase **4.2.3** adds Architecture Conclusions: deterministic grouping and
+interpretation of architecture findings into explainable conclusions and
+consolidated recommendations. Disabled by default
+(`[analysis.architecture_conclusions] enabled = false`). Findings remain
+unchanged. See
+[docs/analysis-intelligence/architecture-conclusions/README.md](docs/analysis-intelligence/architecture-conclusions/README.md).
+
+Phase **4.2.4** adds an optional Architecture Assessment section (`architecture-assessment.json`) composed from existing findings and optional conclusions. Disabled by default (`[assessment.sections.architecture] enabled = false`). See [docs/analysis-intelligence/architecture-assessment/README.md](docs/analysis-intelligence/architecture-assessment/README.md).
+
+Phase **4.2.5** integrates that section into customer `report.json` and HTML via `ArchitectureReportAdapter` (`assessment.architecture`). Disabled by default (`[report.sections.architecture] enabled = false`). Schema remains `1.2` with an optional additive field. No scoring or AI narrative. See [docs/analysis-intelligence/architecture-reporting/README.md](docs/analysis-intelligence/architecture-reporting/README.md).
 
 ## Repository authentication
 

@@ -12,6 +12,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from aimf.domain.graph.validation import as_tuple, require_nonblank
+from aimf.reporting.architecture.models import ArchitectureReportSection
 
 
 class DashboardMetrics(BaseModel):
@@ -327,6 +328,7 @@ class HtmlReportViewModel(BaseModel):
     findings: tuple[FindingView, ...] = ()
     recommendations: tuple[RecommendationView, ...] = ()
     ai_enrichment: AiEnrichmentView | None = None
+    architecture_report: ArchitectureReportSection | None = None
     artifacts: tuple[ArtifactRefView, ...] = ()
     metadata: AssessmentMetadataView
     provenance_note: str = (

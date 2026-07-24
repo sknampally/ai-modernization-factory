@@ -111,6 +111,8 @@ class RuleExecutionContext(BaseModel):
     enterprise_context: Any | None = None
     # Optional Assessment Graph RuleContext for LegacyRuleAdapter (Phase 4.1.1).
     legacy_rule_context: Any | None = None
+    # Optional ArchitectureAnalysisView for Architecture Intelligence (Phase 4.2).
+    architecture_view: Any | None = None
     incremental: IncrementalChangeView = Field(default_factory=IncrementalChangeView)
     policy: RuleExecutionPolicy = Field(default_factory=RuleExecutionPolicy)
     provenance: dict[str, str] = Field(default_factory=dict)

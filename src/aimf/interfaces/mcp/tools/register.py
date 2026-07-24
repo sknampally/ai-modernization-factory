@@ -9,10 +9,20 @@ from aimf.application.assessment import AssessmentApplicationService
 from aimf.application.knowledge.queries import KnowledgeQueryService
 from aimf.config import AimfSettings
 from aimf.interfaces.mcp.tools.agents import register_agent_tools
+from aimf.interfaces.mcp.tools.architecture_assessment import (
+    register_architecture_assessment_tools,
+)
+from aimf.interfaces.mcp.tools.architecture_conclusions import (
+    register_architecture_conclusion_tools,
+)
+from aimf.interfaces.mcp.tools.architecture_report import (
+    register_architecture_report_tools,
+)
 from aimf.interfaces.mcp.tools.artifacts import register_artifact_tools
 from aimf.interfaces.mcp.tools.assessments import register_assessment_tools
 from aimf.interfaces.mcp.tools.components import register_component_tools
 from aimf.interfaces.mcp.tools.enterprise import register_enterprise_tools
+from aimf.interfaces.mcp.tools.evidence import register_evidence_tools
 from aimf.interfaces.mcp.tools.execution import register_execution_tools
 from aimf.interfaces.mcp.tools.findings import register_finding_tools
 from aimf.interfaces.mcp.tools.incremental import register_incremental_tools
@@ -34,6 +44,8 @@ def register_all_tools(
     enterprise_knowledge_service: object | None = None,
     enterprise_query_service: object | None = None,
     rule_analysis_service: object | None = None,
+    language_evidence_service: object | None = None,
+    architecture_conclusion_service: object | None = None,
 ) -> None:
     register_repository_tools(server, queries)
     register_assessment_tools(server, queries)
@@ -70,3 +82,13 @@ def register_all_tools(
         server,
         rule_analysis_service=rule_analysis_service,  # type: ignore[arg-type]
     )
+    register_evidence_tools(
+        server,
+        language_evidence_service=language_evidence_service,
+    )
+    register_architecture_conclusion_tools(
+        server,
+        architecture_conclusion_service=architecture_conclusion_service,
+    )
+    register_architecture_assessment_tools(server)
+    register_architecture_report_tools(server)

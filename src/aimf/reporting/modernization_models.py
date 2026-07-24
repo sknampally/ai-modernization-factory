@@ -14,6 +14,7 @@ from aimf.domain.findings import RuleEvaluationResult
 from aimf.domain.graph.validation import optional_nonblank, require_nonblank
 from aimf.domain.recommendations import RecommendationResult
 from aimf.models import AnalysisResult
+from aimf.reporting.architecture.models import ArchitectureReportSection
 
 
 class AssessmentMode(StrEnum):
@@ -168,6 +169,8 @@ class ModernizationReportInput(BaseModel):
     ai_enrichment: AiEnrichmentResult | None = None
     highlighted_versions: tuple[HighlightedVersionInput, ...] = Field(default_factory=tuple)
     report_artifacts: tuple[ReportArtifactInput, ...] = Field(default_factory=tuple)
+    # Phase 4.2.5 — optional architecture report presentation (additive under assessment).
+    architecture_report: ArchitectureReportSection | None = None
 
     @field_validator("generated_at_utc")
     @classmethod

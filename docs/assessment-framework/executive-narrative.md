@@ -66,3 +66,15 @@ Optional AI enrichment may help drafting, but:
 - must not change deterministic artifacts (`findings.json`, etc.)
 
 No AI narrative is added by this milestone.
+
+## Architecture conclusions (Phase 4.2.3)
+
+Executive interpretation for architecture conclusions is **template-based and deterministic**.
+It must remain bounded (no dramatic claims). Conclusions are optional enrichment and do not
+replace findings or invent business impact for repository-only assessments.
+
+## Architecture report presentation (Phase 4.2.5)
+
+Customer HTML/`report.json` may include an optional Architecture Assessment section that
+adapts assessment data into bounded presentation text (no AI, no scores). See
+[../analysis-intelligence/architecture-reporting/README.md](../analysis-intelligence/architecture-reporting/README.md).

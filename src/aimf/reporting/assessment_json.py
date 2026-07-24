@@ -39,10 +39,7 @@ def build_assessment_json_document(
     executive = _executive_summary_metrics(analysis)
     comparison = _comparison_payload(analysis)
 
-    return {
-        "schema_version": ASSESSMENT_JSON_SCHEMA_VERSION,
-        "report_version": ASSESSMENT_JSON_REPORT_VERSION,
-        "assessment": {
+    assessment: dict[str, Any] = {
             "mode": report_input.assessment_mode.value,
             "generated_at": _format_timestamp(report_input.generated_at_utc),
             "report_title": report_input.report_title,
@@ -128,9 +125,17 @@ def build_assessment_json_document(
                 "ai_interpretation": ai_block.get("status")
                 or AIExecutionStatus.NOT_REQUESTED.value,
             },
-        },
+        }
+    # Optional Phase 4.2.5 architecture report section (schema remains 1.2; additive key).
+    if report_input.architecture_report is not None:
+        assessment["architecture"] = report_input.architecture_report.model_dump(
+            mode="json"
+        )
+    return {
+        "schema_version": ASSESSMENT_JSON_SCHEMA_VERSION,
+        "report_version": ASSESSMENT_JSON_REPORT_VERSION,
+        "assessment": assessment,
     }
-
 
 def assessment_json_to_text(document: dict[str, Any], *, indent: int | None = 2) -> str:
     """Serialize an assessment JSON document with stable formatting."""

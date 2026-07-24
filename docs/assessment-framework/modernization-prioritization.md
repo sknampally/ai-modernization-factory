@@ -66,3 +66,9 @@ Group related recommendations when they share:
 - the same enterprise initiative ID (declared)
 
 Do not invent budgets, savings, or completion forecasts.
+
+## Architecture conclusions → waves (Phase 4.2.3)
+
+Architecture conclusions typically map to Wave 0 (insufficient evidence), Wave 2
+(boundary/dependency foundation cleanup), or Wave 3 (structural decomposition) per
+documented conclusion policy—not by severity alone.

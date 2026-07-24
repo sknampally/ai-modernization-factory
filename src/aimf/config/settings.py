@@ -476,6 +476,140 @@ class EnterpriseSettings(BaseModel):
         return self
 
 
+class ArchitectureRuleToggle(BaseModel):
+    """Per-rule enablement toggle (enabled when parent pack is active)."""
+
+    enabled: bool = True
+
+
+_DEFAULT_COMPOSITION_ROOT_MARKERS = (
+    "cli",
+    "main",
+    "bootstrap",
+    "boot",
+    "entrypoint",
+    "entrypoints",
+    "__main__",
+    "wiring",
+    "assemble",
+    "assembly",
+)
+_DEFAULT_REGISTRATION_MARKERS = (
+    "registry",
+    "registration",
+    "di",
+    "inject",
+    "injector",
+    "plugin",
+    "plugins",
+    "factory",
+)
+
+
+class ExcessiveCouplingRuleSettings(BaseModel):
+    """Thresholds for architecture.excessive-cross-module-coupling."""
+
+    enabled: bool = True
+    outgoing_module_threshold: int = 8
+    minimum_module_count: int = 5
+    relative_multiplier: float = 2.0
+    exclude_composition_roots: bool = True
+
+    @field_validator("outgoing_module_threshold", "minimum_module_count")
+    @classmethod
+    def validate_positive(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("coupling thresholds must be positive integers")
+        return value
+
+    @field_validator("outgoing_module_threshold")
+    @classmethod
+    def validate_outgoing_cap(cls, value: int) -> int:
+        if value > 10_000:
+            raise ValueError("outgoing_module_threshold cannot exceed 10000")
+        return value
+
+    @field_validator("relative_multiplier")
+    @classmethod
+    def validate_relative(cls, value: float) -> float:
+        if value < 1.0 or value > 20.0:
+            raise ValueError("relative_multiplier must be in [1.0, 20.0]")
+        return value
+
+
+class ArchitectureUnitSelectionSettings(BaseModel):
+    """Architectural-unit selection policy for Architecture Intelligence."""
+
+    module_depth: int = 2
+    composition_root_markers: list[str] = Field(
+        default_factory=lambda: sorted(_DEFAULT_COMPOSITION_ROOT_MARKERS)
+    )
+    registration_markers: list[str] = Field(
+        default_factory=lambda: sorted(_DEFAULT_REGISTRATION_MARKERS)
+    )
+    ignore_path_markers: list[str] = Field(
+        default_factory=lambda: ["/generated/", "/.generated/", "/vendor/"]
+    )
+
+    @field_validator("module_depth")
+    @classmethod
+    def validate_depth(cls, value: int) -> int:
+        if value < 1 or value > 8:
+            raise ValueError("module_depth must be between 1 and 8")
+        return value
+
+
+class ComponentConcentrationRuleSettings(BaseModel):
+    """Thresholds for architecture.component-concentration."""
+
+    enabled: bool = True
+    incident_edge_share_threshold: float = 0.30
+    minimum_component_count: int = 5
+
+    @field_validator("incident_edge_share_threshold")
+    @classmethod
+    def validate_share(cls, value: float) -> float:
+        if value <= 0.0 or value > 1.0:
+            raise ValueError("incident_edge_share_threshold must be in (0, 1]")
+        return value
+
+    @field_validator("minimum_component_count")
+    @classmethod
+    def validate_minimum(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("minimum_component_count must be a positive integer")
+        return value
+
+
+class ArchitectureRulesSettings(BaseModel):
+    """Architecture Intelligence pack settings (disabled by default; Phase 4.2)."""
+
+    enabled: bool = False
+    unit_selection: ArchitectureUnitSelectionSettings = Field(
+        default_factory=ArchitectureUnitSelectionSettings
+    )
+    dependency_cycle: ArchitectureRuleToggle = Field(default_factory=ArchitectureRuleToggle)
+    invalid_dependency_direction: ArchitectureRuleToggle = Field(
+        default_factory=ArchitectureRuleToggle
+    )
+    layer_boundary_violation: ArchitectureRuleToggle = Field(
+        default_factory=ArchitectureRuleToggle
+    )
+    excessive_cross_module_coupling: ExcessiveCouplingRuleSettings = Field(
+        default_factory=ExcessiveCouplingRuleSettings
+    )
+    component_concentration: ComponentConcentrationRuleSettings = Field(
+        default_factory=ComponentConcentrationRuleSettings
+    )
+    framework_leakage: ArchitectureRuleToggle = Field(default_factory=ArchitectureRuleToggle)
+    service_dependency_cycle: ArchitectureRuleToggle = Field(
+        default_factory=ArchitectureRuleToggle
+    )
+    enterprise_standard_mismatch: ArchitectureRuleToggle = Field(
+        default_factory=ArchitectureRuleToggle
+    )
+
+
 class RulesSettings(BaseModel):
     """Shared Rule Platform settings (disabled by default; Phase 4.1)."""
 
@@ -486,6 +620,7 @@ class RulesSettings(BaseModel):
     max_total_matches: int = 10_000
     max_evidence_per_match: int = 100
     default_categories: list[str] = Field(default_factory=list)
+    architecture: ArchitectureRulesSettings = Field(default_factory=ArchitectureRulesSettings)
 
     @field_validator(
         "max_rules_per_run",
@@ -513,6 +648,163 @@ class RulesSettings(BaseModel):
             raise ValueError("rules.max_total_matches cannot exceed 1000000")
         return value
 
+    @model_validator(mode="after")
+    def validate_architecture_requires_platform(self) -> RulesSettings:
+        # Architecture pack may be configured while platform disabled; assess ignores it.
+        _ = self.architecture
+        return self
+
+
+_DEFAULT_LANGUAGE_PROVIDER_PRECEDENCE = (
+    "language.python.core",
+    "language.java.core",
+    "language.javascript.core",
+)
+
+
+class LanguageProviderToggle(BaseModel):
+    """Enable/disable a single language evidence provider."""
+
+    enabled: bool = True
+
+
+class LanguageEvidenceProvidersSettings(BaseModel):
+    """Provider selection and execution policy."""
+
+    auto_detect: bool = True
+    fail_fast: bool = False
+    precedence: list[str] = Field(
+        default_factory=lambda: list(_DEFAULT_LANGUAGE_PROVIDER_PRECEDENCE)
+    )
+
+    @field_validator("precedence")
+    @classmethod
+    def validate_precedence(cls, value: list[str]) -> list[str]:
+        known = set(_DEFAULT_LANGUAGE_PROVIDER_PRECEDENCE)
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            compact = item.strip().lower()
+            if not compact:
+                continue
+            if compact not in known:
+                raise ValueError(f"Unknown language evidence provider in precedence: {item}")
+            if compact in seen:
+                raise ValueError(f"Duplicate provider in precedence: {compact}")
+            seen.add(compact)
+            cleaned.append(compact)
+        return cleaned or list(_DEFAULT_LANGUAGE_PROVIDER_PRECEDENCE)
+
+
+class LanguageEvidenceSettings(BaseModel):
+    """Language Evidence Provider pipeline (disabled by default; Phase 4.2.2)."""
+
+    enabled: bool = False
+    providers: LanguageEvidenceProvidersSettings = Field(
+        default_factory=LanguageEvidenceProvidersSettings
+    )
+    python: LanguageProviderToggle = Field(default_factory=LanguageProviderToggle)
+    java: LanguageProviderToggle = Field(default_factory=LanguageProviderToggle)
+    javascript: LanguageProviderToggle = Field(default_factory=LanguageProviderToggle)
+
+
+class EvidenceSettings(BaseModel):
+    """Evidence collection settings."""
+
+    language: LanguageEvidenceSettings = Field(default_factory=LanguageEvidenceSettings)
+
+
+class ArchitectureConclusionPolicyToggles(BaseModel):
+    """Per-policy enablement for Architecture Conclusions (Phase 4.2.3)."""
+
+    boundary_integrity: bool = True
+    cyclic_dependency_structure: bool = True
+    broad_dependency_surface: bool = True
+    framework_boundary_erosion: bool = True
+    enterprise_nonconformance: bool = True
+    positive_boundary_conformance: bool = False
+    insufficient_evidence: bool = True
+
+
+class ArchitectureConclusionAggregationSettings(BaseModel):
+    group_by_scope: bool = True
+    group_related_rules: bool = True
+    preserve_standalone_findings: bool = True
+
+
+class ArchitectureConclusionsSettings(BaseModel):
+    """Architecture Conclusions layer (disabled by default; Phase 4.2.3)."""
+
+    enabled: bool = False
+    policies: ArchitectureConclusionPolicyToggles = Field(
+        default_factory=ArchitectureConclusionPolicyToggles
+    )
+    aggregation: ArchitectureConclusionAggregationSettings = Field(
+        default_factory=ArchitectureConclusionAggregationSettings
+    )
+
+
+class AnalysisSettings(BaseModel):
+    """Analysis enrichment settings (optional layers)."""
+
+    architecture_conclusions: ArchitectureConclusionsSettings = Field(
+        default_factory=ArchitectureConclusionsSettings
+    )
+
+
+class ArchitectureAssessmentSectionSettings(BaseModel):
+    """Architecture assessment section integration (disabled by default; Phase 4.2.4)."""
+
+    enabled: bool = False
+    include_findings: bool = True
+    include_conclusions: bool = True
+    include_recommendation_groups: bool = True
+    include_coverage: bool = True
+    include_limitations: bool = True
+    include_traceability: bool = True
+    include_execution_summary: bool = True
+
+
+class AssessmentSectionsSettings(BaseModel):
+    architecture: ArchitectureAssessmentSectionSettings = Field(
+        default_factory=ArchitectureAssessmentSectionSettings
+    )
+
+
+class AssessmentSettings(BaseModel):
+    """Formal assessment composition settings."""
+
+    sections: AssessmentSectionsSettings = Field(
+        default_factory=AssessmentSectionsSettings
+    )
+
+
+class ArchitectureReportSectionSettings(BaseModel):
+    """Architecture section in HTML/JSON reports (disabled by default; Phase 4.2.5)."""
+
+    enabled: bool = False
+    include_executive_summary: bool = True
+    include_metrics: bool = True
+    include_conclusions: bool = True
+    include_recommendation_groups: bool = True
+    include_findings: bool = True
+    include_coverage: bool = True
+    include_limitations: bool = True
+    include_traceability: bool = True
+    include_strengths: bool = True
+
+
+class ReportSectionsSettings(BaseModel):
+    architecture: ArchitectureReportSectionSettings = Field(
+        default_factory=ArchitectureReportSectionSettings
+    )
+
+
+class ReportSettings(BaseModel):
+    """Customer report presentation settings."""
+
+    sections: ReportSectionsSettings = Field(default_factory=ReportSectionsSettings)
+
 
 class AimfSettings(BaseModel):
     """Top-level AIMF application settings."""
@@ -534,6 +826,10 @@ class AimfSettings(BaseModel):
     incremental: IncrementalSettings = Field(default_factory=IncrementalSettings)
     enterprise: EnterpriseSettings = Field(default_factory=EnterpriseSettings)
     rules: RulesSettings = Field(default_factory=RulesSettings)
+    evidence: EvidenceSettings = Field(default_factory=EvidenceSettings)
+    analysis: AnalysisSettings = Field(default_factory=AnalysisSettings)
+    assessment: AssessmentSettings = Field(default_factory=AssessmentSettings)
+    report: ReportSettings = Field(default_factory=ReportSettings)
 
 
 def load_settings(config_path: Path) -> AimfSettings:

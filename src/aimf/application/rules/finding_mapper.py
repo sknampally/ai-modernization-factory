@@ -33,6 +33,21 @@ class RuleFindingMapper:
         subjects = list(match.subject_keys) or list(match.affected_entities)
         if not subjects:
             subjects = [item.subject_reference for item in match.evidence]
+        metadata: dict[str, str] = {
+            "rule_version": str(match.rule_version),
+            "confidence": match.confidence.value,
+            "remediation": match.remediation or "",
+            "provenance": match.provenance,
+            "shared_rule_platform": "true",
+            "business_impact": "unknown",
+            "subject_keys": ",".join(str(item) for item in subjects),
+        }
+        if match.provenance == "architecture.core" or str(match.rule_id).startswith(
+            "architecture."
+        ):
+            from aimf.application.rules.architecture.helpers import enrich_finding_metadata
+
+            metadata.update(enrich_finding_metadata(str(match.rule_id)))
         return Finding.create(
             rule_id=str(match.rule_id),
             title=match.title,
@@ -40,13 +55,7 @@ class RuleFindingMapper:
             severity=_map_severity(match.severity),
             category=_CATEGORY_MAP.get(category, FindingCategory.UNKNOWN),
             evidence=evidence,
-            metadata={
-                "rule_version": str(match.rule_version),
-                "confidence": match.confidence.value,
-                "remediation": match.remediation or "",
-                "provenance": match.provenance,
-                "shared_rule_platform": True,
-            },
+            metadata=metadata,
             subject_keys=tuple(subjects),
         )
 

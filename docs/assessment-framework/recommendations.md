@@ -51,3 +51,12 @@ cost/capacity models.
 Phase 3 recommendations already map from findings via the Recommendation Engine.
 This hierarchy extends that model for CTO and portfolio narratives without
 changing existing recommendation IDs in this milestone.
+
+## Architecture recommendation consolidation (Phase 4.2.3)
+
+Related architecture findings may produce a **consolidated recommendation group** while
+preserving original finding-level recommendations. Groups coordinate actions; they do not
+estimate cost or calendar duration.
+
+Architecture recommendation groups may appear in the architecture assessment section without replacing finding-level recommendations (Phase 4.2.4).
+When architecture report integration is enabled, consolidated groups are the primary recommendation presentation (Phase 4.2.5).

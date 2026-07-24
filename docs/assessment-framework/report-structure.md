@@ -2,7 +2,12 @@
 
 **Target design** for a CodeStrata CTO Assessment Report. Distinct from today’s
 Engineering Assessment HTML (hero KPIs, findings overview, roadmap)—see
-`docs/report-generation.md`. This structure is **not implemented** in Phase 4.1.2.
+`docs/report-generation.md`. Full CTO redesign remains future work.
+
+Phase **4.2.5** adds an optional Architecture Assessment presentation section to
+the current HTML/`report.json` pipeline (disabled by default). It consumes the
+architecture assessment section; it does not implement the full CTO report
+structure below.
 
 ## Recommended sections
 
@@ -50,3 +55,9 @@ roadmap, optional AI, technical details) remain the production Engineering
 Assessment. The CTO report is a future presentation that consumes the same
 deterministic findings/recommendations with richer dimension scoring once
 implemented.
+
+Architecture conclusions (Phase 4.2.3) are optional structured enrichment for future CTO report sections. They are not required for current HTML report rendering.
+
+## Architecture assessment section (Phase 4.2.4)
+
+Optional structured section for future CTO rendering. Current HTML report may ignore it. Artifact: `architecture-assessment.json`.

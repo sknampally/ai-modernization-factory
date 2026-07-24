@@ -7,6 +7,7 @@ import typer
 
 from aimf import __version__
 from aimf.cli.agent import agent_app
+from aimf.cli.architecture import architecture_app
 from aimf.cli.assess import (
     DEFAULT_ASSESS_MAX_OUTPUT_TOKENS,
     DEFAULT_ASSESS_OUTPUT_DIRECTORY,
@@ -19,6 +20,7 @@ from aimf.cli.assess import (
     run_assessment,
 )
 from aimf.cli.enterprise import enterprise_app
+from aimf.cli.evidence import evidence_app
 from aimf.cli.incremental import incremental_app
 from aimf.cli.mcp import mcp_app
 from aimf.cli.rules import rules_app
@@ -201,6 +203,8 @@ app.add_typer(agent_app, name="agent")
 app.add_typer(incremental_app, name="incremental")
 app.add_typer(enterprise_app, name="enterprise")
 app.add_typer(rules_app, name="rules")
+app.add_typer(evidence_app, name="evidence")
+app.add_typer(architecture_app, name="architecture")
 
 __all__ = [
     "DEFAULT_ASSESS_MAX_OUTPUT_TOKENS",

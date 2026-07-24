@@ -1,4 +1,4 @@
-"""Thin CLI adapters for Shared Rule Platform (list / inspect only in 4.1)."""
+"""Thin CLI adapters for Shared Rule Platform (list / inspect / explain)."""
 
 from __future__ import annotations
 
@@ -7,24 +7,45 @@ from typing import Annotated
 
 import typer
 
+from aimf.application.rules.architecture.pack import ArchitectureRulePack
 from aimf.application.rules.errors import RuleApplicationError
 from aimf.application.rules.factory import create_rule_analysis_service
 from aimf.cli.rules_mapping import map_explanation, map_rule_view
 from aimf.cli.rules_rendering import render_rule_detail, render_rules_table
+from aimf.domain.rules.enums import RuleCategory
 
 rules_app = typer.Typer(
     name="rules",
     help=(
-        "Shared Rule Platform (Phase 4.1).\n\n"
-        "Lists and inspects registered production rules. Disabled by default; "
-        "not wired into `aimf assess`. Fixture rules are hidden."
+        "Shared Rule Platform (Phase 4.1+) and Architecture Intelligence (4.2).\n\n"
+        "Lists and inspects registered production rules. The Architecture pack is "
+        "discoverable here; assess merge requires "
+        "`[rules] enabled` and `[rules.architecture] enabled`. "
+        "CLI rename to codestrata is deferred to a future rebranding milestone."
     ),
     no_args_is_help=True,
 )
 
 
+def _parse_category(value: str | None) -> RuleCategory | None:
+    if value is None or not value.strip():
+        return None
+    compact = value.strip().lower()
+    try:
+        return RuleCategory(compact)
+    except ValueError as error:
+        raise typer.BadParameter(
+            f"Unknown category '{value}'. Use architecture, technical_debt, "
+            "security, performance, platform, or experimental."
+        ) from error
+
+
 @rules_app.command("list")
 def list_rules(
+    category: Annotated[
+        str | None,
+        typer.Option("--category", help="Filter by rule category (e.g. architecture)."),
+    ] = None,
     json_output: Annotated[
         bool,
         typer.Option("--json", help="Emit JSON."),
@@ -33,10 +54,16 @@ def list_rules(
     """List registered production shared rules."""
 
     service = create_rule_analysis_service()
-    views = service.list_rules(include_non_production=False)
+    views = service.list_rules(
+        category=_parse_category(category),
+        include_non_production=False,
+    )
     rows = [map_rule_view(view) for view in views]
     if json_output:
-        typer.echo(json.dumps({"rules": rows}, indent=2, ensure_ascii=False))
+        payload: dict[str, object] = {"rules": rows}
+        if category and category.strip().lower() == "architecture":
+            payload["pack"] = ArchitectureRulePack().to_dict()
+        typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
         return
     render_rules_table(rows)
 

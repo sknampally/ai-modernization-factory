@@ -161,6 +161,7 @@ def build_html_report_view_model(report_input: ModernizationReportInput) -> Html
         findings=findings,
         recommendations=recommendations,
         ai_enrichment=ai_view,
+        architecture_report=report_input.architecture_report,
         artifacts=artifacts,
         metadata=metadata,
     )
@@ -170,6 +171,7 @@ def default_report_artifacts(
     *,
     include_ai_enrichment: bool,
     include_ai_execution: bool,
+    include_architecture_assessment: bool = False,
 ) -> tuple[ReportArtifactInput, ...]:
     """Stable relative artifact list for Graph and Artifact References."""
 
@@ -190,12 +192,18 @@ def default_report_artifacts(
             relative_path="graphs/graph-summary.json",
         ),
     ]
+    if include_architecture_assessment:
+        items.append(
+            ReportArtifactInput(
+                label="Architecture Assessment",
+                relative_path="architecture-assessment.json",
+            )
+        )
     if include_ai_enrichment:
         items.append(ReportArtifactInput(label="AI Enrichment", relative_path="ai-enrichment.json"))
     if include_ai_execution:
         items.append(ReportArtifactInput(label="AI Execution", relative_path="ai-execution.json"))
     return tuple(items)
-
 
 def _build_findings(report_input: ModernizationReportInput) -> tuple[FindingView, ...]:
     evaluation = report_input.assessment_rule_evaluation

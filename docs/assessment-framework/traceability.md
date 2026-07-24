@@ -43,3 +43,9 @@ A reader must be able to inspect:
 Today’s HTML report and JSON artifacts already reference findings and
 recommendations. Full dimension-score explanations are methodology-only until
 scoring is implemented.
+
+## Architecture conclusions (Phase 4.2.3)
+
+Optional conclusions reference source finding IDs and do not replace findings. Conclusion IDs are deterministic from policy, scope, and sorted source finding IDs.
+
+Architecture assessment section edges (Phase 4.2.4) link section → pack → findings → evidence and section → conclusions → findings.

@@ -47,3 +47,6 @@ Coverage: Substantial (82%)
 Confidence: High
 Limitation: Generated sources and private packages not fully resolved
 ```
+
+Architecture section coverage areas use measured/partial/unsupported/not_applicable/unknown (Phase 4.2.4).
+Report presentation must not render unsupported/unknown as 0% (Phase 4.2.5).
