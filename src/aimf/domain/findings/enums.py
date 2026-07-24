@@ -25,6 +25,7 @@ class FindingCategory(StrEnum):
     ARCHITECTURE = "architecture"
     DEPENDENCY = "dependency"
     MAINTAINABILITY = "maintainability"
+    TECHNICAL_DEBT = "technical_debt"
     TESTING = "testing"
     DOCUMENTATION = "documentation"
     BUILD = "build"

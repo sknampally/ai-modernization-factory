@@ -28,8 +28,11 @@ def test_list_shared_rules_includes_architecture_pack() -> None:
     views = service.list_rules(include_non_production=False)
     rows = [map_rule_view(view) for view in views]
     assert rows
-    assert all(row["category"] == RuleCategory.ARCHITECTURE.value for row in rows)
+    categories = {row["category"] for row in rows}
+    assert RuleCategory.ARCHITECTURE.value in categories
+    assert RuleCategory.TECHNICAL_DEBT.value in categories
     assert any(row["rule_id"] == "architecture.dependency-cycle" for row in rows)
+    assert any(row["rule_id"] == "technical_debt.large-callable" for row in rows)
     _ = AssessmentApplicationService
     _ = KnowledgeQueryService
     _ = build_mcp_server

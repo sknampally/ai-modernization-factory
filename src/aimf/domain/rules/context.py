@@ -113,6 +113,8 @@ class RuleExecutionContext(BaseModel):
     legacy_rule_context: Any | None = None
     # Optional ArchitectureAnalysisView for Architecture Intelligence (Phase 4.2).
     architecture_view: Any | None = None
+    # Optional AggregatedComplexityEvidence for Technical Debt Intelligence (Phase 4.3.3).
+    complexity_evidence: Any | None = None
     incremental: IncrementalChangeView = Field(default_factory=IncrementalChangeView)
     policy: RuleExecutionPolicy = Field(default_factory=RuleExecutionPolicy)
     provenance: dict[str, str] = Field(default_factory=dict)

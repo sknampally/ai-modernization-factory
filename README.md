@@ -50,6 +50,11 @@ Use it for modernization discovery, client demos, and engineering due diligence.
 * Architecture Conclusions (Phase 4.2.3; `aimf architecture conclusions`; disabled by default)
 * Architecture Assessment Integration (Phase 4.2.4; `architecture-assessment.json`; disabled by default)
 * Architecture CTO Report Integration (Phase 4.2.5; optional `assessment.architecture` in `report.json` / HTML; disabled by default)
+* Technical Debt Domain Foundation (Phase 4.3.1; assessment contracts + feature gates; disabled by default)
+* Complexity Evidence (Phase 4.3.2; Python/Java structural metrics via Language Evidence Platform)
+* Technical Debt Complexity Rules (Phase 4.3.3; `technical_debt.core` SharedRules; pack disabled by default)
+* Technical Debt Complexity Assessment Vertical (Phase 4.3.4 / 4.3.4A; assess opt-in; production-primary inventory + hotspots; dogfood accepted)
+* Technical Debt conclusions / CTO report integration (deferred; Phase 4.3.5–4.3.6)
 
 ---
 

@@ -150,9 +150,12 @@ Registration: `src/aimf/cli/__init__.py`.
 | `repository` | required path/url | settings |
 | `static_analysis.enabled` | false | settings |
 | `rules.enabled` / `rules.architecture.enabled` | false / false | settings |
+| `rules.technical_debt.enabled` | false | settings |
+| `evidence.complexity.enabled` | true (collectors; assess uses only when TD pack on) | settings |
 | `evidence.language.enabled` | false | settings |
 | `analysis.architecture_conclusions.enabled` | false | settings |
 | `assessment.sections.architecture.enabled` | false | settings |
+| `assessment.sections.technical_debt.enabled` | false | settings |
 | `incremental.enabled` / `execution_enabled` | false | settings |
 | `enterprise.enabled` | false | settings |
 | `mcp.enabled` | true | settings |

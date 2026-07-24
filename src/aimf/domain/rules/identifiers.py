@@ -7,7 +7,10 @@ import re
 from pydantic import RootModel, field_validator
 
 # Shared platform: category.kebab-case-name
-_SHARED_RULE_ID_PATTERN = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9-]*)+$")
+# Underscores allowed in namespace (e.g. technical_debt.*).
+_SHARED_RULE_ID_PATTERN = re.compile(
+    r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_-]*)+$"
+)
 # Legacy Assessment Graph rules: aimf-rule-*
 _LEGACY_RULE_ID_PATTERN = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$")
 

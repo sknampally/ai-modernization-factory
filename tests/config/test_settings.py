@@ -189,6 +189,22 @@ def test_language_evidence_pipeline_disabled_by_default(tmp_path: Path) -> None:
     assert settings.evidence.language.python.enabled is True
 
 
+def test_complexity_evidence_enabled_by_default(tmp_path: Path) -> None:
+    config_file = tmp_path / "aimf.toml"
+    config_file.write_text(
+        """
+        [repository]
+        path = "."
+        """,
+        encoding="utf-8",
+    )
+    settings = load_settings(config_file)
+    assert settings.evidence.complexity.enabled is True
+    assert settings.evidence.complexity.python.enabled is True
+    assert settings.evidence.complexity.java.enabled is True
+    assert "/.aimf/" in settings.evidence.complexity.ignore_path_markers
+
+
 def test_architecture_conclusions_disabled_by_default(tmp_path: Path) -> None:
     config_file = tmp_path / "aimf.toml"
     config_file.write_text(
@@ -230,3 +246,18 @@ def test_architecture_report_section_disabled_by_default(tmp_path: Path) -> None
     settings = load_settings(config_file)
     assert settings.report.sections.architecture.enabled is False
     assert settings.report.sections.architecture.include_executive_summary is True
+
+
+def test_technical_debt_gates_disabled_by_default(tmp_path: Path) -> None:
+    config_file = tmp_path / "aimf.toml"
+    config_file.write_text(
+        """
+        [repository]
+        path = "."
+        """,
+        encoding="utf-8",
+    )
+    settings = load_settings(config_file)
+    assert settings.rules.technical_debt.enabled is False
+    assert settings.assessment.sections.technical_debt.enabled is False
+    assert settings.assessment.sections.technical_debt.include_findings is True

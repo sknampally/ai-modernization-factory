@@ -11,6 +11,12 @@ from aimf.domain.graph.validation import as_tuple
 # Stable capability identifiers.
 CAP_SOURCE_FILES = "source.files"
 CAP_SOURCE_SYMBOLS = "source.symbols"
+CAP_COMPLEXITY_PHYSICAL_LINES = "complexity.physical-lines"
+CAP_COMPLEXITY_PARAMETERS = "complexity.parameters"
+CAP_COMPLEXITY_BRANCHES = "complexity.branches"
+CAP_COMPLEXITY_NESTING = "complexity.nesting"
+CAP_COMPLEXITY_CALLABLES = "complexity.callables"
+CAP_COMPLEXITY_TYPE_SIZE = "complexity.type-size"
 CAP_DEPENDENCIES_IMPORTS = "dependencies.imports"
 CAP_DEPENDENCIES_TYPE_ONLY = "dependencies.type-only"
 CAP_DEPENDENCIES_RUNTIME = "dependencies.runtime"

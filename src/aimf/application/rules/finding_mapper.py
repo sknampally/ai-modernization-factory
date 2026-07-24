@@ -9,7 +9,7 @@ from aimf.domain.rules.results import RuleMatch
 
 _CATEGORY_MAP: dict[RuleCategory, FindingCategory] = {
     RuleCategory.ARCHITECTURE: FindingCategory.ARCHITECTURE,
-    RuleCategory.TECHNICAL_DEBT: FindingCategory.MAINTAINABILITY,
+    RuleCategory.TECHNICAL_DEBT: FindingCategory.TECHNICAL_DEBT,
     RuleCategory.SECURITY: FindingCategory.GOVERNANCE,
     RuleCategory.PERFORMANCE: FindingCategory.MODERNIZATION,
     RuleCategory.PLATFORM: FindingCategory.GOVERNANCE,
@@ -26,7 +26,7 @@ class RuleFindingMapper:
                 evidence_type=item.kind.value,
                 source_id=item.subject_reference,
                 path=item.safe_location,
-                excerpt=None,
+                excerpt=item.message or None,
             )
             for item in match.evidence
         )
@@ -48,6 +48,15 @@ class RuleFindingMapper:
             from aimf.application.rules.architecture.helpers import enrich_finding_metadata
 
             metadata.update(enrich_finding_metadata(str(match.rule_id)))
+        elif match.provenance == "technical_debt.core" or str(match.rule_id).startswith(
+            "technical_debt."
+        ):
+            from aimf.application.rules.technical_debt.helpers import (
+                enrich_finding_metadata as enrich_debt_metadata,
+            )
+
+            metadata.update(enrich_debt_metadata(str(match.rule_id)))
+            metadata.update(_technical_debt_evidence_metadata(match))
         return Finding.create(
             rule_id=str(match.rule_id),
             title=match.title,
@@ -78,6 +87,37 @@ class RuleFindingMapper:
 def _map_severity(severity: FindingSeverity) -> FindingSeverity:
     # RuleSeverity is an alias of FindingSeverity.
     return severity
+
+
+_TD_EVIDENCE_METADATA_KEYS = (
+    "metric",
+    "value",
+    "threshold",
+    "severity_basis",
+    "classification",
+    "language",
+    "callable_kind",
+    "type_kind",
+    "evidence_id",
+)
+
+
+def _technical_debt_evidence_metadata(match: RuleMatch) -> dict[str, str]:
+    """Promote first-match complexity attributes for reviewable Finding metadata."""
+
+    if not match.evidence:
+        return {}
+    attrs = match.evidence[0].attributes
+    promoted: dict[str, str] = {}
+    for key in _TD_EVIDENCE_METADATA_KEYS:
+        value = attrs.get(key)
+        if value:
+            promoted[key] = value
+    if match.evidence[0].line_start is not None:
+        promoted["line_start"] = str(match.evidence[0].line_start)
+    if match.evidence[0].line_end is not None:
+        promoted["line_end"] = str(match.evidence[0].line_end)
+    return promoted
 
 
 def explain_finding_identity(match: RuleMatch) -> dict[str, str]:

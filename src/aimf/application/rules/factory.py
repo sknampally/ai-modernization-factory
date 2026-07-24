@@ -34,23 +34,37 @@ def create_rule_analysis_service(
     suppressions: tuple[RuleSuppression, ...] = (),
     include_fixture_rules: bool = False,
     include_architecture_pack: bool = True,
+    include_technical_debt_pack: bool = True,
 ) -> RuleAnalysisService:
-    """Create a service with optional Architecture Intelligence pack registration.
+    """Create a service with optional Architecture / Technical Debt pack registration.
 
-    Architecture rules are registered for CLI/MCP discovery even when the pack is
-    disabled for assess. Execution remains gated by ``rules.enabled`` and
-    ``rules.architecture.enabled``.
+    Packs are registered for CLI/MCP discovery even when disabled for assess.
+    Execution remains gated by ``rules.enabled`` and per-pack ``enabled`` flags.
     """
 
     resolved = registry or RuleRegistry()
-    if include_architecture_pack and resolved.size == 0:
-        from aimf.application.rules.architecture.registration import register_architecture_pack
+    if resolved.size == 0:
+        rules_settings = settings.rules if settings is not None else None
+        if include_architecture_pack:
+            from aimf.application.rules.architecture.registration import (
+                register_architecture_pack,
+            )
 
-        register_architecture_pack(
-            resolved,
-            settings=settings.rules if settings is not None else None,
-            production=True,
-        )
+            register_architecture_pack(
+                resolved,
+                settings=rules_settings,
+                production=True,
+            )
+        if include_technical_debt_pack:
+            from aimf.application.rules.technical_debt.registration import (
+                register_technical_debt_pack,
+            )
+
+            register_technical_debt_pack(
+                resolved,
+                settings=rules_settings,
+                production=True,
+            )
     if include_fixture_rules:
         from aimf.application.rules.fixtures import fixture_rules
 

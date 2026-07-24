@@ -86,6 +86,7 @@ aimf = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "."]
+norecursedirs = [".git", ".venv", "fixtures", "__pycache__", "*.egg-info"]
 addopts = [
     "-ra",
     "--strict-markers",
@@ -97,6 +98,9 @@ addopts = [
 target-version = "py312"
 line-length = 100
 src = ["src", "tests"]
+exclude = [
+    "**/complexity/fixtures/**",
+]
 
 
 [tool.ruff.lint]

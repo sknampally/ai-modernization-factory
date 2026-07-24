@@ -610,6 +610,106 @@ class ArchitectureRulesSettings(BaseModel):
     )
 
 
+class TechnicalDebtComplexityLargeCallableSettings(BaseModel):
+    """Thresholds for technical_debt.large-callable."""
+
+    enabled: bool = True
+    max_physical_lines: int = 50
+
+    @field_validator("max_physical_lines")
+    @classmethod
+    def validate_positive(cls, value: int) -> int:
+        if value < 1 or value > 100_000:
+            raise ValueError("max_physical_lines must be in [1, 100000]")
+        return value
+
+
+class TechnicalDebtComplexityBranchingSettings(BaseModel):
+    """Thresholds for technical_debt.excessive-branching."""
+
+    enabled: bool = True
+    max_branch_points: int = 10
+
+    @field_validator("max_branch_points")
+    @classmethod
+    def validate_positive(cls, value: int) -> int:
+        if value < 1 or value > 10_000:
+            raise ValueError("max_branch_points must be in [1, 10000]")
+        return value
+
+
+class TechnicalDebtComplexityNestingSettings(BaseModel):
+    """Thresholds for technical_debt.deep-nesting."""
+
+    enabled: bool = True
+    max_nesting_depth: int = 4
+
+    @field_validator("max_nesting_depth")
+    @classmethod
+    def validate_positive(cls, value: int) -> int:
+        if value < 1 or value > 100:
+            raise ValueError("max_nesting_depth must be in [1, 100]")
+        return value
+
+
+class TechnicalDebtComplexityParametersSettings(BaseModel):
+    """Thresholds for technical_debt.excessive-parameters."""
+
+    enabled: bool = True
+    max_parameters: int = 5
+
+    @field_validator("max_parameters")
+    @classmethod
+    def validate_positive(cls, value: int) -> int:
+        if value < 1 or value > 1000:
+            raise ValueError("max_parameters must be in [1, 1000]")
+        return value
+
+
+class TechnicalDebtComplexityOversizedTypeSettings(BaseModel):
+    """Thresholds for technical_debt.oversized-type."""
+
+    enabled: bool = True
+    max_physical_lines: int = 300
+
+    @field_validator("max_physical_lines")
+    @classmethod
+    def validate_positive(cls, value: int) -> int:
+        if value < 1 or value > 100_000:
+            raise ValueError("max_physical_lines must be in [1, 100000]")
+        return value
+
+
+class TechnicalDebtComplexitySettings(BaseModel):
+    """Complexity rule group under [rules.technical_debt.complexity]."""
+
+    enabled: bool = True
+    large_callable: TechnicalDebtComplexityLargeCallableSettings = Field(
+        default_factory=TechnicalDebtComplexityLargeCallableSettings
+    )
+    excessive_branching: TechnicalDebtComplexityBranchingSettings = Field(
+        default_factory=TechnicalDebtComplexityBranchingSettings
+    )
+    deep_nesting: TechnicalDebtComplexityNestingSettings = Field(
+        default_factory=TechnicalDebtComplexityNestingSettings
+    )
+    excessive_parameters: TechnicalDebtComplexityParametersSettings = Field(
+        default_factory=TechnicalDebtComplexityParametersSettings
+    )
+    oversized_type: TechnicalDebtComplexityOversizedTypeSettings = Field(
+        default_factory=TechnicalDebtComplexityOversizedTypeSettings
+    )
+
+
+class TechnicalDebtRulesSettings(BaseModel):
+    """Technical Debt Intelligence pack settings (disabled by default; Phase 4.3)."""
+
+    enabled: bool = False
+    complexity: TechnicalDebtComplexitySettings = Field(
+        default_factory=TechnicalDebtComplexitySettings
+    )
+
+
 class RulesSettings(BaseModel):
     """Shared Rule Platform settings (disabled by default; Phase 4.1)."""
 
@@ -621,6 +721,9 @@ class RulesSettings(BaseModel):
     max_evidence_per_match: int = 100
     default_categories: list[str] = Field(default_factory=list)
     architecture: ArchitectureRulesSettings = Field(default_factory=ArchitectureRulesSettings)
+    technical_debt: TechnicalDebtRulesSettings = Field(
+        default_factory=TechnicalDebtRulesSettings
+    )
 
     @field_validator(
         "max_rules_per_run",
@@ -652,6 +755,7 @@ class RulesSettings(BaseModel):
     def validate_architecture_requires_platform(self) -> RulesSettings:
         # Architecture pack may be configured while platform disabled; assess ignores it.
         _ = self.architecture
+        _ = self.technical_debt
         return self
 
 
@@ -708,10 +812,47 @@ class LanguageEvidenceSettings(BaseModel):
     javascript: LanguageProviderToggle = Field(default_factory=LanguageProviderToggle)
 
 
+class ComplexityEvidenceSettings(BaseModel):
+    """Structural complexity evidence collectors (Phase 4.3.2).
+
+    Owned by the Language Evidence Platform. Default-enabled for explicit collect
+    calls; not wired into Architecture Intelligence assessment.
+    """
+
+    enabled: bool = True
+    python: LanguageProviderToggle = Field(default_factory=LanguageProviderToggle)
+    java: LanguageProviderToggle = Field(default_factory=LanguageProviderToggle)
+    max_files: int = 2000
+    max_file_chars: int = 100_000
+    ignore_path_markers: list[str] = Field(
+        default_factory=lambda: [
+            "/generated/",
+            "/.generated/",
+            "/vendor/",
+            "/.aimf/",
+            "/node_modules/",
+            "/.git/",
+            "/target/",
+            "/dist/",
+            "/build/",
+        ]
+    )
+
+    @field_validator("max_files", "max_file_chars")
+    @classmethod
+    def validate_positive_bounds(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("complexity evidence bounds must be positive")
+        return value
+
+
 class EvidenceSettings(BaseModel):
     """Evidence collection settings."""
 
     language: LanguageEvidenceSettings = Field(default_factory=LanguageEvidenceSettings)
+    complexity: ComplexityEvidenceSettings = Field(
+        default_factory=ComplexityEvidenceSettings
+    )
 
 
 class ArchitectureConclusionPolicyToggles(BaseModel):
@@ -765,9 +906,23 @@ class ArchitectureAssessmentSectionSettings(BaseModel):
     include_execution_summary: bool = True
 
 
+class TechnicalDebtAssessmentSectionSettings(BaseModel):
+    """Technical debt assessment section (disabled by default; Phase 4.3.1)."""
+
+    enabled: bool = False
+    include_findings: bool = True
+    include_coverage: bool = True
+    include_limitations: bool = True
+    include_traceability: bool = True
+    include_execution_summary: bool = True
+
+
 class AssessmentSectionsSettings(BaseModel):
     architecture: ArchitectureAssessmentSectionSettings = Field(
         default_factory=ArchitectureAssessmentSectionSettings
+    )
+    technical_debt: TechnicalDebtAssessmentSectionSettings = Field(
+        default_factory=TechnicalDebtAssessmentSectionSettings
     )
 
 

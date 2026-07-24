@@ -155,6 +155,9 @@ class AssessmentCommandResult(BaseModel):
     architecture_assessment_status: str | None = None
     architecture_assessment_finding_count: int | None = Field(default=None, ge=0)
     architecture_assessment_artifact_path: Path | None = None
+    technical_debt_assessment_status: str | None = None
+    technical_debt_assessment_finding_count: int | None = Field(default=None, ge=0)
+    technical_debt_assessment_artifact_path: Path | None = None
     architecture_report_enabled: bool | None = None
     architecture_report_status: str | None = None
     architecture_report_section_version: str | None = None
@@ -560,6 +563,9 @@ class AssessmentApplicationService:
         architecture_assessment_status = None
         architecture_assessment_finding_count = None
         architecture_section_for_report = None
+        technical_debt_assessment_artifact = None
+        technical_debt_assessment_status = None
+        technical_debt_assessment_finding_count = None
         try:
             rule_evaluation = active_rule_engine.evaluate_pipeline_result(graph_pipeline_result)
             from aimf.application.rules.architecture.assessment import (
@@ -569,6 +575,7 @@ class AssessmentApplicationService:
             )
 
             architecture_pack_result = None
+            technical_debt_pack_result = None
             if architecture_pack_enabled(loaded_settings):
                 architecture_pack_result = evaluate_architecture_pack_detailed(
                     pipeline_result=graph_pipeline_result,
@@ -578,6 +585,21 @@ class AssessmentApplicationService:
                 rule_evaluation = merge_rule_evaluations(
                     rule_evaluation,
                     architecture_pack_result.evaluation,
+                )
+            from aimf.application.rules.technical_debt.assessment import (
+                evaluate_technical_debt_pack_detailed,
+                technical_debt_pack_enabled,
+            )
+
+            if technical_debt_pack_enabled(loaded_settings):
+                technical_debt_pack_result = evaluate_technical_debt_pack_detailed(
+                    pipeline_result=graph_pipeline_result,
+                    settings=loaded_settings,
+                    repository_root=Path(repository.path),
+                )
+                rule_evaluation = merge_rule_evaluations(
+                    rule_evaluation,
+                    technical_debt_pack_result.evaluation,
                 )
             findings_artifact = write_findings_artifact(
                 rule_evaluation,
@@ -716,6 +738,115 @@ class AssessmentApplicationService:
                 architecture_assessment_status = architecture_section.status.value
                 architecture_assessment_finding_count = assessment_write.finding_count
                 architecture_section_for_report = architecture_section
+
+            from aimf.application.technical_debt.assessment.artifacts import (
+                write_technical_debt_assessment_artifact,
+            )
+            from aimf.application.technical_debt.assessment.factory import (
+                configuration_fingerprint_payload as td_configuration_fingerprint_payload,
+                create_technical_debt_assessment_assembler,
+                technical_debt_assessment_section_enabled,
+                technical_debt_assessment_section_settings,
+            )
+            from aimf.application.rules.technical_debt.assessment import (
+                complexity_evidence_collection_enabled,
+            )
+
+            if technical_debt_assessment_section_enabled(loaded_settings):
+                td_section_cfg = technical_debt_assessment_section_settings(loaded_settings)
+                td_pack_on = technical_debt_pack_enabled(loaded_settings)
+                td_assembler = create_technical_debt_assessment_assembler()
+                if not td_pack_on:
+                    technical_debt_section = td_assembler.assemble_disabled(
+                        repository_id=str(
+                            getattr(repository, "name", None) or repository.path
+                        ),
+                        reason="technical_debt_pack_disabled",
+                    )
+                else:
+                    pack_eval = (
+                        technical_debt_pack_result.evaluation
+                        if technical_debt_pack_result is not None
+                        else None
+                    )
+                    matched = len(pack_eval.findings) if pack_eval is not None else 0
+                    executed = (
+                        len(pack_eval.rules_evaluated) if pack_eval is not None else 0
+                    )
+                    skipped = (
+                        len(pack_eval.rules_skipped) if pack_eval is not None else 0
+                    )
+                    technical_debt_section = td_assembler.assemble(
+                        repository_id=str(
+                            getattr(repository, "name", None) or repository.path
+                        ),
+                        findings=rule_evaluation.findings,
+                        pack_enabled=True,
+                        complexity_evidence_enabled=complexity_evidence_collection_enabled(
+                            loaded_settings
+                        ),
+                        include_findings=td_section_cfg.include_findings,
+                        include_coverage=td_section_cfg.include_coverage,
+                        include_limitations=td_section_cfg.include_limitations,
+                        include_traceability=td_section_cfg.include_traceability,
+                        include_execution_summary=td_section_cfg.include_execution_summary,
+                        complexity_evidence=(
+                            technical_debt_pack_result.complexity_evidence
+                            if technical_debt_pack_result is not None
+                            else None
+                        ),
+                        evidence_pipeline=(
+                            technical_debt_pack_result.evidence_pipeline
+                            if technical_debt_pack_result is not None
+                            else "not_configured"
+                        ),
+                        evidence_fingerprint=(
+                            technical_debt_pack_result.evidence_fingerprint
+                            if technical_debt_pack_result is not None
+                            else ""
+                        ),
+                        configuration_payload=td_configuration_fingerprint_payload(
+                            loaded_settings,
+                            pack_enabled=True,
+                        ),
+                        debt_rules_planned=5,
+                        rules_executed=executed,
+                        rules_matched=matched,
+                        rules_not_matched=max(executed - matched, 0),
+                        rules_not_applicable=skipped,
+                        files_considered=(
+                            technical_debt_pack_result.files_considered
+                            if technical_debt_pack_result is not None
+                            else 0
+                        ),
+                        files_analyzed=(
+                            technical_debt_pack_result.files_analyzed
+                            if technical_debt_pack_result is not None
+                            else 0
+                        ),
+                        files_excluded=(
+                            technical_debt_pack_result.files_excluded
+                            if technical_debt_pack_result is not None
+                            else 0
+                        ),
+                        files_failed=(
+                            technical_debt_pack_result.files_failed
+                            if technical_debt_pack_result is not None
+                            else 0
+                        ),
+                        diagnostics=(
+                            technical_debt_pack_result.diagnostics
+                            if technical_debt_pack_result is not None
+                            else ()
+                        ),
+                    )
+                td_write = write_technical_debt_assessment_artifact(
+                    technical_debt_section,
+                    report_paths.run_directory,
+                )
+                technical_debt_assessment_artifact = td_write.path
+                technical_debt_assessment_status = technical_debt_section.status.value
+                technical_debt_assessment_finding_count = td_write.finding_count
         except Exception as error:  # noqa: BLE001 - application boundary
             raise AssessmentCommandError(
                 f"[rule_engine] Rule evaluation failed: {sanitize_provider_text(str(error))}"
@@ -1026,6 +1157,9 @@ class AssessmentApplicationService:
             architecture_assessment_status=architecture_assessment_status,
             architecture_assessment_finding_count=architecture_assessment_finding_count,
             architecture_assessment_artifact=architecture_assessment_artifact,
+            technical_debt_assessment_status=technical_debt_assessment_status,
+            technical_debt_assessment_finding_count=technical_debt_assessment_finding_count,
+            technical_debt_assessment_artifact=technical_debt_assessment_artifact,
             architecture_report_enabled=architecture_report_enabled,
             architecture_report_status=architecture_report_status,
             architecture_report_section_version=architecture_report_section_version,
@@ -1584,6 +1718,9 @@ def _build_command_result(
     architecture_assessment_status: str | None = None,
     architecture_assessment_finding_count: int | None = None,
     architecture_assessment_artifact: Path | None = None,
+    technical_debt_assessment_status: str | None = None,
+    technical_debt_assessment_finding_count: int | None = None,
+    technical_debt_assessment_artifact: Path | None = None,
     architecture_report_enabled: bool | None = None,
     architecture_report_status: str | None = None,
     architecture_report_section_version: str | None = None,
@@ -1632,6 +1769,16 @@ def _build_command_result(
     if architecture_assessment_artifact is not None:
         graph_fields["architecture_assessment_artifact_path"] = (
             architecture_assessment_artifact
+        )
+    if technical_debt_assessment_status is not None:
+        graph_fields["technical_debt_assessment_status"] = technical_debt_assessment_status
+    if technical_debt_assessment_finding_count is not None:
+        graph_fields["technical_debt_assessment_finding_count"] = (
+            technical_debt_assessment_finding_count
+        )
+    if technical_debt_assessment_artifact is not None:
+        graph_fields["technical_debt_assessment_artifact_path"] = (
+            technical_debt_assessment_artifact
         )
     if architecture_report_enabled is not None:
         graph_fields["architecture_report_enabled"] = architecture_report_enabled
@@ -1812,6 +1959,20 @@ def _print_success_summary(console: Console, result: AssessmentCommandResult) ->
         console.print(
             "Architecture assessment artifact: "
             f"{_display_path(result.architecture_assessment_artifact_path)}"
+        )
+    if result.technical_debt_assessment_status is not None:
+        console.print(
+            f"Technical debt assessment: {result.technical_debt_assessment_status}"
+        )
+    if result.technical_debt_assessment_finding_count is not None:
+        console.print(
+            "Technical debt primary (production) findings: "
+            f"{result.technical_debt_assessment_finding_count}"
+        )
+    if result.technical_debt_assessment_artifact_path is not None:
+        console.print(
+            "Technical debt assessment artifact: "
+            f"{_display_path(result.technical_debt_assessment_artifact_path)}"
         )
     if result.architecture_report_enabled:
         console.print(
