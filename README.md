@@ -44,6 +44,7 @@ Use it for modernization discovery, client demos, and engineering due diligence.
 * Incremental assessment with validation, telemetry, explainability, and opt-in CLI/MCP (`aimf.application.incremental`; `rollout_mode=off` by default)
 * Enterprise Knowledge Graph from YAML (`aimf enterprise`; optional, disabled by default)
 * Shared Rule Platform (`aimf rules`; Phase 4.1 infrastructure; disabled by default)
+* Assessment Framework methodology (Phase 4.1.2; docs only — scoring/CTO report not wired)
 
 ---
 
@@ -267,7 +268,10 @@ incremental assessment).
 [docs/enterprise-knowledge-graph/](docs/enterprise-knowledge-graph/)).
 
 **Phase 4.1** — Shared Rule Platform (infrastructure; see
-[docs/analysis-intelligence/](docs/analysis-intelligence/)). Packs start at 4.2.
+[docs/analysis-intelligence/](docs/analysis-intelligence/)).
+
+**Phase 4.1.2** — Assessment Framework methodology (see
+[docs/assessment-framework/](docs/assessment-framework/)). Packs start at 4.2.
 
 **Phase 4.2+ / 5+** — Analysis Intelligence packs, language expansion, workflow
 intelligence, platform expansion. See [ROADMAP.md](ROADMAP.md).

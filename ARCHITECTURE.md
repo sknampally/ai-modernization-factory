@@ -289,6 +289,13 @@ Details: [docs/analysis-intelligence/shared-rule-platform.md](docs/analysis-inte
 Adapted legacy evaluation preserves Finding IDs. See
 [docs/analysis-intelligence/rule-platform-migration.md](docs/analysis-intelligence/rule-platform-migration.md).
 
+### Assessment Framework (Phase 4.1.2)
+
+Methodology for dimensions, rule taxonomy, evidence/confidence, scoring design,
+business impact vs severity, modernization waves, and CTO report structure.
+Documentation only—no production scoring or rule packs. See
+[docs/assessment-framework/README.md](docs/assessment-framework/README.md).
+
 ## Repository authentication
 
 Private GitHub access uses credential **references** in config (`token_env`),

@@ -6,6 +6,7 @@ Phase 4 of CodeStrata.
 | --------- | ------ |
 | 4.1 Shared Rule Platform | Implemented (infrastructure) |
 | 4.1.1 Rule Platform Integration Bridge | Complete |
+| 4.1.2 CodeStrata Assessment Framework | Complete (methodology) |
 | 4.2 Architecture Intelligence | Not started |
 | 4.3 Technical Debt Intelligence | Not started |
 | 4.4 Security Intelligence | Not started |
@@ -34,3 +35,10 @@ Compatibility bridge between legacy `RuleEngine` and the Shared Rule Platform:
 
 Assessment behaviour is unchanged. See
 [rule-platform-migration.md](rule-platform-migration.md).
+
+## Phase 4.1.2
+
+Assessment methodology for dimensions, taxonomy, evidence, confidence, scoring
+design, prioritization, and CTO report structure. No production rules or scoring
+wired into assessment. See
+[../assessment-framework/README.md](../assessment-framework/README.md).
