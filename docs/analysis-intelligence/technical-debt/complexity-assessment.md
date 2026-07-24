@@ -40,7 +40,7 @@ complexity collectors.
 ## Artifact
 
 - Filename: `technical-debt-assessment.json`
-- Section id: `assessment.technical_debt` @ `1.1.0`
+- Section id: `assessment.technical_debt` @ `1.2.0`
 - Includes finding references, **production-primary inventory**, test/unknown
   partitions, **source-unit hotspots**, coverage, limitations, execution
   summary, traceability — not conclusions, scores, or financial estimates

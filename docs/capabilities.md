@@ -18,8 +18,9 @@
 | Technical Debt Domain Foundation (4.3.1) | Available (domain/config only; disabled by default) |
 | Complexity Evidence (4.3.2) | Available (Python/Java collectors; Language Evidence owned) |
 | Technical Debt Complexity Rules (4.3.3) | Available (SharedRule pack; pack disabled by default) |
-| Technical Debt Assessment Vertical (4.3.4) | Available (assess opt-in; production-primary inventory + hotspots; dogfood accepted) |
-| TD conclusions / report integration | Deferred (Phase 4.3.5–4.3.6) |
+| Technical Debt Assessment Vertical (4.3.4 / 4.3.4A) | Available (production-primary inventory + hotspots; dogfood accepted) |
+| Technical Debt Assessment Synthesis (4.3.5) | Available (themes/conclusions/recommendations; section opt-in) |
+| Technical Debt CTO Report Integration (4.3.6) | Available (disabled by default; `assessment.technical_debt` in report) |
 | Security / Performance packs | Deferred (Phase 4.4+) |
 | Dimension scoring / CTO report | Designed (4.1.2); not implemented |
 | Analysis Intelligence packs (remaining) | In progress / planned (4.2–4.6) |

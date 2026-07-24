@@ -91,3 +91,16 @@ gates, section artifact, and dogfood review. See
 [technical-debt/complexity-assessment.md](technical-debt/complexity-assessment.md)
 and
 [../reviews/PHASE_4_3_COMPLEXITY_DOGFOOD_REVIEW.md](../reviews/PHASE_4_3_COMPLEXITY_DOGFOOD_REVIEW.md).
+
+## Phase 4.3.5
+
+Technical Debt assessment synthesis: deterministic themes, concentration facts,
+conclusions, and recommendations from the production-primary inventory. See
+[technical-debt/synthesis.md](technical-debt/synthesis.md).
+
+## Phase 4.3.6
+
+Technical Debt CTO report integration: assessment section → report adapter →
+`report.json` / HTML. See
+[technical-debt-reporting/README.md](technical-debt-reporting/README.md) and
+[../reviews/PHASE_4_3_ACCEPTANCE_REVIEW.md](../reviews/PHASE_4_3_ACCEPTANCE_REVIEW.md).

@@ -6,6 +6,7 @@ Presentation only — no analysis or enrichment business logic.
 from __future__ import annotations
 
 from aimf.reporters.html_rendering import escape_and_wrap, escape_html
+from aimf.reporting.architecture.models import ArchitectureReportSection
 from aimf.reporting.branding import (
     BRAND_FOOTER_LINE,
     BRAND_NAME,
@@ -13,13 +14,13 @@ from aimf.reporting.branding import (
     BRAND_VERSION,
     logo_data_uri,
 )
-from aimf.reporting.architecture.models import ArchitectureReportSection
 from aimf.reporting.html_v2.models import (
     AiEnrichmentView,
     FindingView,
     HtmlReportViewModel,
     RecommendationView,
 )
+from aimf.reporting.technical_debt.models import TechnicalDebtReportSection
 
 CONTENT_SECURITY_POLICY = (
     "default-src 'none'; "
@@ -92,6 +93,20 @@ class HtmlReportRenderer:
                     note=(
                         "Deterministic architecture assessment presentation. "
                         "Does not invent scores, business impact, or strengths."
+                    ),
+                )
+            )
+        if view.technical_debt_report is not None:
+            parts.append(
+                _section(
+                    "Technical Debt Assessment",
+                    _render_technical_debt(view.technical_debt_report),
+                    section_id="technical-debt-assessment",
+                    note=(
+                        "Deterministic technical debt assessment presentation. "
+                        "Does not invent composite scores, financial cost, or "
+                        "remediation-hour estimates. Hotspot order is presentation "
+                        "order, not priority ranking."
                     ),
                 )
             )
@@ -582,6 +597,152 @@ def _render_architecture(section: ArchitectureReportSection) -> str:
         f"{recommendations}"
         "<h3>Supporting findings</h3>"
         f"{findings_table}"
+        "<h3>Coverage</h3>"
+        f"{coverage_table}"
+        "<h3>Limitations</h3>"
+        f"<ul>{limitations}</ul>"
+        "<h3>Traceability</h3>"
+        f"{trace}"
+    )
+
+
+def _render_technical_debt(section: TechnicalDebtReportSection) -> str:
+    metrics = "".join(
+        "<div class='card'>"
+        f"<div class='label'>{escape_html(item.label)}</div>"
+        f"<div class='value'>{escape_html(item.value)}</div>"
+        f"{f'<p class=\"muted\">{escape_html(item.note)}</p>' if item.note else ''}"
+        "</div>"
+        for item in section.key_metrics
+    )
+    themes = "".join(
+        "<tr>"
+        f"<td>{escape_html(item.title)}</td>"
+        f"<td><code>{escape_html(item.rule_id)}</code></td>"
+        f"<td>{item.finding_count}</td>"
+        f"<td>{item.high_severity_count}</td>"
+        f"<td>{item.medium_severity_count}</td>"
+        "</tr>"
+        for item in section.significant_themes
+    )
+    themes_table = (
+        "<table><thead><tr>"
+        "<th>Theme</th><th>Rule</th><th>Findings</th>"
+        "<th>High</th><th>Medium</th>"
+        "</tr></thead><tbody>"
+        f"{themes}</tbody></table>"
+        if themes
+        else "<p class='muted'>No significant production themes.</p>"
+    )
+    hotspots = "".join(
+        "<tr>"
+        f"<td>{item.presentation_order}</td>"
+        f"<td><code>{escape_html(item.path)}</code></td>"
+        f"<td>{escape_html(item.source_unit)}</td>"
+        f"<td>{escape_html(item.highest_severity)}</td>"
+        f"<td>{item.finding_count}</td>"
+        f"<td>{escape_html(', '.join(item.rule_ids) or '—')}</td>"
+        f"<td>{escape_html(item.metric_summary)}</td>"
+        "</tr>"
+        for item in section.top_production_hotspots
+    )
+    hotspots_table = (
+        "<table><thead><tr>"
+        "<th>#</th><th>Path</th><th>Unit</th><th>Highest severity</th>"
+        "<th>Findings</th><th>Rules</th><th>Metrics</th>"
+        "</tr></thead><tbody>"
+        f"{hotspots}</tbody></table>"
+        if hotspots
+        else "<p class='muted'>No production hotspots to present.</p>"
+    )
+    conclusions = "".join(
+        "<article class='card'>"
+        f"<h4>{escape_html(item.title)}</h4>"
+        f"<p>{escape_html(item.summary)}</p>"
+        "<p class='muted'>"
+        f"Kind: {escape_html(item.kind)} · "
+        f"Audience: {escape_html(item.audience)} · "
+        f"Confidence: {escape_html(item.confidence)} · "
+        f"Findings: {item.finding_count} · Hotspots: {item.hotspot_count}"
+        "</p>"
+        "</article>"
+        for item in section.conclusions
+    ) or "<p class='muted'>No production-facing technical debt conclusions.</p>"
+    recommendations = "".join(
+        "<article class='card'>"
+        f"<h4>{escape_html(item.title)}</h4>"
+        f"<p><strong>Action:</strong> {escape_html(item.action)}</p>"
+        f"<p>{escape_html(item.rationale)}</p>"
+        f"<p class='muted'>"
+        f"{'Conditional' if item.conditional else 'Direct'} · "
+        f"Audience: {escape_html(item.audience)}"
+        "</p>"
+        "</article>"
+        for item in section.recommendations
+    ) or "<p class='muted'>No production-facing technical debt recommendations.</p>"
+    test_obs = section.test_observation
+    test_block = (
+        "<div class='card td-test-observation'>"
+        f"<h4>{escape_html(test_obs.title)}</h4>"
+        f"<p>{escape_html(test_obs.summary)}</p>"
+        f"<p class='muted'>Test findings: {test_obs.finding_count}</p>"
+        "</div>"
+        if test_obs.present
+        else "<p class='muted'>No separate test-maintainability observation.</p>"
+    )
+    coverage = "".join(
+        "<tr>"
+        f"<td>{escape_html(item.label)}</td>"
+        f"<td>{escape_html(item.status)}</td>"
+        f"<td>{escape_html(item.display)}</td>"
+        "</tr>"
+        for item in section.coverage_summary
+    )
+    coverage_table = (
+        "<table><thead><tr><th>Area</th><th>Status</th><th>Detail</th></tr></thead>"
+        f"<tbody>{coverage}</tbody></table>"
+        if coverage
+        else "<p class='muted'>Coverage details unavailable.</p>"
+    )
+    limitations = "".join(
+        f"<li><strong>{escape_html(item.category)}</strong> — {escape_html(item.summary)}</li>"
+        for item in section.limitations
+    ) or "<li>None recorded.</li>"
+    trace = (
+        f"<p>{escape_html(section.traceability_summary.summary)}</p>"
+        "<details><summary>Sample relationships</summary><ul>"
+        + "".join(
+            "<li>"
+            f"{escape_html(edge.relation)}: "
+            f"<code>{escape_html(edge.source_id)}</code> → "
+            f"<code>{escape_html(edge.target_id)}</code>"
+            "</li>"
+            for edge in section.traceability_summary.sample_edges
+        )
+        + "</ul></details>"
+    )
+    pack = (
+        f"{escape_html(section.technical_debt_pack_id or '—')}@"
+        f"{escape_html(section.technical_debt_pack_version or '—')}"
+    )
+    return (
+        f"<p><strong>Status:</strong> {escape_html(section.status_label)} — "
+        f"{escape_html(section.status_summary)}</p>"
+        f"<p><strong>Pack:</strong> {pack}</p>"
+        f"<p>{escape_html(section.executive_summary)}</p>"
+        f"<div class='grid'>{metrics}</div>"
+        "<h3>Significant production themes</h3>"
+        f"{themes_table}"
+        "<h3>Top production hotspots</h3>"
+        f"<p class='muted'>{escape_html(section.hotspot_presentation_note)}</p>"
+        f"{hotspots_table}"
+        "<h3>Production conclusions</h3>"
+        f"{conclusions}"
+        "<h3>Recommended actions</h3>"
+        f"{recommendations}"
+        "<h3>Test-maintainability observation</h3>"
+        "<p class='muted'>Test findings are not production health signals.</p>"
+        f"{test_block}"
         "<h3>Coverage</h3>"
         f"{coverage_table}"
         "<h3>Limitations</h3>"
@@ -1119,6 +1280,10 @@ body {
 .section-ai {
   border-color: #9cc5d9;
   background: linear-gradient(180deg, #f4fafc, #fff);
+}
+.td-test-observation {
+  border-left: 3px solid #9aa7b5;
+  background: #f7f8fa;
 }
 .ai-panel { padding: 0.15rem; }
 .ai-banner {

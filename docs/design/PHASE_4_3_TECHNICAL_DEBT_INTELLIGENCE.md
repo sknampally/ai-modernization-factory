@@ -9,8 +9,8 @@
 | 4.3.3 Initial Debt Rule Pack (Complexity Rules) | Implemented |
 | 4.3.4 Complexity Assessment Vertical and Dogfood | Implemented |
 | 4.3.4A Complexity Precision and Inventory Usability | Implemented |
-| 4.3.5 Debt Conclusions and Aggregation | Not started |
-| 4.3.6 Debt Report Integration | Not started |
+| 4.3.5 Debt Conclusions and Aggregation (Assessment Synthesis) | Implemented |
+| 4.3.6 Debt Report Integration | Implemented |
 
 ## Goals
 
@@ -348,10 +348,10 @@ metrics remain limitations, not failures.
 
 ## Intentionally not implemented in 4.3.4 / 4.3.4A
 
-- conclusions / aggregation / debt themes
+- conclusions / aggregation / debt themes (later: 4.3.5)
 - scoring, ratings, hotspot prioritization formulas
 - financial / effort / velocity / business-impact estimates
-- CTO report JSON/HTML debt section
+- CTO report JSON/HTML debt section (later: 4.3.6)
 - duplication or smell rules
 - CLI/MCP debt-specific commands
 - generic IntelligencePack abstraction
@@ -359,8 +359,52 @@ metrics remain limitations, not failures.
 
 ## Next milestones (preview)
 
-1. **4.3.5** Conclusions / aggregation (if needed)
-2. **4.3.6** Report presentation adapter
+1. **4.4** Security Intelligence (separate phase)
+
+## Design decisions (4.3.6) — CTO Report Integration
+
+### 1. Presentation adapter only
+
+`TechnicalDebtReportAdapter` maps an in-memory `TechnicalDebtAssessmentSection`
+to `TechnicalDebtReportSection`. It does not collect evidence, evaluate rules,
+re-read artifacts, or generate AI inference.
+
+### 2. Additive report schema
+
+`report.json` schema remains `1.2`. When
+`[report.sections.technical_debt] enabled = true` and an assessment section is
+available, `assessment.technical_debt` is added. When disabled or unavailable,
+the key is omitted (backward compatible).
+
+### 3. Production vs test in the customer report
+
+Production metrics, themes, hotspots, conclusions, and recommendations are
+primary. Test findings appear only under a separate test-maintainability
+observation. Hotspot order is inventory presentation order, not a priority score.
+
+See [technical-debt-reporting/README.md](../analysis-intelligence/technical-debt-reporting/README.md).
+
+## Design decisions (4.3.5) — Assessment Synthesis
+
+### 1. Inventory-driven only
+
+Synthesis consumes assessment finding references, hotspots, and coverage. It
+does not re-run rules or parse source.
+
+### 2. Bounded conclusion kinds
+
+Themes derive from taxonomy + rule IDs. Concentration uses transparent share
+thresholds (package ≥ 15%, top-10 hotspots ≥ 40%). Conclusions use fixed
+templates; recommendations always cite conclusion IDs and remain conditional
+where appropriate.
+
+### 3. Production vs test
+
+Production findings drive production-health conclusions. Test findings emit a
+separate `test_maintainability` observation that must not be treated as
+production-health evidence.
+
+See [synthesis.md](../analysis-intelligence/technical-debt/synthesis.md).
 
 ## Package layout (4.3.3–4.3.4)
 
@@ -384,6 +428,6 @@ src/aimf/domain/technical_debt/ids.py   # RULE_* constants
 ## Compatibility
 
 - Architecture Intelligence packages and defaults remain unchanged
-- Report schema remains additive; no debt key in `report.json` yet
+- Report schema remains additive (`assessment.technical_debt` optional under 1.2)
 - Existing findings continue to deserialize; new category is optional
 - Complexity collectors remain outside Architecture assessment registration

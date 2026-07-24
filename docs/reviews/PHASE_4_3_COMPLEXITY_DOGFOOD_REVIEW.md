@@ -208,21 +208,65 @@ finding IDs).
 ## Explicit acceptance decision
 
 **Accept Phase 4.3.4A.** The complexity inventory is credible and usable at
-repository scale for production-first review. Proceed to later milestones
-(conclusions / report) without requiring threshold suppression.
+repository scale for production-first review.
 
-## Known limitations (unchanged / deferred)
+## Phase 4.3.5 synthesis dogfood (2026-07-24)
 
-- No conclusions, recommendations, scoring, or prioritization formulas
-- No financial / effort / velocity / business-impact claims
-- No CTO report JSON/HTML debt section
+Artifacts under `reports/dogfood-phase-4-3-5/` (gitignored).
+
+### CodeStrata
+
+| Field | Value |
+| ----- | ----- |
+| Section status | `succeeded` |
+| Synthesis status | `succeeded` |
+| Primary production findings | 559 |
+| Themes | 9 (5 production + test-rule themes) |
+| Conclusions | 9 |
+| Recommendations | 8 |
+| Repeated-run artifact | identical |
+
+Conclusion kinds: `complexity_present`, five `theme_complexity`,
+`multi_rule_hotspots`, `partial_coverage`, `test_maintainability`.
+
+Concentration facts were emitted; no package share ≥ 15% and top-10 hotspot
+share ≈ 6.1% (below 40%), so concentration conclusions correctly did **not**
+fire.
+
+Traceability example: recommendation `Address deep nesting in production` →
+conclusion `technical_debt.conclusion.theme-deep-nesting:…` → theme + finding
+IDs.
+
+### Spring Petclinic
+
+| Field | Value |
+| ----- | ----- |
+| Primary production findings | 0 |
+| Test findings | 3 |
+| Conclusions | `no_production_findings` + `test_maintainability` |
+| `complexity_present` | absent (correct) |
+
+### Acceptance (4.3.5)
+
+**Accept Phase 4.3.5 synthesis.** Production-health conclusions are inventory-
+driven and test observations remain audience-separated. No scores or financial
+claims.
+
+## Known limitations / deferred
+
+- No composite debt scores or synthetic priority formulas
+- No financial / effort / velocity / business-impact estimates
+- No CTO report JSON/HTML debt section (4.3.6) — **complete**; see
+  [PHASE_4_3_ACCEPTANCE_REVIEW.md](PHASE_4_3_ACCEPTANCE_REVIEW.md)
 - No duplication or smell rules
 - No JS/TS or cognitive complexity
-- Nested Python callables not extracted independently (outer span may include nested bodies)
+- Nested Python callables not extracted independently
 - Branch points are structural counts, not certified cyclomatic products
 - Test findings remain measured and exposed (not suppressed)
 
 ## Artifacts
 
-- CodeStrata: `reports/dogfood-phase-4-3-4A/codestrata/.../technical-debt-assessment.json`
-- Petclinic: `reports/dogfood-phase-4-3-4A/petclinic/.../technical-debt-assessment.json`
+- CodeStrata 4.3.4A: `reports/dogfood-phase-4-3-4A/codestrata/.../technical-debt-assessment.json`
+- Petclinic 4.3.4A: `reports/dogfood-phase-4-3-4A/petclinic/.../technical-debt-assessment.json`
+- CodeStrata 4.3.5: `reports/dogfood-phase-4-3-5/codestrata/.../technical-debt-assessment.json`
+- Petclinic 4.3.5: `reports/dogfood-phase-4-3-5/petclinic/.../technical-debt-assessment.json`

@@ -6,7 +6,7 @@ import hashlib
 from collections.abc import Mapping, Sequence
 
 SECTION_ID = "assessment.technical_debt"
-SECTION_SCHEMA_VERSION = "1.1.0"
+SECTION_SCHEMA_VERSION = "1.2.0"
 TECHNICAL_DEBT_ASSESSMENT_FILENAME = "technical-debt-assessment.json"
 
 

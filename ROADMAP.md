@@ -20,14 +20,14 @@ YAML-based enterprise architecture model.
   - **4.2.3** Architecture Conclusions and Aggregation — Complete
   - **4.2.4** Architecture Assessment Integration — Complete
   - **4.2.5** CTO Report Integration — Complete
-- **4.3 Technical Debt Intelligence** — In Progress
+- **4.3 Technical Debt Intelligence** — Complete (4.3.1–4.3.6)
   - **4.3.1** Technical Debt Domain Foundation — Complete
   - **4.3.2** Complexity Evidence — Complete
   - **4.3.3** Complexity Rules & Findings — Complete
   - **4.3.4** Complexity Assessment Vertical and Dogfood — Complete
   - **4.3.4A** Complexity Precision and Inventory Usability — Complete
-  - **4.3.5** Debt Conclusions and Aggregation — Not started
-  - **4.3.6** Debt Report Integration — Not started
+  - **4.3.5** Debt Assessment Synthesis — Complete
+  - **4.3.6** Debt Report Integration — Complete
 - **4.4 Security Intelligence** — not started
 - **4.5 Performance Intelligence** — not started
 - **4.6 Modernization Intelligence** — not started

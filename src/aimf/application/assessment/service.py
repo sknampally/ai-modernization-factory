@@ -167,6 +167,13 @@ class AssessmentCommandResult(BaseModel):
         default=None, ge=0
     )
     architecture_report_adapter_ms: float | None = Field(default=None, ge=0.0)
+    technical_debt_report_enabled: bool | None = None
+    technical_debt_report_status: str | None = None
+    technical_debt_report_section_version: str | None = None
+    technical_debt_report_finding_count: int | None = Field(default=None, ge=0)
+    technical_debt_report_conclusion_count: int | None = Field(default=None, ge=0)
+    technical_debt_report_hotspot_count: int | None = Field(default=None, ge=0)
+    technical_debt_report_adapter_ms: float | None = Field(default=None, ge=0.0)
     knowledge_repository_id: str | None = None
     knowledge_run_id: str | None = None
     knowledge_snapshot_id: str | None = None
@@ -566,6 +573,7 @@ class AssessmentApplicationService:
         technical_debt_assessment_artifact = None
         technical_debt_assessment_status = None
         technical_debt_assessment_finding_count = None
+        technical_debt_section_for_report = None
         try:
             rule_evaluation = active_rule_engine.evaluate_pipeline_result(graph_pipeline_result)
             from aimf.application.rules.architecture.assessment import (
@@ -739,17 +747,19 @@ class AssessmentApplicationService:
                 architecture_assessment_finding_count = assessment_write.finding_count
                 architecture_section_for_report = architecture_section
 
+            from aimf.application.rules.technical_debt.assessment import (
+                complexity_evidence_collection_enabled,
+            )
             from aimf.application.technical_debt.assessment.artifacts import (
                 write_technical_debt_assessment_artifact,
             )
             from aimf.application.technical_debt.assessment.factory import (
                 configuration_fingerprint_payload as td_configuration_fingerprint_payload,
+            )
+            from aimf.application.technical_debt.assessment.factory import (
                 create_technical_debt_assessment_assembler,
                 technical_debt_assessment_section_enabled,
                 technical_debt_assessment_section_settings,
-            )
-            from aimf.application.rules.technical_debt.assessment import (
-                complexity_evidence_collection_enabled,
             )
 
             if technical_debt_assessment_section_enabled(loaded_settings):
@@ -790,6 +800,7 @@ class AssessmentApplicationService:
                         include_limitations=td_section_cfg.include_limitations,
                         include_traceability=td_section_cfg.include_traceability,
                         include_execution_summary=td_section_cfg.include_execution_summary,
+                        include_synthesis=td_section_cfg.include_synthesis,
                         complexity_evidence=(
                             technical_debt_pack_result.complexity_evidence
                             if technical_debt_pack_result is not None
@@ -847,6 +858,7 @@ class AssessmentApplicationService:
                 technical_debt_assessment_artifact = td_write.path
                 technical_debt_assessment_status = technical_debt_section.status.value
                 technical_debt_assessment_finding_count = td_write.finding_count
+                technical_debt_section_for_report = technical_debt_section
         except Exception as error:  # noqa: BLE001 - application boundary
             raise AssessmentCommandError(
                 f"[rule_engine] Rule evaluation failed: {sanitize_provider_text(str(error))}"
@@ -1064,6 +1076,80 @@ class AssessmentApplicationService:
                 "Architecture report section enabled, but no architecture assessment "
                 "section was available for this run."
             )
+        technical_debt_report_section = None
+        technical_debt_report_enabled = (
+            loaded_settings.report.sections.technical_debt.enabled
+        )
+        technical_debt_report_status = None
+        technical_debt_report_section_version = None
+        technical_debt_report_finding_count = None
+        technical_debt_report_conclusion_count = None
+        technical_debt_report_hotspot_count = None
+        technical_debt_report_adapter_ms = None
+        report_technical_debt_cfg = loaded_settings.report.sections.technical_debt
+        if (
+            report_technical_debt_cfg.enabled
+            and technical_debt_section_for_report is not None
+        ):
+            from aimf.reporting.technical_debt.adapter import TechnicalDebtReportAdapter
+
+            td_adapter_started = perf_counter()
+            try:
+                technical_debt_report_section = TechnicalDebtReportAdapter().adapt(
+                    technical_debt_section_for_report,
+                    include_executive_summary=(
+                        report_technical_debt_cfg.include_executive_summary
+                    ),
+                    include_metrics=report_technical_debt_cfg.include_metrics,
+                    include_themes=report_technical_debt_cfg.include_themes,
+                    include_hotspots=report_technical_debt_cfg.include_hotspots,
+                    include_conclusions=report_technical_debt_cfg.include_conclusions,
+                    include_recommendations=(
+                        report_technical_debt_cfg.include_recommendations
+                    ),
+                    include_test_observation=(
+                        report_technical_debt_cfg.include_test_observation
+                    ),
+                    include_coverage=report_technical_debt_cfg.include_coverage,
+                    include_limitations=report_technical_debt_cfg.include_limitations,
+                    include_traceability=report_technical_debt_cfg.include_traceability,
+                )
+                technical_debt_report_adapter_ms = round(
+                    (perf_counter() - td_adapter_started) * 1000, 2
+                )
+                technical_debt_report_status = technical_debt_report_section.status
+                technical_debt_report_section_version = (
+                    technical_debt_report_section.section_version
+                )
+                technical_debt_report_finding_count = int(
+                    technical_debt_report_section.metadata.get(
+                        "production_finding_count", "0"
+                    )
+                    or "0"
+                )
+                technical_debt_report_conclusion_count = len(
+                    technical_debt_report_section.conclusions
+                )
+                technical_debt_report_hotspot_count = len(
+                    technical_debt_report_section.top_production_hotspots
+                )
+            except Exception as error:  # noqa: BLE001 - isolate report adapter failures
+                technical_debt_report_section = None
+                technical_debt_report_adapter_ms = round(
+                    (perf_counter() - td_adapter_started) * 1000, 2
+                )
+                technical_debt_report_status = "failed"
+                warn(
+                    "Technical debt report section could not be built; "
+                    "remaining report content was kept. "
+                    f"Details: {sanitize_provider_text(str(error))}"
+                )
+        elif report_technical_debt_cfg.enabled:
+            technical_debt_report_status = "unavailable"
+            warn(
+                "Technical debt report section enabled, but no technical debt "
+                "assessment section was available for this run."
+            )
         report_input = ModernizationReportInput(
             analysis_result=analysis_result,
             assessment_mode=mode,
@@ -1095,6 +1181,7 @@ class AssessmentApplicationService:
                 include_architecture_assessment=include_architecture_assessment_artifact,
             ),
             architecture_report=architecture_report_section,
+            technical_debt_report=technical_debt_report_section,
         )
         try:
             written_paths = write_modernization_assessment_reports(
@@ -1169,6 +1256,13 @@ class AssessmentApplicationService:
                 architecture_report_recommendation_group_count
             ),
             architecture_report_adapter_ms=architecture_report_adapter_ms,
+            technical_debt_report_enabled=technical_debt_report_enabled,
+            technical_debt_report_status=technical_debt_report_status,
+            technical_debt_report_section_version=technical_debt_report_section_version,
+            technical_debt_report_finding_count=technical_debt_report_finding_count,
+            technical_debt_report_conclusion_count=technical_debt_report_conclusion_count,
+            technical_debt_report_hotspot_count=technical_debt_report_hotspot_count,
+            technical_debt_report_adapter_ms=technical_debt_report_adapter_ms,
         )
         _print_success_summary(active_console, result)
         try:
@@ -1728,6 +1822,13 @@ def _build_command_result(
     architecture_report_conclusion_count: int | None = None,
     architecture_report_recommendation_group_count: int | None = None,
     architecture_report_adapter_ms: float | None = None,
+    technical_debt_report_enabled: bool | None = None,
+    technical_debt_report_status: str | None = None,
+    technical_debt_report_section_version: str | None = None,
+    technical_debt_report_finding_count: int | None = None,
+    technical_debt_report_conclusion_count: int | None = None,
+    technical_debt_report_hotspot_count: int | None = None,
+    technical_debt_report_adapter_ms: float | None = None,
 ) -> AssessmentCommandResult:
     deterministic_recommendation_count = len(analysis_result.recommendations)
     graph_fields: dict[str, object] = {}
@@ -1802,6 +1903,30 @@ def _build_command_result(
         )
     if architecture_report_adapter_ms is not None:
         graph_fields["architecture_report_adapter_ms"] = architecture_report_adapter_ms
+    if technical_debt_report_enabled is not None:
+        graph_fields["technical_debt_report_enabled"] = technical_debt_report_enabled
+    if technical_debt_report_status is not None:
+        graph_fields["technical_debt_report_status"] = technical_debt_report_status
+    if technical_debt_report_section_version is not None:
+        graph_fields["technical_debt_report_section_version"] = (
+            technical_debt_report_section_version
+        )
+    if technical_debt_report_finding_count is not None:
+        graph_fields["technical_debt_report_finding_count"] = (
+            technical_debt_report_finding_count
+        )
+    if technical_debt_report_conclusion_count is not None:
+        graph_fields["technical_debt_report_conclusion_count"] = (
+            technical_debt_report_conclusion_count
+        )
+    if technical_debt_report_hotspot_count is not None:
+        graph_fields["technical_debt_report_hotspot_count"] = (
+            technical_debt_report_hotspot_count
+        )
+    if technical_debt_report_adapter_ms is not None:
+        graph_fields["technical_debt_report_adapter_ms"] = (
+            technical_debt_report_adapter_ms
+        )
     if (
         mode == AssessmentMode.AI_ENHANCED
         and ai_status == AIExecutionStatus.SUCCEEDED
@@ -1978,6 +2103,11 @@ def _print_success_summary(console: Console, result: AssessmentCommandResult) ->
         console.print(
             "Architecture report section: "
             f"{result.architecture_report_status or 'unavailable'}"
+        )
+    if result.technical_debt_report_enabled:
+        console.print(
+            "Technical debt report section: "
+            f"{result.technical_debt_report_status or 'unavailable'}"
         )
     if result.architecture_conclusion_count is not None:
         console.print(f"Architecture conclusions: {result.architecture_conclusion_count}")

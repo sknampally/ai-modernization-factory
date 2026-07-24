@@ -60,6 +60,13 @@ class TechnicalDebtTraceabilityRelation(StrEnum):
     COVERAGE_TO_PROVIDER = "coverage_to_provider"
     PACK_TO_RULE = "pack_to_rule"
     SECTION_TO_HOTSPOT = "section_to_hotspot"
+    SECTION_TO_CONCLUSION = "section_to_conclusion"
+    SECTION_TO_THEME = "section_to_theme"
+    SECTION_TO_RECOMMENDATION = "section_to_recommendation"
+    CONCLUSION_TO_FINDING = "conclusion_to_finding"
+    CONCLUSION_TO_THEME = "conclusion_to_theme"
+    CONCLUSION_TO_HOTSPOT = "conclusion_to_hotspot"
+    RECOMMENDATION_TO_CONCLUSION = "recommendation_to_conclusion"
 
 
 class TechnicalDebtSourceRole(StrEnum):

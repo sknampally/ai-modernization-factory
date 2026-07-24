@@ -45,5 +45,6 @@ def configuration_fingerprint_payload(
         f"include_limitations={section.include_limitations}|"
         f"include_traceability={section.include_traceability}|"
         f"include_execution_summary={section.include_execution_summary}|"
+        f"include_synthesis={section.include_synthesis}|"
         f"pack_enabled={pack_enabled}"
     )

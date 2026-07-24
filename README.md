@@ -53,8 +53,9 @@ Use it for modernization discovery, client demos, and engineering due diligence.
 * Technical Debt Domain Foundation (Phase 4.3.1; assessment contracts + feature gates; disabled by default)
 * Complexity Evidence (Phase 4.3.2; Python/Java structural metrics via Language Evidence Platform)
 * Technical Debt Complexity Rules (Phase 4.3.3; `technical_debt.core` SharedRules; pack disabled by default)
-* Technical Debt Complexity Assessment Vertical (Phase 4.3.4 / 4.3.4A; assess opt-in; production-primary inventory + hotspots; dogfood accepted)
-* Technical Debt conclusions / CTO report integration (deferred; Phase 4.3.5–4.3.6)
+* Technical Debt Complexity Assessment Vertical (Phase 4.3.4 / 4.3.4A; production-primary inventory + hotspots; dogfood accepted)
+* Technical Debt Assessment Synthesis (Phase 4.3.5; themes, conclusions, recommendations from inventory)
+* Technical Debt CTO report integration (deferred; Phase 4.3.6)
 
 ---
 

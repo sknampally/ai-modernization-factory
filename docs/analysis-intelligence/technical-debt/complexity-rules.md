@@ -31,7 +31,8 @@ max_physical_lines = 50
 
 ## Limitations
 
-- No conclusions, scoring, or CTO report debt section yet (4.3.5–4.3.6).
+- Conclusions and aggregation are assessment synthesis (4.3.5); CTO report
+  presentation is 4.3.6 (see technical-debt-reporting/).
 - Cognitive complexity and duplication are out of scope.
 - JS/TS complexity collectors are unsupported.
 - Python method/constructor parameter counts exclude `self` / `cls`.

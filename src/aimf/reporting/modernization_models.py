@@ -15,6 +15,7 @@ from aimf.domain.graph.validation import optional_nonblank, require_nonblank
 from aimf.domain.recommendations import RecommendationResult
 from aimf.models import AnalysisResult
 from aimf.reporting.architecture.models import ArchitectureReportSection
+from aimf.reporting.technical_debt.models import TechnicalDebtReportSection
 
 
 class AssessmentMode(StrEnum):
@@ -171,6 +172,8 @@ class ModernizationReportInput(BaseModel):
     report_artifacts: tuple[ReportArtifactInput, ...] = Field(default_factory=tuple)
     # Phase 4.2.5 — optional architecture report presentation (additive under assessment).
     architecture_report: ArchitectureReportSection | None = None
+    # Phase 4.3.6 — optional technical debt report presentation (additive under assessment).
+    technical_debt_report: TechnicalDebtReportSection | None = None
 
     @field_validator("generated_at_utc")
     @classmethod

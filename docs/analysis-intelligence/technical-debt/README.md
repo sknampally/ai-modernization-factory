@@ -8,14 +8,21 @@ Phase 4.3 of CodeStrata Analysis Intelligence.
 | 4.3.2 Complexity Evidence | Complete |
 | 4.3.3 Complexity Rules & Findings | Complete |
 | 4.3.4 Complexity Assessment Vertical and Dogfood | Complete |
-| 4.3.5 Conclusions / Aggregation | Not started |
-| 4.3.6 Report Integration | Not started |
+| 4.3.4A Complexity Precision and Inventory Usability | Complete |
+| 4.3.5 Assessment Synthesis | Complete |
+| 4.3.6 Report Integration | Complete |
 
 Design authority:
 [PHASE_4_3_TECHNICAL_DEBT_INTELLIGENCE.md](../../design/PHASE_4_3_TECHNICAL_DEBT_INTELLIGENCE.md).
 
 Dogfood review:
 [PHASE_4_3_COMPLEXITY_DOGFOOD_REVIEW.md](../../reviews/PHASE_4_3_COMPLEXITY_DOGFOOD_REVIEW.md).
+
+Acceptance review:
+[PHASE_4_3_ACCEPTANCE_REVIEW.md](../../reviews/PHASE_4_3_ACCEPTANCE_REVIEW.md).
+
+CTO report integration:
+[technical-debt-reporting/README.md](../technical-debt-reporting/README.md).
 
 ## 4.3.1 Foundation
 
@@ -76,3 +83,11 @@ See: [complexity-rules.md](complexity-rules.md), [rule-pack.md](rule-pack.md).
 
 See: [complexity-assessment.md](complexity-assessment.md),
 [PHASE_4_3_COMPLEXITY_DOGFOOD_REVIEW.md](../../reviews/PHASE_4_3_COMPLEXITY_DOGFOOD_REVIEW.md).
+
+## 4.3.5 Assessment Synthesis
+
+Deterministic themes, concentration facts, conclusions, and recommendations
+from the production-primary inventory and hotspots. Test findings produce a
+separate test-maintainability observation only.
+
+See: [synthesis.md](synthesis.md).

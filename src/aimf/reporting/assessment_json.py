@@ -131,6 +131,11 @@ def build_assessment_json_document(
         assessment["architecture"] = report_input.architecture_report.model_dump(
             mode="json"
         )
+    # Optional Phase 4.3.6 technical debt report section (schema remains 1.2; additive key).
+    if report_input.technical_debt_report is not None:
+        assessment["technical_debt"] = report_input.technical_debt_report.model_dump(
+            mode="json"
+        )
     return {
         "schema_version": ASSESSMENT_JSON_SCHEMA_VERSION,
         "report_version": ASSESSMENT_JSON_REPORT_VERSION,

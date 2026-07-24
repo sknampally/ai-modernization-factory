@@ -6,9 +6,9 @@ PACK_ID = "technical_debt.core"
 PACK_VERSION = "1.0.0"
 PACK_TITLE = "Technical Debt Intelligence Core"
 PACK_DESCRIPTION = (
-    "Technical Debt Intelligence SharedRule pack. Phase 4.3.3 registers "
-    "deterministic complexity rules that consume Language Evidence complexity "
-    "facts. Assessment synthesis and report integration remain deferred."
+    "Technical Debt Intelligence SharedRule pack with complexity rules, "
+    "assessment inventory/hotspots, and deterministic assessment synthesis "
+    "(themes, conclusions, recommendations). Report integration remains deferred."
 )
 
 RULE_ID_PREFIX = "technical_debt."

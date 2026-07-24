@@ -108,6 +108,7 @@ def enrich_finding_reference(finding: Finding) -> TechnicalDebtFindingReference:
     classification = finding.metadata.get("classification")
     source_role = map_source_role(classification, path=path)
     language = finding.metadata.get("language")
+    package = finding.metadata.get("package") or package_from_path(path)
     return TechnicalDebtFindingReference(
         finding_id=finding.id,
         rule_id=finding.rule_id,
@@ -122,7 +123,7 @@ def enrich_finding_reference(finding: Finding) -> TechnicalDebtFindingReference:
         source_role=source_role,
         language=language,
         path=path,
-        package=package_from_path(path),
+        package=package,
         source_unit=source_unit,
         metric=finding.metadata.get("metric"),
         metric_value=finding.metadata.get("value"),

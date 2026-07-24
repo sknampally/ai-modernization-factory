@@ -915,6 +915,7 @@ class TechnicalDebtAssessmentSectionSettings(BaseModel):
     include_limitations: bool = True
     include_traceability: bool = True
     include_execution_summary: bool = True
+    include_synthesis: bool = True
 
 
 class AssessmentSectionsSettings(BaseModel):
@@ -949,9 +950,28 @@ class ArchitectureReportSectionSettings(BaseModel):
     include_strengths: bool = True
 
 
+class TechnicalDebtReportSectionSettings(BaseModel):
+    """Technical debt section in HTML/JSON reports (disabled by default; Phase 4.3.6)."""
+
+    enabled: bool = False
+    include_executive_summary: bool = True
+    include_metrics: bool = True
+    include_themes: bool = True
+    include_hotspots: bool = True
+    include_conclusions: bool = True
+    include_recommendations: bool = True
+    include_test_observation: bool = True
+    include_coverage: bool = True
+    include_limitations: bool = True
+    include_traceability: bool = True
+
+
 class ReportSectionsSettings(BaseModel):
     architecture: ArchitectureReportSectionSettings = Field(
         default_factory=ArchitectureReportSectionSettings
+    )
+    technical_debt: TechnicalDebtReportSectionSettings = Field(
+        default_factory=TechnicalDebtReportSectionSettings
     )
 
 

@@ -23,7 +23,7 @@ def test_pack_and_section_constants_stable() -> None:
     assert PACK_VERSION == "1.0.0"
     assert RULE_ID_PREFIX == "technical_debt."
     assert SECTION_ID == "assessment.technical_debt"
-    assert SECTION_SCHEMA_VERSION == "1.1.0"
+    assert SECTION_SCHEMA_VERSION == "1.2.0"
 
 
 def test_taxonomy_is_deterministic_and_bounded() -> None:

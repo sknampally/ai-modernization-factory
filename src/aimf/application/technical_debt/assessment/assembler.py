@@ -10,6 +10,7 @@ from aimf.application.technical_debt.assessment.inventory import (
     build_hotspot_inventory,
     material_production_parse_failures,
 )
+from aimf.application.technical_debt.synthesis.service import synthesize_technical_debt
 from aimf.domain.evidence.language.complexity.models import AggregatedComplexityEvidence
 from aimf.domain.findings import Finding
 from aimf.domain.technical_debt.assessment.enums import (
@@ -414,6 +415,7 @@ class TechnicalDebtAssessmentAssembler:
         include_limitations: bool = True,
         include_traceability: bool = True,
         include_execution_summary: bool = True,
+        include_synthesis: bool = True,
         complexity_evidence: AggregatedComplexityEvidence | None = None,
         evidence_pipeline: str = "language.complexity",
         evidence_fingerprint: str = "",
@@ -500,6 +502,15 @@ class TechnicalDebtAssessmentAssembler:
             if include_coverage
             else TechnicalDebtCoverageSummary()
         )
+        synthesis = synthesize_technical_debt(
+            repository_id=repository_id,
+            pack_enabled=pack_enabled,
+            section_status=status,
+            finding_summaries=all_refs,
+            hotspot_inventory=hotspot_inventory,
+            coverage=coverage,
+            include_synthesis=include_synthesis,
+        )
         execution_summary = (
             TechnicalDebtExecutionSummary(
                 providers_planned=1 if complexity_evidence_enabled else 0,
@@ -517,6 +528,9 @@ class TechnicalDebtAssessmentAssembler:
                 test_finding_count=finding_inventory.test.finding_count,
                 unknown_finding_count=finding_inventory.unknown.finding_count,
                 total_finding_count=finding_inventory.total_finding_count,
+                theme_count=len(synthesis.theme_ids),
+                conclusion_count=len(synthesis.conclusion_ids),
+                recommendation_count=len(synthesis.recommendation_ids),
             )
             if include_execution_summary
             else TechnicalDebtExecutionSummary()
@@ -547,14 +561,27 @@ class TechnicalDebtAssessmentAssembler:
             all_finding_summaries=all_refs,
             finding_inventory=finding_inventory,
             hotspot_inventory=hotspot_inventory,
+            synthesis=synthesis,
+            themes=synthesis.themes,
+            theme_ids=synthesis.theme_ids,
+            concentration_facts=synthesis.concentration_facts,
+            conclusions=synthesis.conclusions,
+            conclusion_ids=synthesis.conclusion_ids,
+            recommendations=synthesis.recommendations,
+            recommendation_ids=synthesis.recommendation_ids,
             limitations=limitations,
-            diagnostics=tuple(sorted(diag)),
+            diagnostics=tuple(sorted(diag | set(synthesis.diagnostics))),
             traceability=(
                 _section_traceability(
                     pack_id=PACK_ID,
                     limitations=limitations,
                     finding_ids=primary_ids,
                     hotspot_ids=hotspot_ids,
+                    theme_ids=synthesis.theme_ids,
+                    conclusion_ids=synthesis.conclusion_ids,
+                    recommendation_ids=synthesis.recommendation_ids,
+                    conclusions=synthesis.conclusions,
+                    recommendations=synthesis.recommendations,
                 )
                 if include_traceability
                 else TechnicalDebtTraceabilityIndex()
@@ -562,11 +589,14 @@ class TechnicalDebtAssessmentAssembler:
             enterprise_context_used=False,
             business_impact="unknown",
             metadata={
-                "assessment_milestone": "4.3.4A",
+                "assessment_milestone": "4.3.5",
                 "severity_high_basis": "value_gt_two_times_threshold",
                 "primary_inventory_role": TechnicalDebtSourceRole.PRODUCTION.value,
                 "test_findings_exposed": "finding_inventory.test",
                 "hotspot_ordering": "highest_severity_then_finding_count_then_path_unit",
+                "synthesis_version": synthesis.synthesis_version,
+                "package_concentration_threshold": "0.15",
+                "hotspot_top10_concentration_threshold": "0.40",
             },
         )
 
@@ -577,6 +607,11 @@ def _section_traceability(
     limitations: Sequence[TechnicalDebtLimitation],
     finding_ids: Sequence[str],
     hotspot_ids: Sequence[str] = (),
+    theme_ids: Sequence[str] = (),
+    conclusion_ids: Sequence[str] = (),
+    recommendation_ids: Sequence[str] = (),
+    conclusions: Sequence[object] = (),
+    recommendations: Sequence[object] = (),
 ) -> TechnicalDebtTraceabilityIndex:
     edges: list[TechnicalDebtTraceabilityEdge] = [
         TechnicalDebtTraceabilityEdge(
@@ -629,6 +664,101 @@ def _section_traceability(
                 target_id=hotspot_id,
             )
         )
+    for theme_id in theme_ids:
+        edges.append(
+            TechnicalDebtTraceabilityEdge(
+                edge_id=build_trace_edge_id(
+                    relation=TechnicalDebtTraceabilityRelation.SECTION_TO_THEME.value,
+                    source_id=SECTION_ID,
+                    target_id=theme_id,
+                ),
+                relation=TechnicalDebtTraceabilityRelation.SECTION_TO_THEME,
+                source_id=SECTION_ID,
+                target_id=theme_id,
+            )
+        )
+    for conclusion_id in conclusion_ids:
+        edges.append(
+            TechnicalDebtTraceabilityEdge(
+                edge_id=build_trace_edge_id(
+                    relation=TechnicalDebtTraceabilityRelation.SECTION_TO_CONCLUSION.value,
+                    source_id=SECTION_ID,
+                    target_id=conclusion_id,
+                ),
+                relation=TechnicalDebtTraceabilityRelation.SECTION_TO_CONCLUSION,
+                source_id=SECTION_ID,
+                target_id=conclusion_id,
+            )
+        )
+    for recommendation_id in recommendation_ids:
+        edges.append(
+            TechnicalDebtTraceabilityEdge(
+                edge_id=build_trace_edge_id(
+                    relation=TechnicalDebtTraceabilityRelation.SECTION_TO_RECOMMENDATION.value,
+                    source_id=SECTION_ID,
+                    target_id=recommendation_id,
+                ),
+                relation=TechnicalDebtTraceabilityRelation.SECTION_TO_RECOMMENDATION,
+                source_id=SECTION_ID,
+                target_id=recommendation_id,
+            )
+        )
+    for conclusion in conclusions:
+        conclusion_id = getattr(conclusion, "conclusion_id", "")
+        for finding_id in getattr(conclusion, "finding_ids", ())[:32]:
+            edges.append(
+                TechnicalDebtTraceabilityEdge(
+                    edge_id=build_trace_edge_id(
+                        relation=TechnicalDebtTraceabilityRelation.CONCLUSION_TO_FINDING.value,
+                        source_id=conclusion_id,
+                        target_id=finding_id,
+                    ),
+                    relation=TechnicalDebtTraceabilityRelation.CONCLUSION_TO_FINDING,
+                    source_id=conclusion_id,
+                    target_id=finding_id,
+                )
+            )
+        for theme_id in getattr(conclusion, "theme_ids", ()):
+            edges.append(
+                TechnicalDebtTraceabilityEdge(
+                    edge_id=build_trace_edge_id(
+                        relation=TechnicalDebtTraceabilityRelation.CONCLUSION_TO_THEME.value,
+                        source_id=conclusion_id,
+                        target_id=theme_id,
+                    ),
+                    relation=TechnicalDebtTraceabilityRelation.CONCLUSION_TO_THEME,
+                    source_id=conclusion_id,
+                    target_id=theme_id,
+                )
+            )
+        for hotspot_id in getattr(conclusion, "hotspot_ids", ())[:16]:
+            edges.append(
+                TechnicalDebtTraceabilityEdge(
+                    edge_id=build_trace_edge_id(
+                        relation=TechnicalDebtTraceabilityRelation.CONCLUSION_TO_HOTSPOT.value,
+                        source_id=conclusion_id,
+                        target_id=hotspot_id,
+                    ),
+                    relation=TechnicalDebtTraceabilityRelation.CONCLUSION_TO_HOTSPOT,
+                    source_id=conclusion_id,
+                    target_id=hotspot_id,
+                )
+            )
+    for recommendation in recommendations:
+        recommendation_id = getattr(recommendation, "recommendation_id", "")
+        for conclusion_id in getattr(recommendation, "conclusion_ids", ()):
+            edges.append(
+                TechnicalDebtTraceabilityEdge(
+                    edge_id=build_trace_edge_id(
+                        relation=TechnicalDebtTraceabilityRelation.RECOMMENDATION_TO_CONCLUSION.value,
+                        source_id=recommendation_id,
+                        target_id=conclusion_id,
+                    ),
+                    relation=TechnicalDebtTraceabilityRelation.RECOMMENDATION_TO_CONCLUSION,
+                    source_id=recommendation_id,
+                    target_id=conclusion_id,
+                )
+            )
     return TechnicalDebtTraceabilityIndex(
         edges=tuple(sorted(edges, key=lambda item: item.edge_id))
     )

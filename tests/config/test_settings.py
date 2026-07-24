@@ -261,3 +261,24 @@ def test_technical_debt_gates_disabled_by_default(tmp_path: Path) -> None:
     assert settings.rules.technical_debt.enabled is False
     assert settings.assessment.sections.technical_debt.enabled is False
     assert settings.assessment.sections.technical_debt.include_findings is True
+    assert settings.report.sections.technical_debt.enabled is False
+    assert settings.report.sections.technical_debt.include_executive_summary is True
+
+
+def test_technical_debt_report_section_can_be_enabled(tmp_path: Path) -> None:
+    config_file = tmp_path / "aimf.toml"
+    config_file.write_text(
+        """
+        [repository]
+        path = "."
+
+        [report.sections.technical_debt]
+        enabled = true
+        include_hotspots = false
+        """,
+        encoding="utf-8",
+    )
+    settings = load_settings(config_file)
+    assert settings.report.sections.technical_debt.enabled is True
+    assert settings.report.sections.technical_debt.include_hotspots is False
+    assert settings.report.sections.technical_debt.include_themes is True

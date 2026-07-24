@@ -21,6 +21,13 @@ from aimf.domain.technical_debt.assessment.identifiers import (
     SECTION_ID,
     SECTION_SCHEMA_VERSION,
 )
+from aimf.domain.technical_debt.synthesis.models import (
+    TechnicalDebtConcentrationFact,
+    TechnicalDebtConclusion,
+    TechnicalDebtRecommendation,
+    TechnicalDebtSynthesisResult,
+    TechnicalDebtTheme,
+)
 from aimf.domain.technical_debt.taxonomy import TechnicalDebtCategory
 
 
@@ -46,6 +53,9 @@ class TechnicalDebtExecutionSummary(BaseModel):
     test_finding_count: int = Field(default=0, ge=0)
     unknown_finding_count: int = Field(default=0, ge=0)
     total_finding_count: int = Field(default=0, ge=0)
+    theme_count: int = Field(default=0, ge=0)
+    conclusion_count: int = Field(default=0, ge=0)
+    recommendation_count: int = Field(default=0, ge=0)
 
 
 class TechnicalDebtCoverageArea(BaseModel):
@@ -395,6 +405,16 @@ class TechnicalDebtAssessmentSection(BaseModel):
     hotspot_inventory: TechnicalDebtHotspotInventory = Field(
         default_factory=TechnicalDebtHotspotInventory
     )
+    synthesis: TechnicalDebtSynthesisResult = Field(
+        default_factory=TechnicalDebtSynthesisResult
+    )
+    themes: tuple[TechnicalDebtTheme, ...] = ()
+    theme_ids: tuple[str, ...] = ()
+    concentration_facts: tuple[TechnicalDebtConcentrationFact, ...] = ()
+    conclusions: tuple[TechnicalDebtConclusion, ...] = ()
+    conclusion_ids: tuple[str, ...] = ()
+    recommendations: tuple[TechnicalDebtRecommendation, ...] = ()
+    recommendation_ids: tuple[str, ...] = ()
     limitations: tuple[TechnicalDebtLimitation, ...] = ()
     diagnostics: tuple[str, ...] = ()
     traceability: TechnicalDebtTraceabilityIndex = Field(
@@ -426,7 +446,15 @@ class TechnicalDebtAssessmentSection(BaseModel):
             return None
         return optional_nonblank(str(value), label="pack field")
 
-    @field_validator("finding_ids", "all_finding_ids", "diagnostics", mode="before")
+    @field_validator(
+        "finding_ids",
+        "all_finding_ids",
+        "theme_ids",
+        "conclusion_ids",
+        "recommendation_ids",
+        "diagnostics",
+        mode="before",
+    )
     @classmethod
     def normalize_id_sequences(cls, value: object) -> tuple[str, ...]:
         return tuple(str(item).strip() for item in as_tuple(value) if str(item).strip())
@@ -434,6 +462,10 @@ class TechnicalDebtAssessmentSection(BaseModel):
     @field_validator(
         "finding_summaries",
         "all_finding_summaries",
+        "themes",
+        "concentration_facts",
+        "conclusions",
+        "recommendations",
         "limitations",
         mode="before",
     )
